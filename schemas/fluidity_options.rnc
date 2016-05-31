@@ -2284,9 +2284,16 @@ geometry =
                }
             )
          }?,
-         ## Options specifying the top surface and bottom of the domain
-         ## used in various ocean calculations.
+         ## Options specifying the coastlines, open boundaries, top surface and bottom of the domain used in various ocean calculations.
          element ocean_boundaries {
+            ## The IDs of any coastlines
+            element coastline_ids {
+               integer_vector
+            }?,
+            ## Open boundary IDs, ie. where tidal forcing occurs.
+            element open_boundary_ids {
+               integer_vector
+            }?,
             ## Specify the surface ids that make up the top of the domain,
             ## i.e. the free surface or rigid lid.
             element top_surface_ids {
