@@ -3156,8 +3156,19 @@ nth degree polynomial, where n is the polynomial degree of the coordinate mesh.<
       </optional>
       <optional>
         <element name="ocean_boundaries">
-          <a:documentation>Options specifying the top surface and bottom of the domain
-used in various ocean calculations.</a:documentation>
+          <a:documentation>Options specifying the coastlines, open boundaries, top surface and bottom of the domain used in various ocean calculations.</a:documentation>
+          <optional>
+            <element name="coastline_ids">
+              <a:documentation>The IDs of any coastlines</a:documentation>
+              <ref name="integer_vector"/>
+            </element>
+          </optional>
+          <optional>
+            <element name="open_boundary_ids">
+              <a:documentation>Open boundary IDs, ie. where tidal forcing occurs.</a:documentation>
+              <ref name="integer_vector"/>
+            </element>
+          </optional>
           <element name="top_surface_ids">
             <a:documentation>Specify the surface ids that make up the top of the domain,
 i.e. the free surface or rigid lid.</a:documentation>
