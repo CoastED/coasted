@@ -28,6 +28,8 @@
 
 module Tidal_module
 
+   use global_parameters
+
    use FLDebug
    use fields
    use state_module
@@ -35,7 +37,8 @@ module Tidal_module
    use coordinates
    use sparse_matrices_fields
    use state_module
-   
+
+
    implicit none
    
    private
@@ -43,7 +46,10 @@ module Tidal_module
    public :: find_chi, equilibrium_tide, get_tidal_frequency, &
              &compute_pressure_and_tidal_gradient, &
              &calculate_diagnostic_equilibrium_pressure,&
-             &calculate_shelf_depth
+             &calculate_shelf_depth, &
+              check_and_add_tidal_boundary_fields, &
+              calculate_distance_to_coastline, &
+              calculate_distance_to_tidal_boundary
    
 contains
 
@@ -479,6 +485,96 @@ contains
       call deallocate(positions_mapped_to_pressure_space)
               
     end subroutine compute_pressure_and_tidal_gradient
+
+
+    ! ------------------------------------------------------------------------
+    ! This will optionally add distance to boundary fields for coastlines and
+    ! open boundaries
+    ! ------------------------------------------------------------------------
+
+    subroutine check_and_add_tidal_boundary_fields(state)
+        type(state_type), dimension(:), pointer :: state
+
+        integer :: ph
+        character(len=OPTION_PATH_LEN) :: phase_path
+
+        logical :: have_coastlines, have_open_boundaries
+
+        have_coastlines=have_option("/geometry/ocean_boundaries/coastline_ids")
+        have_open_boundaries = &
+            have_option("/geometry/ocean_boundaries/tidal_boundary_ids")
+
+        ! Loop over phases. If any DG, optionally set up default fields and
+        ! associated options so the user doesn't have to.
+        do ph = 1, size(state)
+            phase_path="/material_phase["//int2str(ph-1)//"]/"
+
+            if(have_coastlines) call create_distance_field(phase_path, "DistanceToCoastline")
+            if(have_open_boundaries) &
+                call create_distance_field(phase_path, "DistanceToTidalBoundary")
+
+        end do
+
+    end subroutine check_and_add_tidal_boundary_fields
+
+    ! ------------------------------------------------------------------------
+
+    subroutine create_distance_field(phase_path, field_name)
+        character(len=OPTION_PATH_LEN) :: phase_path
+        character(len=*) :: field_name
+        character(len=OPTION_PATH_LEN) :: dist_path
+        integer :: stat
+
+        dist_path = trim(phase_path)//"scalar_field::"//trim(field_name)//"/"
+
+        ewrite(1, *) "Creating "//trim(field_name)//" field"
+
+        call add_option(trim(dist_path), stat)
+        call set_option_attribute(trim(dist_path)//"rank", "0", stat)
+        call add_option(trim(dist_path)//"diagnostic", stat)
+
+        call set_option_attribute(trim(dist_path)//"diagnostic/algorithm/name", &
+            "Internal", stat)
+        call set_option_attribute(trim(dist_path)//"diagnostic/algorithm/material_phase_support", &
+            "single", stat)
+
+        call add_option(trim(dist_path)//"diagnostic/mesh/name", stat)
+        call set_option_attribute(trim(dist_path)//"diagnostic/mesh/name", &
+            "CoordinateMesh", stat)
+
+        call add_option(trim(dist_path)//"diagnostic/output", stat)
+        call add_option(trim(dist_path)//"diagnostic/stat", stat)
+        call add_option(trim(dist_path)//"diagnostic/convergence", stat)
+        call add_option(trim(dist_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+        call add_option(trim(dist_path)//"diagnostic/detectors", stat)
+        call add_option(trim(dist_path)//"diagnostic/detectors/include_in_detectors", stat)
+        call add_option(trim(dist_path)//"diagnostic/steady_state", stat)
+        call add_option(trim(dist_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+        call add_option(trim(dist_path)//"diagnostic/consistent_interpolation", stat)
+
+    end subroutine create_distance_field
+
+    ! ------------------------------------------------------------------------
+
+    subroutine calculate_distance_to_coastline( state )
+        type(state_type), dimension(:), pointer :: state
+
+        type(scalar_field), pointer :: alpha
+
+        ! print*, "preextruded_mesh_name: ",  trim(preextruded_mesh_name)
+
+    end subroutine calculate_distance_to_coastline
+
+    ! ------------------------------------------------------------------------
+
+    subroutine calculate_distance_to_tidal_boundary( state )
+        type(state_type), dimension(:), pointer :: state
+
+
+    end subroutine calculate_distance_to_tidal_boundary
+
+    ! ------------------------------------------------------------------------
+
 
 end module Tidal_module
 
