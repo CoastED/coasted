@@ -106,6 +106,7 @@ module fluids_module
   use sediment_diagnostics, only: calculate_sediment_flux
   use islay_tidal
   use dg_prep
+  use tidal_module
 
   implicit none
 
@@ -240,6 +241,8 @@ contains
     ! for Discontinuous Galerkin
     call check_and_add_DG_defaults(state)
 
+    ! This looks to add DistanceToCoastline and DistanceToOpenBoundary fields
+    call check_and_add_tidal_boundary_fields(state)
 
     ! Read state from .flml file
     call populate_state(state)
@@ -356,6 +359,16 @@ contains
              end if
           end if
        end if
+    end if
+
+    ! Calculate DistanceToCoastline and DistanceToTidalBoundary fields
+
+    if(has_scalar_field(state(1), "DistanceToCoastline")) then
+        call calculate_distance_to_coastline(state)
+    end if
+
+    if(has_scalar_field(state(1), "DistanceToTidalBoundary")) then
+        call calculate_distance_to_tidal_boundary(state)
     end if
 
     ! move mesh according to inital free surface:

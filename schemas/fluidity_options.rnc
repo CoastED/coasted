@@ -2290,8 +2290,8 @@ geometry =
             element coastline_ids {
                integer_vector
             }?,
-            ## Open boundary IDs, ie. where tidal forcing occurs.
-            element open_boundary_ids {
+            ## Tidal boundary IDs, ie. where tidal forcing occurs.
+            element tidal_boundary_ids {
                integer_vector
             }?,
             ## Specify the surface ids that make up the top of the domain,
