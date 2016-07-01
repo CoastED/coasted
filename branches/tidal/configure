@@ -756,6 +756,7 @@ with_blas_dir
 with_lapack
 with_lapack_dir
 enable_openmp
+enable_cto
 enable_shared
 enable_verbose
 with_femdem
@@ -1422,9 +1423,19 @@ Optional Features:
   --enable-cgal           turns on use of the CGAL library
   --enable-openmp         turns on OpenMP support
   --disable-openmp        do not use OpenMP
+  --enable-cto=<FLML_file>
+                          Enable compile-time optimisations (CTO) for
+                          simulation configuration in FLML_file. This produces
+                          a 'fluidity' executable in the same directory as
+                          FLML_file.
   --enable-shared         Compile objects with -fPIC to enable the 'make
                           shared' target.
   --enable-verbose        turns on super verbosity
+  --enable-cto=<FLML_file>
+                          Enable compile-time optimisations (CTO) for
+                          simulation configuration in FLML_file. This produces
+                          a 'fluidity' executable in the same directory as
+                          FLML_file.
   --enable-sam            use sam rather than zoltan for adaptive load
                           rebalancing
   --disable-petsc-fortran-modules
@@ -9839,6 +9850,104 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 LIBS="$LAPACK_LIBS $LIBS $FCLIBS $FLIBS"
 
+# Check whether --enable-cto was given.
+if test "${enable_cto+set}" = set; then :
+  enableval=$enable_cto;
+fi
+
+
+if test "x$enable_cto" != ""
+then
+	opt_flml_file=`eval "echo $enable_cto"`
+	if ! test -f "$opt_flml_file"
+	then
+		echo "error: cannot find FLML file '$opt_flml_file'"
+		exit 1
+ 	fi
+	echo "Configuring optimised compile for $opt_flml_file..."
+	opt_exec_dir=`dirname "$opt_flml_file"`
+	opt_compile="yes"
+
+	# Pull out some parameters from the FLML file.
+	opt_dimension=`grep -A 2 dimension\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+	opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+	opt_surface_degree=`grep -A 2 surface_degree\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+
+	# This isn't always needed in a simulation, but needs to be set.
+	if test "$opt_surface_degree" == ""
+	then
+		opt_surface_degree=$opt_quad_degree
+	fi
+
+	# Disable 1D and 2D for now.
+	if ! test "$opt_dimension" == 3
+	then
+		echo "Error. Currently, only optimisation for 2D is supported."
+		exit 1
+	fi
+
+	# Velocity is only P1 at momentum, and
+	# only using lines, triangles or tetrahedra, so can calculate
+	# number of P1 vel points
+
+	case "$opt_dimension" in
+	     1) opt_nloc=2
+	     	opt_floc=1
+		opt_nfaces=1;;
+	     2) opt_nloc=3
+	     	opt_floc=2
+		opt_nfaces=3;;
+	     3) opt_nloc=4
+	     	opt_floc=3
+		opt_nfaces=4;;
+	     *) echo "Error. Only 1-3D supported"
+	esac
+
+
+	# Calculating NGI for tets
+	case "$opt_quad_degree" in
+	     1) opt_ele_ngi=1;;
+	     2) opt_ele_ngi=4;;
+	     3) opt_ele_ngi=5;;
+	     4) opt_ele_ngi=11;;
+	     5) opt_ele_ngi=14;;
+	     6) opt_ele_ngi=24;;
+	     7) opt_ele_ngi=31;;
+	     8) opt_ele_ngi=43;;
+	     *)	echo "Error. quad_degree '$opt_quad_degree' unsupported."
+	     	exit 1;;
+	esac
+
+	# Now calculate the surface NGI (triangles).
+	case "$opt_surface_degree" in
+	     1) opt_face_ngi=1;;
+	     2) opt_face_ngi=3;;
+	     3) opt_face_ngi=4;;
+	     4) opt_face_ngi=6;;
+	     5) opt_face_ngi=7;;
+	     6) opt_face_ngi=12;;
+	     7) opt_face_ngi=12;;
+	     8) opt_face_ngi=16;;
+	     *)	echo "Error. quad_degree '$opt_surface_degree' unsupported."
+	     	exit 1;;
+	esac
+
+
+
+	# Print out diagnostics
+	echo "opt_dimension: $opt_dimension"
+	echo "opt_quad_degree: $opt_quad_degree"
+	echo "opt_ele_ngi: $opt_ele_ngi"
+	echo "opt_surface_degree: $opt_surface_degree"
+	echo "opt_face_ngi: $opt_face_ngi"
+	echo "opt_nfaces: $opt_nfaces"
+
+	echo "Place exec in $opt_exec_dir"
+	exit 0
+
+fi
+
+
 
 
 
@@ -11734,6 +11843,14 @@ ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
+
+
+# Compile=time optimisations
+
+# Check whether --enable-cto was given.
+if test "${enable_cto+set}" = set; then :
+  enableval=$enable_cto;
+fi
 
 
 # Check whether --enable-sam was given.
@@ -13671,14 +13788,11 @@ $as_echo "$as_me: Configuring libjudy" >&6;}
     { $as_echo "$as_me:${as_lineno-$LINENO}: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" >&5
 $as_echo "$as_me: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" >&6;}
 
-
     cd libjudy
-
-
     # NOTE: the output of libjudy's configure is actually overwritten by us at
     # the end of the current configure. Do we actually need this or
     # do we keep it as a check that libjudy is happy with the environment?
-    FC="${saved_FC}" F77="${saved_F77}" F90="${saved_F90}" LIBS="${env_libs}" FCFLAGS="${env_fcflags}" FFLAGS="${env_fflags} $PIC_FLAG $PROFILING_FLAG" CC="${saved_CC}" ./configure --prefix=${PWD}/.. 
+    FC="${saved_FC}" F77="${saved_F77}" F90="${saved_F90}" LIBS="${env_libs}" FCFLAGS="${env_fcflags}" FFLAGS="${env_fflags} $PIC_FLAG $PROFILING_FLAG" CC="${saved_CC}" ./configure --prefix=${PWD}/..
     if test "$?" -ne "0"; then
       as_fn_error $? "Configuration of libjudy has failed." "$LINENO" 5
       exit -1
@@ -13710,6 +13824,8 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_void_p" >&5
 $as_echo "$ac_cv_sizeof_void_p" >&6; }
 
+
+
 cat >>confdefs.h <<_ACEOF
 #define SIZEOF_VOID_P $ac_cv_sizeof_void_p
 _ACEOF
@@ -13721,7 +13837,7 @@ _ACEOF
         JUDY_CFLAGS="-UJU_64BIT"
     fi
     # this is a workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=755099
-    if echo "$CFLAGS" | grep -q -- "-O[2-3]\|-Ofast"; then
+    if echo "$CFLAGS" | grep -q -- "-O2-3\|-Ofast"; then
       if test "x$USING_GFORTRAN" = "xyes" -a "x$GFORTRAN_4_8_OR_NEWER" = "xyes"; then
         FILTERED_CFLAGS="`echo $CFLAGS | sed 's/\-Ofast/\-O2/g'`"
         JUDY_CFLAGS="$JUDY_CFLAGS $FILTERED_CFLAGS -fno-aggressive-loop-optimizations"
@@ -13733,7 +13849,6 @@ _ACEOF
 cat >> confdefs.h << EOF
 #define HAVE_JUDY 1
 EOF
-
 else
     as_fn_error $? "\"libjudy directory missing!!\"" "$LINENO" 5
 fi
