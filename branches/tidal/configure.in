@@ -306,7 +306,7 @@ AC_ARG_ENABLE(cto,
 if test "$enable_cto" != ""
 then
 
-  if "$enable_cto" == "yes"
+  if test "$enable_cto" == "yes"
   then
 	echo "Error. You must provide a file name, eg. --enable-cto=FLML_file"
 	exit 1
