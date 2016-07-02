@@ -126,6 +126,8 @@ cat > include/compile_opt_defs.h << EOF
 
 #define OPT_NDIM $opt_dimension
 #define OPT_NFACES $opt_nfaces
+#define OPT_VEL_DEGREE $vel_ele_degree
+#define OPT_PRES_DEGREE $pres_ele_degree
 #define OPT_NLOC $opt_nloc
 #define OPT_NGI $opt_ele_ngi
 #define OPT_FLOC $opt_floc

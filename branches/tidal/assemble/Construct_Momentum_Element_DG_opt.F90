@@ -1,14 +1,12 @@
+! ----------------------------------------------------------------------------
 ! Basic template for DG assembly routines. This is used to generate optimised versions.
 ! For simplicity, removed following functionality:
-!   -   Arbitrary upwind viscosity scheme
+!   -   Arbitrary upwind viscosity scheme, Interior Penalty.
+!   -   Bassi-Rebay is currently non-functioning
+! ----------------------------------------------------------------------------
 
-#define ELEMENT_CONFIG
 
-#include "element_type_defs.h"
-
-!------------------ Start of template code ------------------------------
-
-subroutine construct_momentum_elements_dg_ELEMENT_CONFIG( ele, big_m, rhs, &
+subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
     & u_shape, p_shape, q_shape, &
     & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
@@ -2470,4 +2468,4 @@ contains
 
 
 
-end subroutine construct_momentum_elements_dg_ELEMENT_CONFIG
+end subroutine construct_momentum_elements_dg_opt

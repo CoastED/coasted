@@ -298,12 +298,12 @@ AC_ARG_ENABLE(cto,
     [AC_HELP_STRING([--enable-cto=<FLML_file>],
 	    [Enable compile-time optimisations (CTO) for simulation configuration in FLML_file. This produces a 'fluidity' executable in the same directory as FLML_file.])])
 
-if test "x$enable_cto" != ""
+if test "$enable_cto" != ""
 then
 	opt_flml_file=`eval "echo $enable_cto"`
 	echo "Configuring optimised compile for $opt_flml_file..."
 	
-	if `tools/generate_optimised_defines.sh "$opt_flml_file"`
+	if `sh tools/generate_optimised_defines.sh "$opt_flml_file"`
 	then
 	cat >> confdefs.h << EOF
 #define USE_CTO 1
