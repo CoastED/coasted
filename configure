@@ -756,7 +756,6 @@ with_blas_dir
 with_lapack
 with_lapack_dir
 enable_openmp
-enable_cto
 enable_shared
 enable_verbose
 with_femdem
@@ -1423,19 +1422,9 @@ Optional Features:
   --enable-cgal           turns on use of the CGAL library
   --enable-openmp         turns on OpenMP support
   --disable-openmp        do not use OpenMP
-  --enable-cto=<FLML_file>
-                          Enable compile-time optimisations (CTO) for
-                          simulation configuration in FLML_file. This produces
-                          a 'fluidity' executable in the same directory as
-                          FLML_file.
   --enable-shared         Compile objects with -fPIC to enable the 'make
                           shared' target.
   --enable-verbose        turns on super verbosity
-  --enable-cto=<FLML_file>
-                          Enable compile-time optimisations (CTO) for
-                          simulation configuration in FLML_file. This produces
-                          a 'fluidity' executable in the same directory as
-                          FLML_file.
   --enable-sam            use sam rather than zoltan for adaptive load
                           rebalancing
   --disable-petsc-fortran-modules
@@ -9850,31 +9839,6 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 LIBS="$LAPACK_LIBS $LIBS $FCLIBS $FLIBS"
 
-# Check whether --enable-cto was given.
-if test "${enable_cto+set}" = set; then :
-  enableval=$enable_cto;
-fi
-
-
-if test "$enable_cto" != ""
-then
-	opt_flml_file=`eval "echo $enable_cto"`
-	echo "Configuring optimised compile for $opt_flml_file..."
-
-	if `sh tools/generate_optimised_defines.sh "$opt_flml_file"`
-	then
-	cat >> confdefs.h << EOF
-#define USE_CTO 1
-EOF
-		echo "Success!"
-	else
-		echo "Configure for compile-time optimisations failed."
-		exit 1
-	fi
-fi
-
-
-
 
 
 
@@ -11770,14 +11734,6 @@ ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
-
-
-# Compile=time optimisations
-
-# Check whether --enable-cto was given.
-if test "${enable_cto+set}" = set; then :
-  enableval=$enable_cto;
-fi
 
 
 # Check whether --enable-sam was given.
@@ -13715,11 +13671,14 @@ $as_echo "$as_me: Configuring libjudy" >&6;}
     { $as_echo "$as_me:${as_lineno-$LINENO}: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" >&5
 $as_echo "$as_me: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" >&6;}
 
+
     cd libjudy
+
+
     # NOTE: the output of libjudy's configure is actually overwritten by us at
     # the end of the current configure. Do we actually need this or
     # do we keep it as a check that libjudy is happy with the environment?
-    FC="${saved_FC}" F77="${saved_F77}" F90="${saved_F90}" LIBS="${env_libs}" FCFLAGS="${env_fcflags}" FFLAGS="${env_fflags} $PIC_FLAG $PROFILING_FLAG" CC="${saved_CC}" ./configure --prefix=${PWD}/..
+    FC="${saved_FC}" F77="${saved_F77}" F90="${saved_F90}" LIBS="${env_libs}" FCFLAGS="${env_fcflags}" FFLAGS="${env_fflags} $PIC_FLAG $PROFILING_FLAG" CC="${saved_CC}" ./configure --prefix=${PWD}/.. 
     if test "$?" -ne "0"; then
       as_fn_error $? "Configuration of libjudy has failed." "$LINENO" 5
       exit -1
@@ -13751,8 +13710,6 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_void_p" >&5
 $as_echo "$ac_cv_sizeof_void_p" >&6; }
 
-
-
 cat >>confdefs.h <<_ACEOF
 #define SIZEOF_VOID_P $ac_cv_sizeof_void_p
 _ACEOF
@@ -13764,7 +13721,7 @@ _ACEOF
         JUDY_CFLAGS="-UJU_64BIT"
     fi
     # this is a workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=755099
-    if echo "$CFLAGS" | grep -q -- "-O2-3\|-Ofast"; then
+    if echo "$CFLAGS" | grep -q -- "-O[2-3]\|-Ofast"; then
       if test "x$USING_GFORTRAN" = "xyes" -a "x$GFORTRAN_4_8_OR_NEWER" = "xyes"; then
         FILTERED_CFLAGS="`echo $CFLAGS | sed 's/\-Ofast/\-O2/g'`"
         JUDY_CFLAGS="$JUDY_CFLAGS $FILTERED_CFLAGS -fno-aggressive-loop-optimizations"
@@ -13776,6 +13733,7 @@ _ACEOF
 cat >> confdefs.h << EOF
 #define HAVE_JUDY 1
 EOF
+
 else
     as_fn_error $? "\"libjudy directory missing!!\"" "$LINENO" 5
 fi

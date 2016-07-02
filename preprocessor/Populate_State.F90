@@ -635,12 +635,6 @@ contains
        make_new_mesh = new_shape_type .or. new_degree .or. new_cont
 
        extrusion=have_option(trim(mesh_path)//"/from_mesh/extrude")
-
-       if(extrusion) then
-            call get_option(trim(mesh_path)//"/from_mesh/mesh/name", &
-                preextruded_mesh_name )
-       end if
-
        periodic=have_option(trim(mesh_path)//"/from_mesh/periodic_boundary_conditions")
        exclude_from_mesh_adaptivity=have_option(trim(mesh_path)//"/exclude_from_mesh_adaptivity")
 
