@@ -299,6 +299,34 @@ AC_SUBST(BLAS_LIBS)
 
 LINKER=$CXX
 
+AC_ARG_ENABLE(cto,
+    [AC_HELP_STRING([--enable-cto=<FLML_file>],
+            [Enable compile-time optimisations (CTO) for simulation configuration in FLML_file. This produces a 'fluidity' executable in the same directory as FLML_file.])])
+
+if test "$enable_cto" != ""
+then
+
+  if "$enable_cto" == "yes"
+  then
+	echo "Error. You must provide a file name, eg. --enable-cto=FLML_file"
+	exit 1
+  fi
+
+  opt_flml_file=`eval "echo $enable_cto"`
+  echo "Configuring optimised compile for $opt_flml_file..."
+        
+  if `sh tools/generate_optimised_defines.sh "$opt_flml_file"`
+  then
+    cat >> confdefs.h << EOF
+#define USE_CTO 1
+EOF
+    echo "Success!"
+  else
+    echo "Configure for compile-time optimisations failed."
+    exit 1
+  fi
+fi
+
 AC_ARG_ENABLE(shared,
 [AC_HELP_STRING([--enable-shared],
 [Compile objects with -fPIC to enable the 'make shared' target.])])
@@ -1196,7 +1224,7 @@ if test -d libjudy ; then
         JUDY_CFLAGS="-UJU_64BIT"
     fi
     # this is a workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=755099
-    if echo "$CFLAGS" | grep -q -- "-O[2-3]\|-Ofast"; then
+    if echo "$CFLAGS" | grep -q -- "-O2\|-O3\|-Ofast"; then
       if test "x$USING_GFORTRAN" = "xyes" -a "x$GFORTRAN_4_8_OR_NEWER" = "xyes"; then
         FILTERED_CFLAGS="`echo $CFLAGS | sed 's/\-Ofast/\-O2/g'`"
         JUDY_CFLAGS="$JUDY_CFLAGS $FILTERED_CFLAGS -fno-aggressive-loop-optimizations"
