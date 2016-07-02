@@ -301,93 +301,20 @@ AC_ARG_ENABLE(cto,
 if test "x$enable_cto" != ""
 then
 	opt_flml_file=`eval "echo $enable_cto"`
-	if ! test -f "$opt_flml_file"
-	then
-		echo "error: cannot find FLML file '$opt_flml_file'"
-		exit 1
- 	fi
 	echo "Configuring optimised compile for $opt_flml_file..."
-	opt_exec_dir=`dirname "$opt_flml_file"`
-	opt_compile="yes"
-
-	# Pull out some parameters from the FLML file.
-	opt_dimension=`grep -A 2 dimension\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-	opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-	opt_surface_degree=`grep -A 2 surface_degree\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-
-	# This isn't always needed in a simulation, but needs to be set.
-	if test "$opt_surface_degree" == "" 
+	
+	if `tools/generate_optimised_defines.sh "$opt_flml_file"`
 	then
-		opt_surface_degree=$opt_quad_degree
-	fi
-
-	# Disable 1D and 2D for now.
-	if ! test "$opt_dimension" == 3
-	then
-		echo "Error. Currently, only optimisation for 2D is supported."
+	cat >> confdefs.h << EOF
+#define USE_CTO 1
+EOF
+		echo "Success!"
+	else
+		echo "Configure for compile-time optimisations failed."
 		exit 1
 	fi
-
-	# Velocity is only P1 at momentum, and
-	# only using lines, triangles or tetrahedra, so can calculate
-	# number of P1 vel points
-
-	case "$opt_dimension" in
-	     1) opt_nloc=2
-	     	opt_floc=1
-		opt_nfaces=1;;
-	     2) opt_nloc=3
-	     	opt_floc=2
-		opt_nfaces=3;;
-	     3) opt_nloc=4
-	     	opt_floc=3
-		opt_nfaces=4;;
-	     *) echo "Error. Only 1-3D supported"
-	esac
-
-
-	# Calculating NGI for tets
-	case "$opt_quad_degree" in
-	     1) opt_ele_ngi=1;;
-	     2) opt_ele_ngi=4;;
-	     3) opt_ele_ngi=5;;
-	     4) opt_ele_ngi=11;;
-	     5) opt_ele_ngi=14;;
-	     6) opt_ele_ngi=24;;
-	     7) opt_ele_ngi=31;;
-	     8) opt_ele_ngi=43;;
-	     *)	echo "Error. quad_degree '$opt_quad_degree' unsupported."
-	     	exit 1;;
-	esac
-	
-	# Now calculate the surface NGI (triangles).
-	case "$opt_surface_degree" in
-	     1) opt_face_ngi=1;;
-	     2) opt_face_ngi=3;;
-	     3) opt_face_ngi=4;;
-	     4) opt_face_ngi=6;;
-	     5) opt_face_ngi=7;;
-	     6) opt_face_ngi=12;;
-	     7) opt_face_ngi=12;;
-	     8) opt_face_ngi=16;;
-	     *)	echo "Error. quad_degree '$opt_surface_degree' unsupported."
-	     	exit 1;;
-	esac
-
-	
-
-	# Print out diagnostics
-	echo "opt_dimension: $opt_dimension"
-	echo "opt_quad_degree: $opt_quad_degree"
-	echo "opt_ele_ngi: $opt_ele_ngi"
-	echo "opt_surface_degree: $opt_surface_degree"
-	echo "opt_face_ngi: $opt_face_ngi"
-	echo "opt_nfaces: $opt_nfaces"
-
-	echo "Place exec in $opt_exec_dir"
-	exit 0
-
 fi
+
 
 
 AC_SUBST(LAPACK_LIBS)
