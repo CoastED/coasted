@@ -116,8 +116,6 @@ contains
 
   end subroutine smooth_vector
 
-
-
   subroutine smooth_tensor(field_in,positions,field_out,alpha, path)
 
     !smoothing length
@@ -199,8 +197,6 @@ contains
 
   end subroutine anisotropic_smooth_scalar
 
-
-
   subroutine anisotropic_smooth_vector(field_in,positions,field_out,alpha,path)
 
     !smoothing length
@@ -240,7 +236,6 @@ contains
     call deallocate(rhsfield); call deallocate(M); call deallocate(M_sparsity)
 
   end subroutine anisotropic_smooth_vector
-
 
   subroutine anisotropic_smooth_tensor(field_in,positions,field_out,alpha, path)
 

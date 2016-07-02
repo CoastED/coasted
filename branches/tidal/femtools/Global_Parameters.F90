@@ -141,10 +141,6 @@ module global_parameters
   
   !! Name of mesh to be handled by adapt_state()
   character(len=FIELD_NAME_LEN):: adaptivity_mesh_name=""
-
-  ! Name of mesh that will be extruded
-  character(len=FIELD_NAME_LEN):: preextruded_mesh_name=""
-
   
   !! optionpath where the periodic boundary conditions are defined
   character(len=OPTION_PATH_LEN), dimension(3) :: periodic_boundary_option_path=""

@@ -26,23 +26,8 @@
 !    USA
 #include "fdebug.h"
 
-#ifdef USE_CTO
-#include "compile_opt_defs.h"
-
-! Included just now for backward compatibility
-#define NDIM OPT_NDIM
-#define NFACES OPT_NFACES
-#define  NLOC OPT_NLOC
-#define  NGI OPT_NGI
-#define  FLOC OPT_FLOC
-#define  FNGI OPT_FNGI
-#define  EFLOC OPT_EFLOC
-#define P_FLOC OPT_P_FLOC
-
-#else
-#define NDIM 3
-#endif
-
+! #define MESH_DIM 3
+! #define NLOC 4
 
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum
@@ -173,9 +158,8 @@ contains
     ! These must match the files generated from the template file, and
     ! called below.
 
-#ifdef USE_CTO
-#include "Construct_Momentum_Element_DG_opt.F90"
-#endif
+#include "Construct_Elements_DG1_TET_QUAD_4_CDG.F90"
+
 
     subroutine construct_momentum_dg(u, p, rho, x, &
         & big_m, rhs, state, &
@@ -899,10 +883,9 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-#ifdef USE_CTO
-                if(U%dim==OPT_NDIM .and. P%mesh%shape%degree==OPT_PRES_DEGREE &
+                if(U%dim==3 .and. P%mesh%shape%degree==2 &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
-                    .and. ele_loc(U,1)==OPT_NLOC .and. ele_ngi(U,1)==OPT_NGI ) then
+                    .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
                     print*, "Optimised DG assembly: Compact DG"
 
                     !    print*, "before assembly loop"
@@ -921,7 +904,7 @@ contains
                         element_loop_cdg: do nnid = 1, len
                             ele = fetch(colours(clr), nnid)
 
-                            call construct_momentum_elements_dg_opt( ele, big_m, rhs, &
+                            call construct_momentum_elements_dg_DG1_TET_QUAD_4_CDG( ele, big_m, rhs, &
                                 & X, U, advecting_velocity, U_mesh, X_old, X_new, &
                                 & u_shape, p_shape, q_shape, &
                                 & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
@@ -949,9 +932,8 @@ contains
 
                     !$OMP END PARALLEL
 
+
                 else
-! endif USE_CTO
-#endif
                     !    print*, "main here1"
                     print*, "Non-optimised DG assembly"
 
@@ -993,9 +975,7 @@ contains
                     !    print*, "after assembly loop"
 
                     !$OMP END PARALLEL
-#ifdef USE_CTO
                 end if
-#endif
 
                 call profiler_toc(u, "element_loop")
 
@@ -1062,6 +1042,283 @@ contains
 
     
             end subroutine construct_momentum_dg
+
+
+ 
+            subroutine les_tensor_viscosity_roman_elements(X, U, u_cg, p, uGrad, &
+                viscosity, &
+                colours, &
+                tensor_eddy_visc, &
+                smagorinsky_coefficient, &
+                prescribed_filter_width, &
+                have_van_driest, &
+                distance_to_wall, y_plus_debug, les_filter_width_debug)
+
+                integer, parameter :: MESH_DIM = 3
+
+#ifndef NLOC
+#define NLOC=4
+#endif
+
+                ! Parameter declarations
+                type(vector_field), intent(in) :: X, U, u_cg
+                type(scalar_field), intent(in) :: p
+                type(tensor_field), intent(inout) :: uGrad
+                type(tensor_field), intent(in) :: viscosity
+                type(integer_set),  intent(in), dimension(:), pointer :: colours
+    
+                type(tensor_field), intent(inout) :: tensor_eddy_visc
+                real, intent(in) :: smagorinsky_coefficient
+
+
+                logical :: have_van_driest
+                type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
+                type(scalar_field), pointer, intent(in) :: y_plus_debug, les_filter_width_debug
+    
+    
+                ! Stuff that would be inside construct_momentum_element_dg()
+                real, allocatable :: detwei(:)
+                integer :: ni, ele, ele_2, face, dim1, dim2, start, finish
+                real, dimension(U%dim, U%dim, NLOC) :: ug, viscEle
+                type(element_type), pointer :: u_shape
+                integer, dimension(:), pointer :: neigh
+    
+                ! Loop gubbins
+                real, dimension(U%dim, U%dim, NLOC):: centralEleLesVisc, neighLesVisc, workLesVisc
+                real, dimension(U%dim, U%dim) :: les_filter_width, lesViscNode, avLesVisc
+                real, dimension(NLOC) :: y_wall, y_plus, filter_scale
+                real, parameter :: y_plus_dilute=0.90
+                real, dimension(NLOC) :: magStrain, magStrainHorz, magStrainVert, sgsHorz, sgsVert
+                real :: iso_visc, magLesVisc, maxMagLesVisc
+                real, dimension(NLOC, NLOC) :: M_inv
+                real :: depth, depthscale
+                real, parameter :: minDepth=5.25
+    
+                real, dimension(U%dim, U%dim, NLOC) :: tensor_visc
+                real, dimension(U%dim, NLOC) :: x_val
+    
+                integer :: i, j, n, nColours, nElements, nNeighbours, nValidNeighbours, neighEle
+                real :: dx(U%dim)
+                real :: lenHorzSq, lenVertSq, lenLesIso
+    
+                integer :: clr, nnid
+    
+                type(tensor_field), pointer :: prefilterVisc, smoothGrad, intermVisc
+                character(len=OPTION_PATH_LEN) :: solverPath
+                real, parameter :: lesFilterWidth=2.0, strainFilterWidth=3.0
+                real, parameter :: smagHorz = 0.06, smagVert = 0.20
+
+
+                ! DG LES smoothing solver schema options
+                solverPath = trim(u%option_path//"/prognostic"//&
+                    &"/spatial_discretisation/discontinuous_galerkin/les_model")
+
+
+                allocate(prefilterVisc)
+                call allocate(prefilterVisc, x%mesh, "PrefilterTensorEddyVisc")
+                call zero(prefilterVisc)
+
+                allocate(intermVisc)
+                call allocate(intermVisc, x%mesh, "IntermediateTensorEddyVisc")
+
+                allocate(smoothGrad)
+                call allocate(smoothGrad, u_cg%mesh, "smoothedStrain")
+
+                call anisotropic_smooth_tensor(uGrad, X, smoothGrad, strainFilterWidth, trim(solverPath))
+
+
+
+                u_shape=>ele_shape(U,1)
+    
+                allocate(detwei(ele_ngi(U,ele)))
+    
+                nElements = ele_count(tensor_eddy_visc)
+                element_loop: do ele = 1, nElements
+          
+                    y_wall = ele_val(distance_to_wall, ele)
+
+                    ! A few arrays to use further down
+                    ug=ele_val(smoothGrad, ele)
+                    neigh=>ele_neigh(X, ele)
+                    nNeighbours = size(neigh)
+                    viscEle = ele_val(Viscosity,ele)
+                    x_val=ele_val(X, ele)
+
+                    call les_length_scales_squared_roman(X, ele, lenHorzSq, lenVertSq)
+
+
+                    ! Calculate magnitude of vert, horz and total strains
+                    ! (Note: SGS horz/vert are averaged across element)
+                    magStrainHorz = 0.0
+                    magStrainVert = 0.0
+                    do n=1, NLOC
+                        FLAbort("This bit is wrong: should use strain rate tensor (0.5*(ug_ij+ug+ji)), not gradient tensor")
+!                    magStrainHorz(n) = magStrainHorz(n) + &
+!                        sqrt( 2*ug(1,1,n)**2 + 2*ug(2,2,n)**2 + 4*ug(1,2,n)**2)
+!
+!                    magStrainVert(n) = magStrainVert(n) + &
+!                        sqrt( 4*ug(1,3,n)**2 + 2*ug(3,3,n)**2 + 4*ug(3,2,n)**2)
+             
+!                    magStrain(n) = norm2(ug(:,:,n))
+                end do
+
+
+                ! SGS Horz and vert strain (see Roman)
+                sgsHorz(:) = ((smagHorz*lesFilterWidth)**2) * lenHorzSq * magStrainHorz(:)
+                sgsVert(:) = ((smagVert*lesFilterWidth)**2) * lenVertSq * magStrainVert(:)
+
+                !          lesViscNode = 0.0
+                !          do i=1, U%dim
+                !              do j=1, U%dim-1
+                !                  do n=1, NLOC
+                !                      lesViscNode(i,j) = lesViscNode(i,j) + sgsHorz(n)
+                !                  end do
+                !              end do
+                !          end do
+
+                !          do i=1, U%dim
+                !              do n=1, NLOC
+                !                  lesViscNode(i,U%dim) = lesViscNode(i,U%dim) + sgsVert(n)
+                !              end do
+                !          end do
+
+                !          lesViscNode = lesViscNode / NLOC
+
+                !          do n=1, NLOC
+                !              workLesVisc(:,:,n) = lesViscNode
+                !          end do
+
+
+                do i=1, U%dim
+                    do j=1, U%dim-1
+                        do n=1, NLOC
+                        workLesVisc(i,j,n) = sgsHorz(n)
+                    end do
+                end do
+            end do
+          
+            do i=1, U%dim
+                do n=1, NLOC
+                workLesVisc(i,U%dim,n) =  sgsVert(n)
+            end do
+        end do
+
+        !          lesViscNode = lesViscNode / NLOC
+
+        ! Field before we apply any filter, smoothing or Van Driest.
+        call set(prefilterVisc, &
+            ele_nodes(prefilterVisc, ele), workLesVisc)
+
+
+    end do element_loop
+
+    ! Update prefiltered viscosity field halo
+    call halo_update(prefilterVisc)
+
+
+    ! Smooth mesh. We need to do this to stop negative feedback -> instablity
+    if(.not. have_van_driest) then
+        call anisotropic_smooth_tensor(prefilterVisc, X, tensor_eddy_visc, lesFilterWidth, trim(solverPath))
+    else
+        call anisotropic_smooth_tensor(prefilterVisc, X, intermVisc, lesFilterWidth, trim(solverPath))
+
+        element_loop2: do ele = 1, nElements
+            !
+            !          ! ==== Filtering (averaging with neighbours)
+            !          ! This is a lot cheaper than doing a full smoothing solve.
+            !          ! But it currently doesn't work... or does it?
+            !
+            !          neigh=>ele_neigh(X, ele)
+            !          nNeighbours = size(neigh)
+            !
+            !          avLesVisc=0.0
+            !          nValidNeighbours=0
+            !          do ni=1, nNeighbours
+            !
+            !              neighEle = neigh(ni)
+            !              if(neighEle > 0) then
+            !                  neighLesVisc = ele_val(prefilterVisc, neighEle)
+            !
+            !                  do n=1, NLOC
+            !                      avLesVisc = avLesVisc + neighLesVisc(:,:,n)
+            !                  end do
+            !
+            !              end if
+            !              nValidNeighbours = nValidNeighbours+1
+            !          end do
+
+            !          centralEleLesVisc = ele_val(prefilterVisc, ele)
+            !          do n=1, NLOC
+            !              avLesVisc = avLesVisc + centralEleLesVisc(:,:,n)
+            !          end do
+            !
+            !          avLesVisc = avLesVisc / (NLOC * nValidNeighbours+1)
+            !          do n=1, NLOC
+            !              workLesVisc(:,:,n) = avLesVisc
+            !          end do
+            !
+            !
+            filter_scale=1.0
+            ! apply Van Driest damping functions
+            y_wall = ele_val(distance_to_wall, ele)
+            viscEle = ele_val(Viscosity,ele)
+            ug=ele_val(smoothGrad, ele)
+            x_val=ele_val(X, ele)
+
+            workLesVisc=ele_val(intermVisc, ele)
+
+            do n=1, NLOC
+            magStrain(n) = norm2(ug(:,:,n))
+            iso_visc = norm2( viscEle(:,:,n) )
+            depth = y_wall(n) + abs(x_val(3, n))
+
+            ! We're assuming tidal sim here. If less than minDepth, then node is coastline.
+            if(depth < minDepth) then
+                depthScale=0.2
+            else
+                depthScale=1.0
+            end if
+
+            ! y_plus_dilute dilutes the wall effect, necessary at low resolutions
+            y_plus(n) = y_wall(n) * magStrain(n) / sqrt(iso_visc)
+            filter_scale(n) = (1 - y_plus_dilute * exp(-1.0*y_plus(n)/25.0))*depthScale
+
+            workLesVisc(:,:,n) = workLesVisc (:,:,n) * filter_scale(n)
+        end do
+
+        ! debugging fields
+        if (associated(y_plus_debug)) then
+            call set(y_plus_debug, ele_nodes(y_plus_debug, ele), y_plus)
+        end if
+
+
+        call set(tensor_eddy_visc, &
+            ele_nodes(tensor_eddy_visc, ele), workLesVisc)
+
+    end do element_loop2
+
+end if
+
+call deallocate(prefilterVisc)
+deallocate(prefilterVisc)
+
+call deallocate(intermVisc)
+deallocate(intermVisc)
+
+call deallocate(smoothGrad)
+deallocate(smoothGrad)
+
+deallocate(detwei)
+
+
+! Need to update the halos for eddy viscosity
+call halo_update(tensor_eddy_visc)
+
+
+end subroutine les_tensor_viscosity_roman_elements
+
+
+
 
 
 subroutine construct_momentum_element_dg(ele, big_m, rhs, &
@@ -2381,6 +2638,9 @@ contains
 
         dim = Viscosity%dim(1)
         isotropic_visc = Viscosity_ele(1,1,:)
+        if (have_les) then
+            call les_viscosity(isotropic_visc)
+        end if
 
         ! isotropic viscosity (just take the first component as scalar value)
         ! Q_visc = mat_diag_mat(Q_inv, Viscosity_ele(1,1,:))
@@ -2416,6 +2676,513 @@ contains
         end forall
       
     end subroutine add_diagonal_to_tensor
+
+    subroutine les_viscosity(isotropic_visc)
+        real, dimension(ele_loc(u,ele)), intent(inout) :: isotropic_visc
+
+        real, dimension(ele_loc(u,ele)) :: les_filter_width
+        real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)) :: g_nl
+        real, dimension(mesh_dim(u), mesh_dim(u)) :: s
+        real, dimension(ele_loc(u,ele)) :: s_mod
+        real, dimension(ele_loc(u,ele)) :: les_scalar_viscosity, y_wall, y_plus
+        real, dimension(ele_loc(u,ele), ele_loc(u,ele)) :: M_inv
+
+        ! get inverse mass
+        M_inv = shape_shape(u_shape, u_shape, detwei)
+        call invert(M_inv)
+
+        ! Compute gradient of non-linear velocity
+        do dim1=1,mesh_dim(u)
+            do dim2=1,mesh_dim(u)
+                ! interior contribution
+                g_nl(dim1,dim2,:)=matmul(grad_U_mat_q(dim2,:,:loc), ele_val(u_nl,dim1,ele))
+
+                ! boundary comtributions (have to be done seperately as we need to apply bc's at boundaries)
+                ! local node map counter.
+                start=loc+1
+                do ni=1,size(neigh)
+                    ! get neighbour ele, corresponding faces, and complete local node map
+                    ele_2=neigh(ni)
+
+                    if (ele_2>0) then
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele_2, ele)
+                        finish=start+face_loc(U, face)-1
+                        ! for interior faces we use the face values
+                        g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                    else
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele, ele_2)
+                        finish=start+face_loc(U, face)-1
+                        ! for boundary faces the value we use depends upon if a weak bc is applied
+                        if (velocity_bc_type(dim1,face)==1) then
+                            ! weak bc! use the bc value
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), ele_val(velocity_bc,dim1,face))
+                        else
+                            ! no weak bc, use node values on internal face
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                        end if
+                    end if
+
+                    ! update node map counter
+                    start=start+face_loc(U, face)
+                end do
+
+                ! apply inverse mass
+                g_nl(dim1,dim2,:)=matmul(M_inv, g_nl(dim1,dim2,:))
+            end do
+        end do
+
+        ! call calculate_les_grad_u(g_nl)
+
+        ! Compute modulus of strain rate
+        do i=1,ele_loc(u,ele)
+            s=0.5*(g_nl(:,:,i)+transpose(g_nl(:,:,i)))
+            ! Calculate modulus of strain rate
+            s_mod(i)=sqrt(2*sum(s**2))
+        end do
+
+        ! Compute filter width
+        if (associated(prescribed_filter_width)) then
+            les_filter_width = ele_val(prescribed_filter_width, ele)
+        else
+            ! when using the element size to compute the filter width we assume the filter
+            ! width is twice the element size
+            les_filter_width = 2*length_scale_scalar(X, ele)
+        end if
+
+        ! apply Van Driest damping functions
+        if (associated(distance_to_wall)) then
+            y_wall = ele_val(distance_to_wall, ele)
+            do i=1,ele_loc(u,ele)
+                y_plus(i) = y_wall(i) * sqrt(norm2(g_nl(:,:,i)+transpose(g_nl(:,:,i))))/sqrt(isotropic_visc(i))
+            end do
+            les_filter_width = (1 - exp(-1.0*y_plus/25.0))*les_filter_width
+
+            ! debugging fields
+            if (associated(y_plus_debug)) then
+                call set(y_plus_debug, ele_nodes(y_plus_debug, ele), y_plus)
+            end if
+        end if
+
+        if (associated(les_filter_width_debug)) then
+            call set(les_filter_width_debug, ele_nodes(les_filter_width_debug, ele), les_filter_width)
+        end if
+
+        les_scalar_viscosity = (les_filter_width*smagorinsky_coefficient)**2 * s_mod
+
+        ! store sgs viscosity
+        if (associated(eddy_visc)) then
+            call set(eddy_visc, ele_nodes(eddy_visc, ele), les_scalar_viscosity)
+        end if
+
+        ! Add to molecular viscosity
+        isotropic_visc = isotropic_visc + les_scalar_viscosity
+
+    end subroutine les_viscosity
+
+
+    subroutine les_tensor_viscosity(tensor_visc)
+        real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)), intent(inout) :: tensor_visc
+        real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)) :: les_visc
+        real, dimension(mesh_dim(u), mesh_dim(u), ele_ngi(u,ele)) :: les_filter_width
+        real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)) :: g_nl
+        real, dimension(mesh_dim(u), mesh_dim(u)) :: s
+        real, dimension(ele_loc(u,ele)) :: s_mod
+        real, dimension(ele_loc(u,ele)) :: y_wall, y_plus
+        real, dimension(ele_loc(u,ele), ele_loc(u,ele)) :: M_inv
+
+        real :: filter_scale(ele_loc(u,ele)), iso_visc
+
+        integer :: i, j, k, uloc
+
+
+        !      ewrite(1,*) "*** les_tensor_viscosity()"
+
+        uloc = ele_loc(u, ele)
+
+        ! print*, "tensor_visc dim:", size(tensor_visc(:,1,1)), ",",size(tensor_visc(1,:,1)), ",",size(tensor_visc(1,1,:))
+
+        ! get inverse mass
+        M_inv = shape_shape(u_shape, u_shape, detwei)
+        call invert(M_inv)
+
+        ! Compute gradient of non-linear velocity
+        do dim1=1,mesh_dim(u)
+            do dim2=1,mesh_dim(u)
+                ! interior contribution
+                g_nl(dim1,dim2,:)=matmul(grad_U_mat_q(dim2,:,:loc), ele_val(u_nl,dim1,ele))
+
+                ! boundary comtributions (have to be done seperately as we need to apply bc's at boundaries)
+                ! local node map counter.
+                start=loc+1
+                do ni=1,size(neigh)
+                    ! get neighbour ele, corresponding faces, and complete local node map
+                    ele_2=neigh(ni)
+
+                    if (ele_2>0) then
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele_2, ele)
+                        finish=start+face_loc(U, face)-1
+                        ! for interior faces we use the face values
+                        g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                    else
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele, ele_2)
+                        finish=start+face_loc(U, face)-1
+                        ! for boundary faces the value we use depends upon if a weak bc is applied
+                        if (velocity_bc_type(dim1,face)==1) then
+                            ! weak bc! use the bc value
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), ele_val(velocity_bc,dim1,face))
+                        else
+                            ! no weak bc, use node values on internal face
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                        end if
+                    end if
+
+                    ! update node map counter
+                    start=start+face_loc(U, face)
+                end do
+
+                ! apply inverse mass
+                g_nl(dim1,dim2,:)=matmul(M_inv, g_nl(dim1,dim2,:))
+            end do
+        end do
+
+        ! call calculate_les_grad_u(g_nl)
+
+        ! Compute modulus of strain rate
+        do i=1, uloc
+            s=0.5*(g_nl(:,:,i)+transpose(g_nl(:,:,i)))
+            ! Calculate modulus of strain rate
+            s_mod(i)=sqrt(2*sum(s**2))
+        end do
+
+        !      print*, "dim lst:", size(du_t,3),size(du_t,3),size(du_t,2)
+
+        filter_scale=1.0
+        ! apply Van Driest damping functions
+        if (associated(distance_to_wall)) then
+            y_wall = ele_val(distance_to_wall, ele)
+            do i=1, uloc
+                iso_visc = norm2( tensor_visc(:,:,i) )
+                y_plus(i) = y_wall(i) * sqrt(norm2(g_nl(:,:,i)+transpose(g_nl(:,:,i))))/sqrt(iso_visc)
+                filter_scale(i) = (1 - exp(-1.0*y_plus(i)/25.0))
+            end do
+
+            ! debugging fields
+            if (associated(y_plus_debug)) then
+                call set(y_plus_debug, ele_nodes(y_plus_debug, ele), y_plus)
+            end if
+        end if
+
+        les_filter_width= length_scale_tensor(du_t, ele_shape(u, ele))
+
+        ! Compute filter width
+        !      if (associated(prescribed_filter_width)) then
+        !        les_filter_width = ele_val(prescribed_filter_width, ele)
+        !      else
+        ! when using the element size to compute the filter width we assume the filter
+        ! width is twice the element size
+
+        !print*, "result:", 4*length_scale_tensor(du_t, ele_shape(u,ele))
+        !      end if
+
+        ! New tactic. Calculate average LES viscosity tensor across element.
+
+        les_visc = 0.0
+        do i=1, uloc
+            les_visc(:,:,i) = les_visc(:,:,i) + &
+                filter_scale(i) * les_filter_width(:,:,1)*(smagorinsky_coefficient**2) * s_mod(i)
+        end do
+
+        les_visc = les_visc / uloc
+
+        !      print*, "les_visc:", les_visc
+        !      print*, "s_mod:", s_mod
+        !      print*, "smagorinsky_coefficient:", smagorinsky_coefficient
+
+        ! store sgs viscosity
+
+        if (associated(tensor_eddy_visc)) then
+            call set(tensor_eddy_visc, ele_nodes(tensor_eddy_visc, ele), les_visc)
+        end if
+
+
+        tensor_visc = tensor_visc + les_visc
+
+    end subroutine les_tensor_viscosity
+
+
+
+    ! LES tensor viscosity a la Roman (2010), Int. J. of Heat and Fluid Flow
+    subroutine les_tensor_viscosity_roman(tensor_visc)
+        integer, parameter :: MESH_DIM = 3
+#ifndef NLOC
+#define NLOC 4
+#endif
+
+        real, dimension(MESH_DIM, MESH_DIM, NLOC), intent(inout) :: tensor_visc
+        real, dimension(MESH_DIM, MESH_DIM, NLOC) :: les_visc
+        real, dimension(MESH_DIM, MESH_DIM) :: les_filter_width
+        real, dimension(MESH_DIM, MESH_DIM, NLOC) :: g_nl
+        real :: magStrainHorz, magStrainVert, iso_visc
+        real :: sgsHorz, sgsVert
+        real, dimension(NLOC) :: y_wall, y_plus, filter_scale
+        real, dimension(NLOC, NLOC) :: M_inv
+
+        integer :: i, j, n
+        real :: dx(MESH_DIM)
+        real :: lenHorzSq, lenVertSq
+
+        X_val=ele_val(X, ele)
+
+        !      print*, "**** les_tensor_viscosity_roman():"
+
+
+
+        ! print*, "tensor_visc dim:", size(tensor_visc(:,1,1)), ",",size(tensor_visc(1,:,1)), ",",size(tensor_visc(1,1,:))
+
+        ! get inverse mass
+        M_inv = shape_shape(u_shape, u_shape, detwei)
+        call invert(M_inv)
+
+        ! Compute gradient of non-linear velocity
+        do dim1=1,MESH_DIM
+            do dim2=1,MESH_DIM
+                ! interior contribution
+                g_nl(dim1,dim2,:)=matmul(grad_U_mat_q(dim2,:,:loc), ele_val(u_nl,dim1,ele))
+
+                ! boundary comtributions (have to be done seperately as we need to apply bc's at boundaries)
+                ! local node map counter.
+                start=loc+1
+                do ni=1,size(neigh)
+                    ! get neighbour ele, corresponding faces, and complete local node map
+                    ele_2=neigh(ni)
+
+                    if (ele_2>0) then
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele_2, ele)
+                        finish=start+face_loc(U, face)-1
+                        ! for interior faces we use the face values
+                        g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                    else
+                        ! obtain corresponding faces, and complete local node map
+                        face=ele_face(U, ele, ele_2)
+                        finish=start+face_loc(U, face)-1
+                        ! for boundary faces the value we use depends upon if a weak bc is applied
+                        if (velocity_bc_type(dim1,face)==1) then
+                            ! weak bc! use the bc value
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), ele_val(velocity_bc,dim1,face))
+                        else
+                            ! no weak bc, use node values on internal face
+                            g_nl(dim1,dim2,:)=g_nl(dim1,dim2,:)+matmul(grad_U_mat_q(dim2,:,start:finish), face_val(u_nl,dim1,face))
+                        end if
+                    end if
+
+                    ! update node map counter
+                    start=start+face_loc(U, face)
+                end do
+
+                ! apply inverse mass
+                g_nl(dim1,dim2,:)=matmul(M_inv, g_nl(dim1,dim2,:))
+            end do
+        end do
+
+        call les_length_scales_squared_roman(X, ele, lenHorzSq, lenVertSq)
+
+        filter_scale=1.0
+        ! apply Van Driest damping functions
+        if (associated(distance_to_wall)) then
+            y_wall = ele_val(distance_to_wall, ele)
+            do n=1, NLOC
+            iso_visc = norm2( tensor_visc(:,:,n) )
+            y_plus(n) = y_wall(n) * sqrt(norm2(g_nl(:,:,n)+transpose(g_nl(:,:,n))))/sqrt(iso_visc)
+            filter_scale(n) = (1 - exp(-1.0*y_plus(n)/25.0))
+        end do
+
+        ! debugging fields
+        if (associated(y_plus_debug)) then
+            call set(y_plus_debug, ele_nodes(y_plus_debug, ele), y_plus)
+        end if
+    end if
+
+    ! Calculate magnitude of horizontal and vertical strain (see Roman)
+
+    magStrainHorz = 0.0
+    magStrainVert = 0.0
+    do n=1, NLOC
+    !          print*,"n:", n
+    !          print*, g_nl(1,1,n), g_nl(2,2,n), g_nl(1,2,n), g_nl(1,3,n), g_nl(3,3,n), g_nl(3,2,n)
+    magStrainHorz = magStrainHorz + &
+        sqrt( 2*g_nl(1,1,n)**2 + 2*g_nl(2,2,n)**2 + 4*g_nl(1,2,n)**2)
+
+    magStrainVert = magStrainVert + &
+        sqrt( 4*g_nl(1,3,n)**2 + 2*g_nl(3,3,n)**2 + 4*g_nl(3,2,n)**2)
+end do
+
+magStrainHorz = magStrainHorz / NLOC
+magStrainVert = magStrainVert / NLOC
+
+sgsHorz = (smagorinsky_coefficient**2) * lenHorzSq * magStrainHorz
+sgsVert = (smagorinsky_coefficient**2) * lenVertSq * magStrainVert
+
+!      print *, "lenHorzSq, lenVertSq:", lenHorzSq, lenVertSq
+!      print *, "magStrainHorz, magStrainVert:", magStrainHorz, magStrainVert
+
+! Average out LES viscosity over element
+les_visc = 0.0
+do i=1, MESH_DIM
+    do j=1, MESH_DIM-1
+        les_visc(i,j,:) = les_visc(i,j,:) + filter_scale(:) * sgsHorz
+    end do
+end do
+
+do i=1, MESH_DIM
+    les_visc(i,MESH_DIM,:) = les_visc(i,MESH_DIM,:) + filter_scale(:) * sgsVert
+end do
+
+les_visc = les_visc / NLOC
+
+
+if (associated(tensor_eddy_visc)) then
+    call set(tensor_eddy_visc, ele_nodes(tensor_eddy_visc, ele), les_visc)
+end if
+
+! Add to viscosity
+tensor_visc = tensor_visc + les_visc
+
+  ! Now spread some of LES visc to neighbours (filter)
+!      do ni=1, size(neigh)
+!        n=neigh(ni)
+!        viscosity(n) = viscosity(e) + 0.5*les_visc
+!      end do
+
+end subroutine les_tensor_viscosity_roman
+
+
+
+
+
+
+
+  ! subroutine calculate_les_grad_u(g_nl)
+
+  !   ! calculated using:
+  !   ! N_i N_j grad_u = N_i delta u_h -
+  !   !                  ({N_i} (u_h^-n^- + u_h^+n^+)) on internal faces -
+  !   !                  (N_i (u_h - u_b) n) on weak dirichlet boundaries
+  !   ! where: {x} = average of x over face
+  !   !        u_h = value of u in element
+  !   !        u_b = dirichlet boundary value
+  !   ! (see Bassi et. al. 2005 - Discontinuous Galerkin solution of the Reynolds-averaged
+  !   ! Navier–Stokes and k–x turbulence model equations, pg. 517
+
+  !   real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)), intent(inout) :: g_nl
+
+  !   real, dimension(ele_loc(u,ele), ele_loc(u,ele)) :: M_inv
+  !   integer :: face_1, face_2
+
+  !   ! interior contribution
+  !   g_nl = shape_tensor_rhs(u_shape, ele_grad_at_quad(u_nl, ele, du_t), detwei)
+
+  !   ! interface contribution
+  !   start=loc+1 ! local node map counter
+  !   do ni=1,size(neigh)
+  !     ! Find the relevant faces.
+  !     ele_2 = neigh(ni)
+  !     face_1 = ele_face(u_nl, ele, ele_2)
+  !     if (ele_2>0) then
+  !       ! Internal faces.
+  !       face_2=ele_face(u_nl, ele_2, ele)
+  !     else
+  !       ! External face.
+  !       face_2=face_1
+  !     end if
+  !     ! complete node map
+  !     finish=start+face_loc(u_nl, face_2)-1
+
+  !     call calculate_les_grad_u_interface(g_nl, face_1, face_2)
+
+  !     ! update node map counter
+  !     start=start+face_loc(u_nl, face)
+  !   end do
+
+  !   ! get inverse mass
+  !   M_inv = shape_shape(u_shape, u_shape, detwei)
+  !   call invert(M_inv)
+
+  !   do dim1=1,mesh_dim(u)
+  !     do dim2=1,mesh_dim(u)
+  !       g_nl(dim1,dim2,:)=matmul(M_inv, g_nl(dim1,dim2,:))
+  !     end do
+  !   end do
+
+  !   ! ewrite(0,'(12(F9.4 ))') g_nl
+  !   ! FLExit('')
+
+  ! end subroutine calculate_les_grad_u
+
+  ! subroutine calculate_les_grad_u_interface(g_nl, face_1, face_2)
+
+  !   real, dimension(mesh_dim(u), mesh_dim(u), ele_loc(u,ele)), intent(inout) :: g_nl
+  !   integer, intent(in) :: face_1, face_2
+
+  !   type(element_type), pointer :: f_shape
+  !   real, dimension(x%dim, face_ngi(u_nl, face_1)) :: normal
+  !   real, dimension(face_ngi(u_nl, face_1)) :: f_detwei, in_q, in_q_2, in_bc_q
+  !   real, dimension(mesh_dim(u), mesh_dim(u), face_ngi(u_nl,face_1)) :: g_nl_int_gi
+  !   real, dimension(mesh_dim(u), mesh_dim(u), face_loc(u_nl,face_1)) :: g_nl_int
+  !   real, dimension(ele_loc(u_nl, ele)) :: elenodes
+  !   real, dimension(face_loc(u_nl, face)) :: facenodes
+
+  !   integer :: i, j
+
+  !   ! shape and detwei are the same for both faces, normal+ = - normal-
+  !   f_shape => face_shape(u_nl, face_1)
+  !   call transform_facet_to_physical(x, face_1, detwei_f=f_detwei, normal=normal)
+
+  !   if (face_1==face_2) then
+  !     ! boundary faces - may need to apply weak dirichlet bc's
+  !     ! = - int_ v_h \cdot (u - u^b) n
+  !     do dim1=1,mesh_dim(u)
+  !       if (velocity_bc_type(dim1,face_1)==1) then
+  !         in_q = face_val_at_quad(u_nl,face_1,dim1)
+  !         in_bc_q = ele_val_at_quad(velocity_bc,face_1,dim1)
+  !         do dim2=1,mesh_dim(u)
+  !           g_nl_int_gi(dim1,dim2,:) = -1.0*(in_q - in_bc_q)*normal(dim2,:)
+  !         end do
+  !       end if
+  !     end do
+  !   else
+  !     ! internal face
+  !     ! = int_ {v_h} \cdot J(x)
+  !     do dim1=1,mesh_dim(u)
+  !       in_q = face_val_at_quad(u_nl,face_1,dim1)
+  !       in_q_2 = face_val_at_quad(u_nl,face_2,dim1)
+  !       do dim2=1,mesh_dim(u)
+  !         g_nl_int_gi(dim1,dim2,:) = -0.5*(in_q - in_q_2)*normal(dim2,:)
+  !       end do
+  !     end do
+  !   end if
+
+  !   ! integrate
+  !   g_nl_int = shape_tensor_rhs(f_shape, g_nl_int_gi, f_detwei)
+
+  !   ! add contributions to gradient
+  !   elenodes = ele_nodes(u_nl, ele)
+  !   facenodes = face_global_nodes(u_nl, face)
+  !   do i=1, face_loc(u_nl, face)
+  !     do j=1, ele_loc(u_nl, face)
+  !       if (facenodes(i) == elenodes(j)) then
+  !         g_nl(:, :, j) = g_nl(:, :, j) + g_nl_int(:, :, i)
+  !       end if
+  !     end do
+  !   end do
+
+  ! end subroutine calculate_les_grad_u_interface
+
+
 
 end subroutine construct_momentum_element_dg
 
@@ -3458,12 +4225,8 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     ! Benchmarking
     t0=mpi_wtime()
 
-    ! Use optimised code?
-#ifdef USE_CTO
-    run_optimal=(u%dim==OPT_NDIM)
-#else
-    run_optimal=.false.
-#endif
+    ! Only works for 3D
+    run_optimal=(u%dim==3)
 
     ewrite(1,*) 'Inside subcycle_momentum_dg'
 
@@ -3505,8 +4268,8 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
         print*, "subcycle_momentum_dg: using optimised code"
 
         call find_linear_parent_mesh(state, u_sub%mesh, vertex_mesh)
-        call allocate(T_max, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMax")
-        call allocate(T_min, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMin")
+        call allocate(T_max, NDIM, vertex_mesh, trim(u_sub%name)//"LimitMax")
+        call allocate(T_min, NDIM, vertex_mesh, trim(u_sub%name)//"LimitMin")
     end if
 
 
@@ -3515,9 +4278,7 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
 
             if(run_optimal) then
                 ! filter wiggles from u
-#ifdef USE_CTO
                 call limit_vb_opt(u_sub)
-#endif
             else
                 ! filter wiggles from u
                 do d =1, u%dim
@@ -3602,7 +4363,6 @@ contains
     ! There is an optimised version of this in Momentum_DG.F90
     ! limit_vb is only ever called from there
 
-#ifdef USE_CTO
     subroutine limit_vb_opt(T)
         !Vertex-based (not Victoria Bitter) limiter from
         !Kuzmin, J. Comp. Appl. Math., 2010
@@ -3698,7 +4458,6 @@ contains
         end do
 
     end subroutine limit_vb_opt
-#endif
 end subroutine subcycle_momentum_dg
 
     
