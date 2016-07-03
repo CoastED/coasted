@@ -26,8 +26,12 @@
 !    USA
 #include "fdebug.h"
 
-! #define MESH_DIM 3
-! #define NLOC 4
+#ifdef USE_CTO
+#include "compile_opt_defs.h"
+#endif
+
+#define NLOC 4
+#define NDIM 3
 
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum
@@ -77,7 +81,6 @@ module momentum_DG
 
     ! Buffer for output messages.
     character(len=255), private :: message
-
     private
     public construct_momentum_dg, &
         momentum_DG_check_options, correct_velocity_dg, &
@@ -155,11 +158,11 @@ module momentum_DG
 
 contains
 
-    ! These must match the files generated from the template file, and
-    ! called below.
 
-#include "Construct_Elements_DG1_TET_QUAD_4_CDG.F90"
-
+    ! Conditionally including the optimised CDG assembly code.
+#ifdef USE_CTO
+#include "Construct_Momentum_Element_DG_opt.F90"
+#endif
 
     subroutine construct_momentum_dg(u, p, rho, x, &
         & big_m, rhs, state, &
@@ -883,9 +886,10 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-                if(U%dim==3 .and. P%mesh%shape%degree==2 &
+#ifdef USE_CTO
+                if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
-                    .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
+                    .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
                     print*, "Optimised DG assembly: Compact DG"
 
                     !    print*, "before assembly loop"
@@ -904,7 +908,7 @@ contains
                         element_loop_cdg: do nnid = 1, len
                             ele = fetch(colours(clr), nnid)
 
-                            call construct_momentum_elements_dg_DG1_TET_QUAD_4_CDG( ele, big_m, rhs, &
+                            call construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                                 & X, U, advecting_velocity, U_mesh, X_old, X_new, &
                                 & u_shape, p_shape, q_shape, &
                                 & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
@@ -934,6 +938,8 @@ contains
 
 
                 else
+! USE_CTO
+#endif
                     !    print*, "main here1"
                     print*, "Non-optimised DG assembly"
 
@@ -975,8 +981,9 @@ contains
                     !    print*, "after assembly loop"
 
                     !$OMP END PARALLEL
+#ifdef USE_CTO
                 end if
-
+#endif
                 call profiler_toc(u, "element_loop")
 
                 if (have_wd_abs) then
@@ -1056,10 +1063,6 @@ contains
 
                 integer, parameter :: MESH_DIM = 3
 
-#ifndef NLOC
-#define NLOC=4
-#endif
-
                 ! Parameter declarations
                 type(vector_field), intent(in) :: X, U, u_cg
                 type(scalar_field), intent(in) :: p
@@ -1079,23 +1082,24 @@ contains
                 ! Stuff that would be inside construct_momentum_element_dg()
                 real, allocatable :: detwei(:)
                 integer :: ni, ele, ele_2, face, dim1, dim2, start, finish
-                real, dimension(U%dim, U%dim, NLOC) :: ug, viscEle
+
+                real, dimension(U%dim, U%dim, ele_loc(u,1)) :: ug, viscEle
                 type(element_type), pointer :: u_shape
                 integer, dimension(:), pointer :: neigh
     
                 ! Loop gubbins
-                real, dimension(U%dim, U%dim, NLOC):: centralEleLesVisc, neighLesVisc, workLesVisc
+                real, dimension(U%dim, U%dim, ele_loc(u,1)):: centralEleLesVisc, neighLesVisc, workLesVisc
                 real, dimension(U%dim, U%dim) :: les_filter_width, lesViscNode, avLesVisc
-                real, dimension(NLOC) :: y_wall, y_plus, filter_scale
+                real, dimension(ele_loc(u,1)) :: y_wall, y_plus, filter_scale
                 real, parameter :: y_plus_dilute=0.90
-                real, dimension(NLOC) :: magStrain, magStrainHorz, magStrainVert, sgsHorz, sgsVert
+                real, dimension(ele_loc(u,1)) :: magStrain, magStrainHorz, magStrainVert, sgsHorz, sgsVert
                 real :: iso_visc, magLesVisc, maxMagLesVisc
-                real, dimension(NLOC, NLOC) :: M_inv
+                real, dimension(ele_loc(u,1), ele_loc(u,1)) :: M_inv
                 real :: depth, depthscale
                 real, parameter :: minDepth=5.25
     
-                real, dimension(U%dim, U%dim, NLOC) :: tensor_visc
-                real, dimension(U%dim, NLOC) :: x_val
+                real, dimension(U%dim, U%dim, ele_loc(u,1)) :: tensor_visc
+                real, dimension(U%dim, ele_loc(u,1)) :: x_val
     
                 integer :: i, j, n, nColours, nElements, nNeighbours, nValidNeighbours, neighEle
                 real :: dx(U%dim)
@@ -1151,7 +1155,7 @@ contains
                     ! (Note: SGS horz/vert are averaged across element)
                     magStrainHorz = 0.0
                     magStrainVert = 0.0
-                    do n=1, NLOC
+                    do n=1, ele_loc(u,1)
                         FLAbort("This bit is wrong: should use strain rate tensor (0.5*(ug_ij+ug+ji)), not gradient tensor")
 !                    magStrainHorz(n) = magStrainHorz(n) + &
 !                        sqrt( 2*ug(1,1,n)**2 + 2*ug(2,2,n)**2 + 4*ug(1,2,n)**2)
@@ -1191,14 +1195,14 @@ contains
 
                 do i=1, U%dim
                     do j=1, U%dim-1
-                        do n=1, NLOC
+                        do n=1, ele_loc(u,1)
                         workLesVisc(i,j,n) = sgsHorz(n)
                     end do
                 end do
             end do
           
             do i=1, U%dim
-                do n=1, NLOC
+                do n=1, ele_loc(u,1)
                 workLesVisc(i,U%dim,n) =  sgsVert(n)
             end do
         end do
@@ -4195,9 +4199,7 @@ contains
 
 end subroutine construct_momentum_interface_dg
 
-! Note. The optimised version of this has moved to
-! Momentum_Equation_template.F90, included by
-! Momentum_Equation.F90
+
 subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     type(vector_field), intent(inout) :: u
     type(vector_field), intent(inout):: mom_rhs
@@ -4268,8 +4270,8 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
         print*, "subcycle_momentum_dg: using optimised code"
 
         call find_linear_parent_mesh(state, u_sub%mesh, vertex_mesh)
-        call allocate(T_max, NDIM, vertex_mesh, trim(u_sub%name)//"LimitMax")
-        call allocate(T_min, NDIM, vertex_mesh, trim(u_sub%name)//"LimitMin")
+        call allocate(T_max, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMax")
+        call allocate(T_min, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMin")
     end if
 
 
@@ -4363,6 +4365,7 @@ contains
     ! There is an optimised version of this in Momentum_DG.F90
     ! limit_vb is only ever called from there
 
+#if USE_CTO
     subroutine limit_vb_opt(T)
         !Vertex-based (not Victoria Bitter) limiter from
         !Kuzmin, J. Comp. Appl. Math., 2010
@@ -4375,12 +4378,12 @@ contains
         ! local numbers
         ! integer, dimension(:), pointer :: T_ele
         ! gradient scaling factor
-        real, dimension(NDIM) :: alpha
+        real, dimension(opDim) :: alpha
         ! Global node lists for elements on DG and vertex meshes
         integer, dimension(:), pointer :: T_ele, V_ele
         ! local field values. P1DG, so always NLOC in size
-        real, dimension(NDIM, NLOC) :: T_val, T_val_slope, T_val_min,T_val_max, T_val_minus_bar
-        real, dimension(NDIM) :: Tbar
+        real, dimension(opDim, opNloc) :: T_val, T_val_slope, T_val_min,T_val_max, T_val_minus_bar
+        real, dimension(opDim) :: Tbar
 
         if (.not. element_degree(T%mesh, 1)==1 .or. continuity(T%mesh)>=0) then
             FLExit("The vertex based slope limiter only works for P1DG fields.")
@@ -4396,19 +4399,19 @@ contains
         ! T_max will be visited several times. (Necessary for min/max values)
 
         do ele = 1, ele_count(T)
-            T_ele => T%mesh%ndglno(NLOC*(ele-1)+1:NLOC*ele)
+            T_ele => T%mesh%ndglno(opNloc*(ele-1)+1:opNloc*ele)
             T_val = T%val(:,T_ele)
-            do concurrent (i=1:NDIM)
-                Tbar(i) = sum(T_val(i, :))/NLOC
+            do concurrent (i=1:opDim)
+                Tbar(i) = sum(T_val(i, :))/opNloc
             end do
 
             ! do maxes and mins
-            V_ele => vertex_mesh%ndglno(NLOC*(ele-1)+1:NLOC*ele)
+            V_ele => vertex_mesh%ndglno(opNloc*(ele-1)+1:opNloc*ele)
             T_val_max = T_max%val(:,V_ele)
             T_val_min = T_min%val(:,V_ele)
 
-            do node = 1,NLOC
-                do concurrent (i=1:NDIM)
+            do node = 1,opNloc
+                do concurrent (i=1:opDim)
                     T_val_min(i, node) = min(T_val_min(i, node), Tbar(i))
                     T_val_max(i, node) = max(T_val_max(i, node), Tbar(i))
                 end do
@@ -4425,24 +4428,24 @@ contains
             alpha = 1.
 
             ! Element node numbers (T mesh and vertex mesh), with Tbar etc.
-            T_ele => T%mesh%ndglno(NLOC*(ele-1)+1:NLOC*ele)
+            T_ele => T%mesh%ndglno(opNloc*(ele-1)+1:opNloc*ele)
             T_val = T%val(:,T_ele)
-            do concurrent (i=1:NDIM)
-                Tbar(i) = sum(T_val(i, :))/NLOC
+            do concurrent (i=1:opDim)
+                Tbar(i) = sum(T_val(i, :))/opNloc
             end do
 
-            do concurrent (node=1:NLOC)
+            do concurrent (node=1:opNloc)
                 T_val_slope(:,node) = T_val(:,node) - Tbar
                 T_val_minus_bar(:,node) = T_val(:,node) - Tbar
             end do
 
-            V_ele => vertex_mesh%ndglno(NLOC*(ele-1)+1:NLOC*ele)
+            V_ele => vertex_mesh%ndglno(opNloc*(ele-1)+1:opNloc*ele)
             T_val_max = T_max%val(:,V_ele)
             T_val_min = T_min%val(:,V_ele)
 
             !loop over nodes, adjust alpha
-            do node = 1, NLOC
-                do concurrent (i=1:NDIM)
+            do node = 1, opNloc
+                do concurrent (i=1:opDim)
                     !check whether to use max or min, and avoid floating point algebra errors due to round-off and underflow
                     if(T_val(i,node)>Tbar(i)*(1.0+sign(1.0e-12,Tbar(i))) .and. T_val_minus_bar(i,node) > tiny(0.0)*1e10) then
                         alpha(i) = min(alpha(i),(T_val_max(i,node)-Tbar(i))/T_val_minus_bar(i,node) )
@@ -4458,6 +4461,8 @@ contains
         end do
 
     end subroutine limit_vb_opt
+#endif
+
 end subroutine subcycle_momentum_dg
 
     

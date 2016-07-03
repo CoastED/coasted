@@ -6,6 +6,9 @@
 # A. Creech <a.creech@ed.ac.uk>, 7th Aug 2016
 # ----------------------------------------------------------------------------
 
+
+# From parameters
+
 opt_flml_file="$1"
 
 if ! test -f "$opt_flml_file"
@@ -113,10 +116,20 @@ case "$opt_surface_degree" in
      	exit 1;;
 esac
 
+# Find dependencies for include file, and touch them. This should strictly
+# speaking be done by Makefile dependencies: this is a quick fix for now.
+
+dependencies="`grep -le \#include.*compile_opt_defs\.h */*.F90`"
+
+for dfile in $dependencies
+do
+	touch -f "$dfile"
+done
+
 # Now write defines to include file compile_opt_defs.h
 # This will be used in Fortran only, so '!' comments allowed.
 
-cat > include/compile_opt_defs.h << EOF
+cat > include/compile_opt_defs.h<< EOF
 ! ----------------------------------------------------------------------------
 ! Compile-time optimisation definitions file. Based upon FLML file
 ! $opt_flml_file
@@ -124,16 +137,16 @@ cat > include/compile_opt_defs.h << EOF
 ! Generated at `date`
 ! ----------------------------------------------------------------------------
 
-#define OPT_NDIM $opt_dimension
-#define OPT_NFACES $opt_nfaces
-#define OPT_VEL_DEGREE $vel_ele_degree
-#define OPT_PRES_DEGREE $pres_ele_degree
-#define OPT_NLOC $opt_nloc
-#define OPT_NGI $opt_ele_ngi
-#define OPT_FLOC $opt_floc
-#define OPT_FNGI $opt_fngi
-#define OPT_P_FLOC $opt_p_floc
-#define OPT_EFLOC ( OPT_NLOC + OPT_NFACES * OPT_FLOC )
+#define opDim $opt_dimension
+#define opFaces $opt_nfaces
+#define opVelDeg $vel_ele_degree
+#define opPresDeg $pres_ele_degree
+#define opNloc $opt_nloc
+#define opNgi $opt_ele_ngi
+#define opFloc $opt_floc
+#define opFngi $opt_fngi
+#define opPFloc $opt_p_floc
+#define opEFloc ( opNloc + opFaces* opFloc)
 EOF
 
 exit 0

@@ -2,10 +2,6 @@
 ! For simplicity, removed following functionality:
 !   -   Arbitrary upwind viscosity scheme
 
-#define ELEMENT_CONFIG
-
-#include "element_type_defs.h"
-
 !------------------ Start of template code ------------------------------
 
 subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
@@ -74,35 +70,35 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! Bilinear forms.
 
-    real, dimension(NLOC, NLOC) :: Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat
+    real, dimension(opNloc, opNloc) :: Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat
 
-    real, dimension(NDIM, NLOC, NLOC) :: ele2grad_mat, Abs_mat
-    real, dimension(NDIM, NDIM, NLOC, NLOC) :: Abs_mat_sphere
+    real, dimension(opDim, opNloc, opNloc) :: ele2grad_mat, Abs_mat
+    real, dimension(opDim, opDim, opNloc, opNloc) :: Abs_mat_sphere
 
-    real, dimension(NDIM, NLOC) :: Abs_lump
-    real, dimension(NDIM, NDIM, NLOC) :: Abs_lump_sphere
+    real, dimension(opDim, opNloc) :: Abs_lump
+    real, dimension(opDim, opDim, opNloc) :: Abs_lump_sphere
 
-    real, dimension(NLOC) :: source_lump
+    real, dimension(opNloc) :: source_lump
 
-    real, dimension(NLOC, NLOC) :: Q_inv
-    real, dimension(NDIM, NLOC, EFLOC) :: Grad_u_mat_q, Div_u_mat_q
-    real, dimension(NDIM, NDIM, EFLOC, EFLOC) :: Viscosity_mat
-    real, dimension(NDIM) :: node_stress_diag, resid_stress_term
+    real, dimension(opNloc, opNloc) :: Q_inv
+    real, dimension(opDim, opNloc, opEFloc) :: Grad_u_mat_q, Div_u_mat_q
+    real, dimension(opDim, opDim, opEFloc, opEFloc) :: Viscosity_mat
+    real, dimension(opDim) :: node_stress_diag, resid_stress_term
     real :: visc_dot_prod
-    real, dimension(NDIM, NDIM) :: visc_grad_dot_u
-    real, dimension(NDIM, NDIM, NLOC) :: Viscosity_ele
-    real, dimension(NDIM, NDIM, NGI) :: visc_ele_quad
+    real, dimension(opDim, opDim) :: visc_grad_dot_u
+    real, dimension(opDim, opDim, opNloc) :: Viscosity_ele
+    real, dimension(opDim, opDim, opNgi) :: visc_ele_quad
 
-    real, dimension(NDIM, NLOC) :: x_val, x_val_2, u_val
+    real, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
 
     ! \Int_{ele} N_i kappa N_j dV, used for CDG fluxes
-    real, dimension(NDIM, NDIM, NLOC, NLOC) :: kappa_mat
+    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
 
     ! Local assembly matrices.
-    real, dimension(NLOC) :: l_MassLump, l_move_masslump
+    real, dimension(opNloc) :: l_MassLump, l_move_masslump
 
     ! Local node number map for 2nd order element.
-    integer, dimension(EFLOC) :: local_glno
+    integer, dimension(opEFloc) :: local_glno
 
     ! Local variables.
 
@@ -116,29 +112,29 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     integer :: start, finish
 
     ! Variable transform times quadrature weights.
-    real, dimension(NGI) :: detwei, detwei_old, detwei_new, coefficient_detwei
+    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei
     ! Transformed gradient function for velocity.
     ! Transformed gradient function for grid velocity.
     ! Transformed gradient function for auxiliary variable.
-    real, dimension(NLOC, NGI, NDIM) :: du_t, dug_t, dq_t
+    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
 
     ! Density at quadrature points.
     ! Coriolis magnitude and sign at quadrature points.
 
-    real, dimension(NGI) :: Rho_q, Coriolis_q
+    real, dimension(opNgi) :: Rho_q, Coriolis_q
     ! Different velocities at quad points.
-    real, dimension(NDIM, NGI) :: u_nl_q
-    real, dimension(NGI) :: u_nl_div_q
+    real, dimension(opDim, opNgi) :: u_nl_q
+    real, dimension(opNgi) :: u_nl_div_q
 
     ! surface tension terms
-    real, dimension(NDIM, NDIM, NGI) :: tension
-    real, dimension(NDIM, NGI) :: dtensiondj
+    real, dimension(opDim, opDim, opNgi) :: tension
+    real, dimension(opDim, opNgi) :: dtensiondj
 
     ! Node and shape pointers.
 
     ! JRM: Can you avoid using pointers?
     ! integer, dimension(:), pointer :: u_ele, p_ele
-    integer, dimension(NLOC ):: u_ele, p_ele, x_ele
+    integer, dimension(opNloc ):: u_ele, p_ele, x_ele
     type(element_type), intent(in), pointer :: u_shape, p_shape, q_shape
     !    type(element_type), pointer :: u_face_shape, p_face_shape, q_face_shape
 
@@ -151,12 +147,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! What we will be adding to the matrix and RHS - assemble these as we
     ! go, so that we only do the calculations we really need
-    real, dimension(NDIM, EFLOC) :: big_m_diag_addto, rhs_addto
+    real, dimension(opDim, opEFloc) :: big_m_diag_addto, rhs_addto
 
-    real, dimension(NDIM, NDIM, EFLOC, EFLOC) :: big_m_tensor_addto
-    logical, dimension(NDIM, NDIM) :: diagonal_block_mask, off_diagonal_block_mask
+    real, dimension(opDim, opDim, opEFloc, opEFloc) :: big_m_tensor_addto
+    logical, dimension(opDim, opDim) :: diagonal_block_mask, off_diagonal_block_mask
     ! Addto matrices for when subcycling is performed
-    real, dimension(NDIM, NDIM, EFLOC, EFLOC) :: subcycle_m_tensor_addto
+    real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
 
     !Switch to select if we are assembling the primal or dual form
     logical :: primal
@@ -169,45 +165,45 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     logical :: on_sphere
 
     ! Absorption matrices
-    real, dimension(NDIM, NGI) :: absorption_gi
-    real, dimension(NDIM, NDIM, NGI) :: tensor_absorption_gi
+    real, dimension(opDim, opNgi) :: absorption_gi
+    real, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
 
     ! Add vertical velocity relaxation to the absorption if present
     real, intent(in) :: vvr_sf
-    real, dimension(NDIM, NDIM, NGI) :: vvr_abs
-    real, dimension(NDIM, NGI) :: vvr_abs_diag
-    real, dimension(NGI) :: depth_at_quads
+    real, dimension(opDim, opDim, opNgi) :: vvr_abs
+    real, dimension(opDim, opNgi) :: vvr_abs_diag
+    real, dimension(opNgi) :: depth_at_quads
     type(scalar_field), intent(in) :: depth
 
     ! Add implicit buoyancy to the absorption if present
     real, intent(in) :: ib_min_grad
-    real, dimension(NDIM, NDIM, NGI) :: ib_abs
-    real, dimension(NDIM, NGI) :: ib_abs_diag
-    real, dimension(NLOC, NGI, NDIM) :: dt_rho
-    real, dimension(NDIM, NGI) :: grav_at_quads, grad_rho
-    real, dimension(NDIM, NLOC) :: ele_grav_val
-    real, dimension(NGI) :: drho_dz
+    real, dimension(opDim, opDim, opNgi) :: ib_abs
+    real, dimension(opDim, opNgi) :: ib_abs_diag
+    real, dimension(opNloc, opNgi, opDim) :: dt_rho
+    real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
+    real, dimension(opDim, opNloc) :: ele_grav_val
+    real, dimension(opNgi) :: drho_dz
 
 !    ! Non-linear approximation to the PhaseVolumeFraction field
     type(scalar_field), intent(in) :: nvfrac
 !    type(element_type), pointer :: nvfrac_shape
 !    ! Transformed gradient function for the non-linear PhaseVolumeFraction.
-!    real, dimension(NLOC, NGI, NDIM) :: dnvfrac_t
+!    real, dimension(opNloc, opNgi, opDim) :: dnvfrac_t
 !    ! real, dimension(,:,:), allocatable :: dnvfrac_t
 !    ! nvfrac at quadrature points.
-!    real, dimension(NGI) :: nvfrac_gi, u_nl_dot_grad_nvfrac_gi
-!    real, dimension(NDIM, NGI) :: grad_nvfrac_gi
+!    real, dimension(opNgi) :: nvfrac_gi, u_nl_dot_grad_nvfrac_gi
+!    real, dimension(opDim, opNgi) :: grad_nvfrac_gi
 
     ! Moving mesh
-    real, dimension(NDIM, NGI) :: ele_u_mesh_quad
+    real, dimension(opDim, opNgi) :: ele_u_mesh_quad
 
     ! element centre and neighbour centre
     ! for IP parameters
 
-    real, dimension(NDIM) :: ele_centre, neigh_centre, face_centre, face_centre_2
+    real, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
     real :: turbine_fluxfac
 
-    real, dimension(NGI) :: alpha_u_quad
+    real, dimension(opNgi) :: alpha_u_quad
 
     ! added for partial stress form (sp911)
     logical, intent(in) :: partial_stress
@@ -219,7 +215,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         & les_filter_width_debug
     type(tensor_field), pointer, intent(inout) :: tensor_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
-    real, dimension(NDIM, NDIM, FLOC) :: tmp_face_tensor
+    real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
     integer :: iloc, jloc, idim, jdim
 
@@ -234,68 +230,68 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Matrix for assembling primal fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, FLOC, NLOC) :: face_primal_fluxes_mat
-    real, dimension(FLOC, FLOC) :: face_shape_shape_work
+    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
+    real, dimension(opFloc, opFloc) :: face_shape_shape_work
 
     ! Matrix for assembling penalty fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, FLOC, FLOC) :: face_penalty_fluxes_mat
+    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
 
     ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
     !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
     !    & normal_mat
     ! I think the above is wrong, and the dimensions below are correct.
-    real, dimension(NDIM, FLOC, FLOC) :: face_normal_mat
+    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
 
     ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
     !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
     !        & kappa_normal_mat
-    real, dimension(NDIM, FLOC, FLOC) :: face_kappa_normal_mat
+    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
 
     ! Face objects and numberings.
     ! type(element_type), intent(in), pointer :: u_shape, u_shape_2, p_shape, q_shape
     type(element_type) :: face_u_shape, face_p_shape, face_q_shape
-    integer, dimension(FLOC) :: u_face_l, u_mesh_glno, u_face_glno_1, u_face_glno_2, Rho_face_glno_1
+    integer, dimension(opFloc) :: u_face_l, u_mesh_glno, u_face_glno_1, u_face_glno_2, Rho_face_glno_1
 
-    integer, dimension(FLOC) :: q_face_l
+    integer, dimension(opFloc) :: q_face_l
 
     ! Note that both sides of the face can be assumed to have the same
     ! number of quadrature points.
-    real, dimension(FNGI) :: face_Rho_q !, face_nvfrac_gi
-    real, dimension(FLOC) :: face_Rho_val
-    real, dimension(NDIM, FNGI) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
-    real, dimension(NDIM, FNGI) :: face_u_mesh_quad
+    real, dimension(opFngi) :: face_Rho_q !, face_nvfrac_gi
+    real, dimension(opFloc) :: face_Rho_val
+    real, dimension(opDim, opFngi) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
+    real, dimension(opDim, opFngi) :: face_u_mesh_quad
 
-    logical, dimension(FNGI) :: face_inflow
-    real, dimension(FNGI) :: face_u_nl_q_dotn, face_income
+    logical, dimension(opFngi) :: face_inflow
+    real, dimension(opFngi) :: face_u_nl_q_dotn, face_income
     ! Variable transform times quadrature weights.
-    real, dimension(FNGI) :: face_detwei, face_detwei_work
-    real, dimension(FNGI) :: face_inner_advection_integral, face_outer_advection_integral
+    real, dimension(opFngi) :: face_detwei, face_detwei_work
+    real, dimension(opFngi) :: face_inner_advection_integral, face_outer_advection_integral
 
     ! Bilinear forms
     !real, dimension(face_loc(U,face),face_loc(U,face)) :: nnAdvection_out
     !real, dimension(face_loc(U,face),face_loc(U,face_2)) :: nnAdvection_in
     ! real, dimension(1, mesh_dim(U), face_loc(P,face),face_loc(U,face)) :: mnCT
-    real, dimension(FLOC, FLOC) :: face_nnAdvection_out
-    real, dimension(FLOC, FLOC) :: face_nnAdvection_in
+    real, dimension(opFloc, opFloc) :: face_nnAdvection_out
+    real, dimension(opFloc, opFloc) :: face_nnAdvection_in
 
     ! This is almost good enough.
-    real, dimension(1, NDIM, P_FLOC, FLOC) :: face_mnCT
+    real, dimension(1, opDim, opPFloc, opFloc) :: face_mnCT
 
 
     ! Viscosity values on face (used for CDG and IP fluxes)
-    real, dimension(NDIM, NDIM, FNGI) :: face_kappa_gi
-    real, dimension(NDIM, NDIM, FLOC) :: face_visc_val
+    real, dimension(opDim, opDim, opFngi) :: face_kappa_gi
+    real, dimension(opDim, opDim, opFloc) :: face_visc_val
 
     ! surfacetension stuff
-    real, dimension(NDIM, NDIM, FNGI) :: face_tension_q
+    real, dimension(opDim, opDim, opFngi) :: face_tension_q
 
     integer :: face_dim, face_start, face_finish
     logical :: face_boundary, face_free_surface, face_no_normal_flow, face_l_have_pressure_bc
-    logical, dimension(NDIM) :: face_dirichlet
+    logical, dimension(opDim) :: face_dirichlet
 
     integer :: face_d1, face_d2
 
@@ -349,13 +345,13 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     p_ele=ele_nodes(P,ele)  ! Pressure
     x_ele=ele_nodes(X,ele) ! Coords
 
-    local_glno(:NLOC)=u_ele ! Viscosity node list
+    local_glno(:opNloc)=u_ele ! Viscosity node list
 
 
     !print*, "u_shape%n(:,:):", u_shape%n(:,:)
 
     ! x_val = ele_val(X,ele)
-    do concurrent (i=1:NDIM)
+    do concurrent (i=1:opDim)
         x_val(i, :) = X%val(i, x_ele)
     end do
 
@@ -417,7 +413,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! Viscosity matrices
     if(Viscosity%field_type==FIELD_TYPE_CONSTANT) then
-        do concurrent(iloc=1:NLOC)
+        do concurrent(iloc=1:opNloc)
             Viscosity_ele(:, :, iloc)=Viscosity%val(:, :, 1)
         end do
     else
@@ -429,7 +425,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         ! Isotropic / scalar LES
         if(have_les) then
             if(have_isotropic_les) then
-                do concurrent(dim1=1:NDIM)
+                do concurrent(dim1=1:opDim)
                     Viscosity_ele(dim1, dim1, :) = &
                         Viscosity_ele(dim1, dim1, :)+eddy_visc%val(u_ele)
                 end do
@@ -461,7 +457,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         ! (and its derivative inverse_mass or inverse_mass_lump)
         ! so should be evaluated at t+dt
         ! rho_mat = shape_shape(u_shape, u_shape, detwei_new*Rho_q)
-        do concurrent(iloc=1:NLOC, jloc=1:NLOC)
+        do concurrent(iloc=1:opNloc, jloc=1:opNloc)
             ! Main mass matrix.
             rho_mat(iloc,jloc)=dot_product(u_shape%n(iloc,:)*u_shape%n(jloc,:), detwei_new*Rho_q)
         end do
@@ -483,12 +479,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     else
         if(have_mass.and.assemble_element) then
             if(lump_mass) then
-                do dim = 1, NDIM
-                    big_m_diag_addto(dim, :NLOC) = big_m_diag_addto(dim, :NLOC) + l_masslump
+                do dim = 1, opDim
+                    big_m_diag_addto(dim, :opNloc) = big_m_diag_addto(dim, :opNloc) + l_masslump
                 end do
             else
-                do dim = 1, NDIM
-                    big_m_tensor_addto(dim, dim, :NLOC, :NLOC) = big_m_tensor_addto(dim, dim, :NLOC, :NLOC) + rho_mat
+                do dim = 1, opDim
+                    big_m_tensor_addto(dim, dim, :opNloc, :opNloc) = big_m_tensor_addto(dim, dim, :opNloc, :opNloc) + rho_mat
                 end do
             end if
         end if
@@ -506,20 +502,20 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             rho_move_mat = shape_shape(u_shape, u_shape, (detwei_new-detwei_old)*Rho_q)
             if(lump_mass) then
                 l_move_masslump= sum(rho_move_mat,2)
-                !                do dim = 1, NDIM
-                !                    rhs_addto(dim,:NLOC) = rhs_addto(dim,:NLOC) - l_move_masslump*u_val(dim,:)/dt
+                !                do dim = 1, opDim
+                !                    rhs_addto(dim,:opNloc) = rhs_addto(dim,:opNloc) - l_move_masslump*u_val(dim,:)/dt
                 !                end do
-                rhs_addto(1,:NLOC) = rhs_addto(1,:NLOC) - l_move_masslump*u_val(1,:)/dt
-                rhs_addto(2,:NLOC) = rhs_addto(2,:NLOC) - l_move_masslump*u_val(2,:)/dt
-                rhs_addto(3,:NLOC) = rhs_addto(3,:NLOC) - l_move_masslump*u_val(3,:)/dt
+                rhs_addto(1,:opNloc) = rhs_addto(1,:opNloc) - l_move_masslump*u_val(1,:)/dt
+                rhs_addto(2,:opNloc) = rhs_addto(2,:opNloc) - l_move_masslump*u_val(2,:)/dt
+                rhs_addto(3,:opNloc) = rhs_addto(3,:opNloc) - l_move_masslump*u_val(3,:)/dt
 
             else
-                !                do dim = 1, NDIM
-                !                    rhs_addto(dim,:NLOC) = rhs_addto(dim,:NLOC) - matmul(rho_move_mat, u_val(dim,:))/dt
+                !                do dim = 1, opDim
+                !                    rhs_addto(dim,:opNloc) = rhs_addto(dim,:opNloc) - matmul(rho_move_mat, u_val(dim,:))/dt
                 !                end do
-                rhs_addto(1,:NLOC) = rhs_addto(1,:NLOC) - matmul(rho_move_mat, u_val(1,:))/dt
-                rhs_addto(2,:NLOC) = rhs_addto(2,:NLOC) - matmul(rho_move_mat, u_val(2,:))/dt
-                rhs_addto(3,:NLOC) = rhs_addto(3,:NLOC) - matmul(rho_move_mat, u_val(3,:))/dt
+                rhs_addto(1,:opNloc) = rhs_addto(1,:opNloc) - matmul(rho_move_mat, u_val(1,:))/dt
+                rhs_addto(2,:opNloc) = rhs_addto(2,:opNloc) - matmul(rho_move_mat, u_val(2,:))/dt
+                rhs_addto(3,:opNloc) = rhs_addto(3,:opNloc) - matmul(rho_move_mat, u_val(3,:))/dt
             end if
         end if
     end if
@@ -531,12 +527,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         Coriolis_mat = shape_shape(u_shape, u_shape, Rho_q*Coriolis_q*detwei)
 
         ! cross terms in U_ and V_ for coriolis
-        big_m_tensor_addto(U_, V_, :NLOC, :NLOC) = big_m_tensor_addto(U_, V_, :NLOC, :NLOC) - dt*theta*coriolis_mat
-        big_m_tensor_addto(V_, U_, :NLOC, :NLOC) = big_m_tensor_addto(V_, U_, :NLOC, :NLOC) + dt*theta*coriolis_mat
+        big_m_tensor_addto(U_, V_, :opNloc, :opNloc) = big_m_tensor_addto(U_, V_, :opNloc, :opNloc) - dt*theta*coriolis_mat
+        big_m_tensor_addto(V_, U_, :opNloc, :opNloc) = big_m_tensor_addto(V_, U_, :opNloc, :opNloc) + dt*theta*coriolis_mat
 
         if(acceleration)then
-            rhs_addto(U_, :NLOC) = rhs_addto(U_, :NLOC) + matmul(coriolis_mat, u_val(V_,:))
-            rhs_addto(V_, :NLOC) = rhs_addto(V_, :NLOC) - matmul(coriolis_mat, u_val(U_,:))
+            rhs_addto(U_, :opNloc) = rhs_addto(U_, :opNloc) + matmul(coriolis_mat, u_val(V_,:))
+            rhs_addto(V_, :opNloc) = rhs_addto(V_, :opNloc) - matmul(coriolis_mat, u_val(U_,:))
         end if
     end if
 
@@ -600,7 +596,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !                    ! We need to compute \int{T div(u_nl vfrac) T},
 !                    ! so split up the div using the product rule and compute
 !                    ! \int{T vfrac div(u_nl) T} + \int{T u_nl grad(vfrac) T}
-!                    do i = 1, NGI
+!                    do i = 1, opNgi
 !                        u_nl_dot_grad_nvfrac_gi(i) = dot_product(U_nl_q(:,i), grad_nvfrac_gi(:,i))
 !                    end do
 !                    Advection_mat = -dshape_dot_vector_shape(du_t, U_nl_q, u_shape, detwei*Rho_q*nvfrac_gi) &
@@ -626,7 +622,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !                    ! We need to compute \int{T div(vfrac u_nl) T},
 !                    ! so split up the div using the product rule and compute
 !                    ! \int{T vfrac div(u_nl) T} + \int{T u_nl grad(vfrac) T}
-!                    do i = 1, NGI
+!                    do i = 1, opNgi
 !                        u_nl_dot_grad_nvfrac_gi(i) = dot_product(U_nl_q(:,i), grad_nvfrac_gi(:,i))
 !                    end do
 !                    Advection_mat = shape_vector_dot_dshape(u_shape, U_nl_q, du_t, detwei*Rho_q*nvfrac_gi) &
@@ -648,18 +644,18 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             end if
         end if
 
-        do dim = 1, NDIM
+        do dim = 1, opDim
             if(subcycle) then
-                subcycle_m_tensor_addto(dim, dim, :NLOC, :NLOC) &
-                    &= subcycle_m_tensor_addto(dim, dim, :NLOC, :NLOC) &
+                subcycle_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
+                    &= subcycle_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
                     &+ advection_mat
             else
-                big_m_tensor_addto(dim, dim, :NLOC, :NLOC) &
-                    &= big_m_tensor_addto(dim, dim, :NLOC, :NLOC) &
+                big_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
+                    &= big_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
                     &+ dt*theta*advection_mat
             end if
             if(acceleration.and..not.subcycle) then
-                rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - matmul(advection_mat, u_val(dim,:))
+                rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(advection_mat, u_val(dim,:))
             end if
         end do
 
@@ -670,14 +666,14 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         Source_mat = shape_shape(U_shape, ele_shape(Source,ele), detwei*Rho_q)
         if(lump_source) then
             source_lump = sum(source_mat, 2)
-            do dim = 1, NDIM
+            do dim = 1, opDim
                 ! lumped source
-                rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) + source_lump*(ele_val(source, dim, ele))
+                rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) + source_lump*(ele_val(source, dim, ele))
             end do
         else
-            do dim = 1, NDIM
+            do dim = 1, opDim
                 ! nonlumped source
-                rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) + matmul(source_mat, ele_val(source, dim, ele))
+                rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) + matmul(source_mat, ele_val(source, dim, ele))
             end do
         end if
     end if
@@ -699,17 +695,17 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         if (on_sphere) then
             ! If were on a spherical Earth evaluate the direction of the gravity vector
             ! exactly at quadrature points.
-            rhs_addto(:, :NLOC) = rhs_addto(:, :NLOC) + shape_vector_rhs(u_shape, &
+            rhs_addto(:, :opNloc) = rhs_addto(:, :opNloc) + shape_vector_rhs(u_shape, &
                 sphere_inward_normal_at_quad_ele(X, ele), &
                 coefficient_detwei)
         else
 
 !            if(multiphase) then
-!                rhs_addto(:, :NLOC) = rhs_addto(:, :NLOC) + shape_vector_rhs(u_shape, &
+!                rhs_addto(:, :opNloc) = rhs_addto(:, :opNloc) + shape_vector_rhs(u_shape, &
 !                    ele_val_at_quad(gravity, ele), &
 !                    coefficient_detwei*nvfrac_gi)
 !            else
-                rhs_addto(:, :NLOC) = rhs_addto(:, :NLOC) + shape_vector_rhs(u_shape, &
+                rhs_addto(:, :opNloc) = rhs_addto(:, :opNloc) + shape_vector_rhs(u_shape, &
                     ele_val_at_quad(gravity, ele), &
                     coefficient_detwei)
 !            end if
@@ -741,7 +737,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! grav_at_quads=ele_val_at_quad(gravity, ele)
 
                 if(gravity%field_type==FIELD_TYPE_CONSTANT) then
-                    do concurrent (iloc=1:NLOC)
+                    do concurrent (iloc=1:opNloc)
                         ele_grav_val(:,iloc) = gravity%val(:,1)
                     end do
                     grav_at_quads=matmul(ele_grav_val, u_shape%n)
@@ -750,12 +746,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                     grav_at_quads=matmul(gravity%val(:,x_ele), u_shape%n)
                 end if
 
-                do concurrent (i=1:NGI)
+                do concurrent (i=1:opNgi)
                     vvr_abs_diag(:,i)=vvr_sf*gravity_magnitude*dt*grav_at_quads(:,i)*rho_q(i)/depth_at_quads(i)
                 end do
             else
                 ! on_sphere
-                do concurrent(i=1:NGI)
+                do concurrent(i=1:opNgi)
                     vvr_abs_diag(3,i)=-vvr_sf*gravity_magnitude*dt*rho_q(i)/depth_at_quads(i)
                 end do
                 vvr_abs=rotate_diagonal_to_sphere_gi(X, ele, vvr_abs_diag)
@@ -774,7 +770,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             else
 !                grav_at_quads=ele_val_at_quad(gravity, ele)
                 if(gravity%field_type==FIELD_TYPE_CONSTANT) then
-                        do concurrent (iloc=1:NLOC)
+                        do concurrent (iloc=1:opNloc)
                             ele_grav_val(:,iloc) = gravity%val(:,1)
                         end do
                         grav_at_quads=matmul(ele_grav_val, u_shape%n)
@@ -784,19 +780,19 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 end if
            end if
 
-            do i=1, NGI
+            do i=1, opNgi
                 drho_dz(i)=dot_product(grad_rho(:,i),grav_at_quads(:,i)) ! Divide this by rho_0 for non-Boussinesq?
                 if (drho_dz(i) < ib_min_grad) drho_dz(i)=ib_min_grad ! Default ib_min_grad=0.0
             end do
 
             ! Form the implicit buoyancy absorption terms
             if (on_sphere) then
-                do i=1, NGI
+                do i=1, opNgi
                     ib_abs_diag(3,i)=-theta*dt*gravity_magnitude*drho_dz(i)
                 end do
                 ib_abs=rotate_diagonal_to_sphere_gi(X, ele, ib_abs_diag)
             else
-                do i=1, NGI
+                do i=1, opNgi
                     ib_abs_diag(:,i)=theta*dt*gravity_magnitude*drho_dz(i)*grav_at_quads(:,i)
                 end do
             end if
@@ -816,7 +812,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             depth_at_quads = ele_val_at_quad(depth, ele) + (theta_nl*ele_val_at_quad(p, ele) + (1.0-theta_nl)*ele_val_at_quad(old_pressure, ele))/gravity_magnitude
             ! now reuse depth_at_quads to be the absorption coefficient: C_D*|u|/H
             depth_at_quads = (ele_val_at_quad(swe_bottom_drag, ele)*sqrt(sum(ele_val_at_quad(swe_u_nl, ele)**2, dim=1)))/depth_at_quads
-            do i=1, NDIM
+            do i=1, opDim
                 absorption_gi(i,:) = absorption_gi(i,:) + depth_at_quads
             end do
 
@@ -836,19 +832,19 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
                 Abs_lump_sphere = sum(Abs_mat_sphere, 4)
                 if (assemble_element) then
-                    do dim = 1, NDIM
-                        do dim2 = 1, NDIM
-                            do i = 1, NLOC
+                    do dim = 1, opDim
+                        do dim2 = 1, opDim
+                            do i = 1, opNloc
                                 big_m_tensor_addto(dim, dim2, i, i) = big_m_tensor_addto(dim, dim2, i, i) + &
                                     & dt*theta*Abs_lump_sphere(dim,dim2,i)
                             end do
                         end do
                         if (acceleration) then
-                            rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - Abs_lump_sphere(dim,dim,:)*u_val(dim,:)
+                            rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - Abs_lump_sphere(dim,dim,:)*u_val(dim,:)
                             ! off block diagonal absorption terms
-                            do dim2 = 1, NDIM
+                            do dim2 = 1, opDim
                                 if (dim==dim2) cycle ! The dim=dim2 terms were done above
-                                rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - Abs_lump_sphere(dim,dim2,:)*u_val(dim2,:)
+                                rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - Abs_lump_sphere(dim,dim2,:)*u_val(dim2,:)
                             end do
                         end if
                     end do
@@ -858,12 +854,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                     ! assert(lump_mass)
                     abs_lump = sum(Abs_mat, 3)
                     if(have_mass) then
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
                                 1.0/(l_masslump+dt*theta*abs_lump(dim,:)) )
                         end do
                     else
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
                                 1.0/(dt*theta*abs_lump(dim,:)) )
                         end do
@@ -873,18 +869,18 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             else
 
                 if (assemble_element) then
-                    do dim = 1, NDIM
-                        do dim2 = 1, NDIM
-                            big_m_tensor_addto(dim, dim2, :NLOC, :NLOC) = &
-                                big_m_tensor_addto(dim, dim2, :NLOC, :NLOC) + &
+                    do dim = 1, opDim
+                        do dim2 = 1, opDim
+                            big_m_tensor_addto(dim, dim2, :opNloc, :opNloc) = &
+                                big_m_tensor_addto(dim, dim2, :opNloc, :opNloc) + &
                                 & dt*theta*Abs_mat_sphere(dim,dim2,:,:)
                         end do
                         if (acceleration) then
-                            rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - matmul(Abs_mat_sphere(dim,dim,:,:), u_val(dim,:))
+                            rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(Abs_mat_sphere(dim,dim,:,:), u_val(dim,:))
                             ! off block diagonal absorption terms
-                            do dim2 = 1, NDIM
+                            do dim2 = 1, opDim
                                 if (dim==dim2) cycle ! The dim=dim2 terms were done above
-                                rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - matmul(Abs_mat_sphere(dim,dim2,:,:), u_val(dim2,:))
+                                rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(Abs_mat_sphere(dim,dim2,:,:), u_val(dim2,:))
                             end do
                         end if
                     end do
@@ -893,12 +889,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 if (present(inverse_mass) .and. pressure_corrected_absorption) then
                     ! assert(.not. lump_mass)
                     if(have_mass) then
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
                                 inverse(rho_mat + dt*theta*Abs_mat(dim,:,:)))
                         end do
                     else
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
                                 inverse(dt*theta*Abs_mat(dim,:,:)))
                         end do
@@ -922,24 +918,24 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 abs_lump = sum(Abs_mat, 3)
 
                 if (assemble_element) then
-                    do dim = 1, NDIM
-                        big_m_diag_addto(dim, :NLOC) = big_m_diag_addto(dim, :NLOC) + dt*theta*abs_lump(dim,:)
+                    do dim = 1, opDim
+                        big_m_diag_addto(dim, :opNloc) = big_m_diag_addto(dim, :opNloc) + dt*theta*abs_lump(dim,:)
                     end do
                     if(acceleration) then
-                        do dim = 1, NDIM
-                            rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - abs_lump(dim,:)*u_val(dim,:)
+                        do dim = 1, opDim
+                            rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - abs_lump(dim,:)*u_val(dim,:)
                         end do
                     end if
                 end if
                 if (present(inverse_masslump) .and. pressure_corrected_absorption) then
                     !assert(lump_mass)
                     if(have_mass) then
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
                                 1.0/(l_masslump+dt*theta*abs_lump(dim,:)) )
                         end do
                     else
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
                                 1.0/(dt*theta*abs_lump(dim,:)) )
                         end do
@@ -949,25 +945,25 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             else
 
                 if (assemble_element) then
-                    do dim = 1, NDIM
-                        big_m_tensor_addto(dim, dim, :NLOC, :NLOC) = big_m_tensor_addto(dim, dim, :NLOC, :NLOC) + &
+                    do dim = 1, opDim
+                        big_m_tensor_addto(dim, dim, :opNloc, :opNloc) = big_m_tensor_addto(dim, dim, :opNloc, :opNloc) + &
                             & dt*theta*Abs_mat(dim,:,:)
                     end do
                     if(acceleration) then
-                        do dim = 1, NDIM
-                            rhs_addto(dim, :NLOC) = rhs_addto(dim, :NLOC) - matmul(Abs_mat(dim,:,:), u_val(dim,:))
+                        do dim = 1, opDim
+                            rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(Abs_mat(dim,:,:), u_val(dim,:))
                         end do
                     end if
                 end if
                 if (present(inverse_mass) .and. pressure_corrected_absorption) then
                     !assert(.not. lump_mass)
                     if(have_mass) then
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
                                 inverse(rho_mat + dt*theta*Abs_mat(dim,:,:)))
                         end do
                     else
-                        do dim = 1, NDIM
+                        do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
                                 inverse(dt*theta*Abs_mat(dim,:,:)))
                         end do
@@ -988,13 +984,13 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             if (.not. inverse_mass%equal_diagonal_blocks) then
                 ! after the strong dirichlet bcs have been applied, the diagonal
                 ! blocks will be different. So for now we just copy:
-                do dim = 2, NDIM
+                do dim = 2, opDim
                     call set(inverse_mass, dim, dim, u_ele, u_ele, inverse_mass_mat)
                 end do
             end if
         end if
         if (present(inverse_masslump) .and. lump_mass) then
-            do dim = 1, NDIM
+            do dim = 1, opDim
                 call set(inverse_masslump, dim, u_ele, 1.0/l_masslump)
             end do
         end if
@@ -1013,16 +1009,16 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
                 ! Highly experimental at the moment..
                 ! - Angus (26/03/2016)
-                do gi=1, NGI
-                    do iloc=1, NLOC
+                do gi=1, opNgi
+                    do iloc=1, opNloc
                         node_stress_diag = matmul(du_t(iloc,gi,:), visc_ele_quad(:,:, gi))
                         visc_grad_dot_u = visc_ele_quad(:,:, gi) * sum(du_t(iloc,gi, :))
 
-                        do jloc=1, NLOC
+                        do jloc=1, opNloc
                             visc_dot_prod = dot_product(node_stress_diag, du_t(jloc,gi,:))*detwei(gi)
                             resid_stress_term = matmul(visc_grad_dot_u, du_t(jloc,gi,:))*detwei(gi)
 
-                            do concurrent(idim=1:NDIM)
+                            do concurrent(idim=1:opDim)
                                 Viscosity_mat(idim,idim,iloc,jloc) = &
                                     Viscosity_mat(idim,idim,iloc,jloc) &
                                     + visc_dot_prod + resid_stress_term(idim)
@@ -1034,15 +1030,15 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
             else
                 ! Tensor form
-                do gi=1, NGI
-                    do iloc=1, NLOC
+                do gi=1, opNgi
+                    do iloc=1, opNloc
                         node_stress_diag = matmul(du_t(iloc,gi,:), visc_ele_quad(:,:, gi))
 
                         ! Is this faster than that below?
-                        do jloc=1, NLOC
+                        do jloc=1, opNloc
                             visc_dot_prod = dot_product(node_stress_diag, du_t(jloc,gi,:))*detwei(gi)
 
-                            do concurrent(idim=1:NDIM)
+                            do concurrent(idim=1:opDim)
                                 Viscosity_mat(idim,idim,iloc,jloc) = &
                                     Viscosity_mat(idim,idim,iloc,jloc) &
                                     + visc_dot_prod
@@ -1050,7 +1046,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                         end do
 
                         !   Or is this better optimised?
-!                        do concurrent(idim=1:NDIM,jloc=1:NLOC)
+!                        do concurrent(idim=1:opDim,jloc=1:opNloc)
 !                                Viscosity_mat(idim,idim,iloc,jloc) = &
 !                                    Viscosity_mat(idim,idim,iloc,jloc) &
 !                                    + dot_product(node_stress_diag, du_t(jloc,gi,:))*detwei(gi)
@@ -1108,10 +1104,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !                if(multiphase) then
 !                    ! Split up -\int{grad(N_A vfrac) N_B} using the product rule
 !                    ! and compute -\int{grad(N_A) vfrac N_B} - \int{N_A grad(vfrac) N_B}
-!                    Grad_U_mat_q(:, :, :NLOC) = -dshape_shape(dq_t, u_shape, detwei*nvfrac_gi) - &
+!                    Grad_U_mat_q(:, :, :opNloc) = -dshape_shape(dq_t, u_shape, detwei*nvfrac_gi) - &
 !                        & shape_shape_vector(q_shape, u_shape, detwei, grad_nvfrac_gi)
 !                else
-                    Grad_U_mat_q(:, :, :NLOC) = -dshape_shape(dq_t, u_shape, detwei)
+                    Grad_U_mat_q(:, :, :opNloc) = -dshape_shape(dq_t, u_shape, detwei)
 !                end if
 
             end if
@@ -1122,12 +1118,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         if(integrate_surfacetension_by_parts) then
             tension = ele_val_at_quad(surfacetension, ele)
 
-            rhs_addto(:,:NLOC) = rhs_addto(:,:NLOC) - &
+            rhs_addto(:,:opNloc) = rhs_addto(:,:opNloc) - &
                 &dshape_dot_tensor_rhs(du_t, tension, detwei)
         else
             dtensiondj = ele_div_at_quad_tensor(surfacetension, ele, du_t)
 
-            rhs_addto(:,:NLOC) = rhs_addto(:,:NLOC) + &
+            rhs_addto(:,:opNloc) = rhs_addto(:,:opNloc) + &
                 & shape_vector_rhs(u_shape,dtensiondj,detwei)
         end if
     end if
@@ -1145,7 +1141,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
 
         ! Local node map counter.
-        start=NLOC+1
+        start=opNloc+1
         ! Flag for whether this is a boundary element.
         boundary_element=.false.
 
@@ -1164,7 +1160,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
         ! If constant viscosity, just do this once 
         if(Viscosity%field_TYPE==FIELD_TYPE_CONSTANT) then
-           do concurrent (iloc=1:FLOC)
+           do concurrent (iloc=1:opFloc)
               face_visc_val(:,:,iloc) = Viscosity%val(:,:,1)
            end do
            face_kappa_gi = tensormul( face_visc_val, &
@@ -1172,7 +1168,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         end if
 
         
-        neighbourloop: do ni=1, NFACES
+        neighbourloop: do ni=1, opFaces
 
             !----------------------------------------------------------------------
             ! Find the relevant faces.
@@ -1234,7 +1230,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 #endif
             !--------------
 
-            finish=start+FLOC-1
+            finish=start+opFloc-1
 
             local_glno(start:finish)=face_global_nodes(U, face_2)
 
@@ -1256,12 +1252,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
             ! ********** START OF INLINED CODE **********
 
-            face_start=NLOC+(ni-1)*FLOC+1
-            face_finish=face_start+FLOC-1
+            face_start=opNloc+(ni-1)*opFloc+1
+            face_finish=face_start+opFloc-1
 
 
             ! u_face_l=face_local_nodes(U, face)
-            u_face_l = U%mesh%faces%face_lno( FLOC*(face-1)+1 : FLOC*face )
+            u_face_l = U%mesh%faces%face_lno( opFloc*(face-1)+1 : opFloc*face )
             if(move_mesh) u_mesh_glno = face_global_nodes(U_mesh, face)
 
             u_face_glno_1 = face_global_nodes(U_nl, face)
@@ -1270,7 +1266,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
             ! face_u_shape_2=>face_shape(U, face_2)
 
-            q_face_l = q_mesh%faces%face_lno( FLOC*(face-1)+1 : FLOC*face )
+            q_face_l = q_mesh%faces%face_lno( opFloc*(face-1)+1 : opFloc*face )
 
             ! Get Density and (non-linear) PhaseVolumeFraction values
             ! at the Gauss points on the current face.
@@ -1308,7 +1304,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             if(have_les) then
                 if(have_isotropic_les) then
                     tmp_face_tensor=0.
-                    do concurrent(face_d1=1:NDIM)
+                    do concurrent(face_d1=1:opDim)
                         tmp_face_tensor(face_d1, face_d1,:) = eddy_visc%val(u_face_glno_1)
                     end do
                     face_kappa_gi = face_kappa_gi + &
@@ -1326,8 +1322,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !                ! Multiply the viscosity tensor by the PhaseVolumeFraction
 !                ! since kappa = viscosity*vfrac for multiphase flow simulations
 !                face_nvfrac_gi = face_val_at_quad(nvfrac, face)
-!                do face_d1=1, NDIM
-!                    do face_d2=1, NDIM
+!                do face_d1=1, opDim
+!                    do face_d2=1, opDim
 !                        face_kappa_gi(face_d1,face_d2,:) = face_kappa_gi(face_d1,face_d2,:)*face_nvfrac_gi
 !                    end do
 !                end do
@@ -1340,7 +1336,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             face_no_normal_flow=.false.
             face_l_have_pressure_bc=.false.
             if (face_boundary) then
-                do face_dim=1, NDIM
+                do face_dim=1, opDim
                     if (velocity_bc_type(face_dim,face)==1) then
                         face_dirichlet(face_dim)=.true.
                     end if
@@ -1454,7 +1450,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                         &                       face_outer_advection_integral * face_detwei * face_Rho_q)
 !                end if
 
-                do face_dim = 1, NDIM
+                do face_dim = 1, opDim
 
                     ! Insert advection in matrix.
 
@@ -1562,12 +1558,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! add -|  N_i M_j \vec n p_j, where p_j are the prescribed bc values
                 !      /
                 if(subtract_out_reference_profile) then
-                    do face_dim = 1, NDIM
+                    do face_dim = 1, opDim
                         rhs_addto(face_dim,u_face_l) = rhs_addto(face_dim,u_face_l) - &
                             matmul( ele_val(pressure_bc, face) - face_val(hb_pressure, face), face_mnCT(1,face_dim,:,:) )
                     end do
                 else
-                    do face_dim = 1, NDIM
+                    do face_dim = 1, opDim
                         rhs_addto(face_dim,u_face_l) = rhs_addto(face_dim,u_face_l) - &
                             matmul( ele_val(pressure_bc, face), face_mnCT(1,face_dim,:,:) )
                     end do
@@ -1576,7 +1572,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
             ! ********** END OF INLINED CODE **********
 
-            start=start+FLOC
+            start=start+opFloc
 
         end do neighbourloop
 
@@ -1608,12 +1604,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! as we should not try to move the coefficient in columns corresponding to boundary face 1
                 ! in rows correspoding to face 2 to the rhs, i.e. we need to wipe *all* boundary rows first.
 
-                do dim=1, NDIM
+                do dim=1, opDim
 
                     ! Local node map counter.
-                    start=NLOC+1
+                    start=opNloc+1
 
-                    boundary_neighbourloop: do ni=1, NFACES
+                    boundary_neighbourloop: do ni=1, opFaces
                         ele_2=neigh(ni)
 
                         ! Note that although face is calculated on field U, it is in fact
@@ -1629,7 +1625,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
                                 ! Dirichlet condition.
 
-                                finish=start+FLOC-1
+                                finish=start+opFloc-1
 
                                 if (i==1) then
                                     ! Wipe out boundary condition's coupling to itself.
@@ -1637,7 +1633,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                                 else
                                     ! Add BC into RHS
                                     !
-                                    do dim1=1, NDIM
+                                    do dim1=1, opDim
                                         rhs_addto(dim1,:) = rhs_addto(dim1,:) &
                                             & -matmul(Viscosity_mat(dim1,dim,:,start:finish), &
                                             & ele_val(velocity_bc,dim,face))
@@ -1651,7 +1647,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                                 face=face_neigh(turbine_conn_mesh, face)
                             end if
                         end if
-                        start=start+FLOC
+                        start=start+opFloc
 
                     end do boundary_neighbourloop
 
@@ -1665,8 +1661,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         big_m_tensor_addto = big_m_tensor_addto + Viscosity_mat*theta*dt
 
         if (acceleration) then
-            do dim1=1, NDIM
-                do dim2=1, NDIM
+            do dim1=1, opDim
+                do dim2=1, opDim
                     rhs_addto(dim1, :) = rhs_addto(dim1, :) &
                         - matmul(Viscosity_mat(dim1,dim2,:,:), &
                         node_val(U, dim2, local_glno))
@@ -1687,8 +1683,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         ! add lumped terms to the diagonal of the matrix
         !        call add_diagonal_to_tensor(big_m_diag_addto, big_m_tensor_addto)
 
-        do loc=1, EFLOC
-            do dim=1, NDIM
+        do loc=1, opEFloc
+            do dim=1, opDim
                 big_m_tensor_addto(dim, dim, loc, loc) &
                     = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
             end do
@@ -1714,34 +1710,34 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
         !            else
         !                ! add to the matrix
-        !                call addto(big_m, u_ele, local_glno, big_m_tensor_addto(:,:,:NLOC,:), &
+        !                call addto(big_m, u_ele, local_glno, big_m_tensor_addto(:,:,:opNloc,:), &
         !                    block_mask=diagonal_block_mask)
         !                ! add to the rhs
-        !                call addto(rhs, u_ele, rhs_addto(:,:NLOC))
+        !                call addto(rhs, u_ele, rhs_addto(:,:opNloc))
         !            end if
 
         if(subcycle) then
             call addto(subcycle_m, u_ele, local_glno,&
-                &subcycle_m_tensor_addto(:,:,:NLOC,:), &
+                &subcycle_m_tensor_addto(:,:,:opNloc,:), &
                 &block_mask=diagonal_block_mask)
         end if
         if(.not. partial_stress .and. have_coriolis) then
             ! add in coupling between different components, but only within the element
             call addto(big_m, u_ele, u_ele, &
-                big_m_tensor_addto(:,:,:NLOC,:NLOC), block_mask&
+                big_m_tensor_addto(:,:,:opNloc,:opNloc), block_mask&
                 &=off_diagonal_block_mask)
         end if
     !        else
     !            ! in this case we only have coupling between nodes within the element
     !            if (have_coriolis) then
-    !                call addto(big_m, u_ele, u_ele, big_m_tensor_addto(:,:,:NLOC,:NLOC))
+    !                call addto(big_m, u_ele, u_ele, big_m_tensor_addto(:,:,:opNloc,:opNloc))
     !            else
     !                ! add to the matrix
-    !                call addto(big_m, u_ele, u_ele, big_m_tensor_addto(:,:,:NLOC,:NLOC), &
+    !                call addto(big_m, u_ele, u_ele, big_m_tensor_addto(:,:,:opNloc,:opNloc), &
     !                    block_mask=diagonal_block_mask)
     !            end if
     !            ! add to the rhs
-    !            call addto(rhs, u_ele, rhs_addto(:,:NLOC))
+    !            call addto(rhs, u_ele, rhs_addto(:,:opNloc))
     !        end if
 
     end if
@@ -1749,13 +1745,13 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !contains
 !
 !    subroutine add_diagonal_to_tensor(big_m_diag_addto, big_m_tensor_addto)
-!        real, dimension(NDIM, EFLOC), intent(in) :: big_m_diag_addto
-!        real, dimension(NDIM, NDIM, EFLOC, EFLOC), intent(inout) :: big_m_tensor_addto
+!        real, dimension(opDim, opEFloc), intent(in) :: big_m_diag_addto
+!        real, dimension(opDim, opDim, opEFloc, opEFloc), intent(inout) :: big_m_tensor_addto
 !
 !        integer :: dim, loc
 !
-!        do loc=1, EFLOC
-!            do dim=1, NDIM
+!        do loc=1, opEFloc
+!            do dim=1, opDim
 !                big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
 !            end do
 !        end do
@@ -1767,9 +1763,9 @@ contains
 
     subroutine bassi_rebay_viscosity
         integer :: idim
-        real, dimension(FNGI) :: coefficient_detwei
+        real, dimension(opFngi) :: coefficient_detwei
 
-        do idim=1,NDIM
+        do idim=1,opDim
 
             coefficient_detwei = face_detwei*face_normal(idim,:)
 ! No multiphase for now.
@@ -1809,10 +1805,10 @@ contains
 
 !        face_normal_mat = shape_shape_vector(face_u_shape,face_u_shape,face_detwei,face_normal)
         ! inlined version of above
-        do concurrent(iloc=1:FLOC,jloc=1:FLOC)
+        do concurrent(iloc=1:opFloc,jloc=1:opFloc)
            ! Main mass matrix.
            face_normal_mat(:,iloc,jloc)=&
-                matmul(face_normal*spread(face_u_shape%n(iloc,:)*face_u_shape%n(jloc,:),1,NDIM),face_detwei)
+                matmul(face_normal*spread(face_u_shape%n(iloc,:)*face_u_shape%n(jloc,:),1,opDim),face_detwei)
         end do
 
 
@@ -1823,8 +1819,8 @@ contains
         !!< indices are (dim1, loc1, loc2)
 
         face_kappa_normal_mat = 0
-        do nmat_d1 = 1, NDIM
-            do nmat_d2 = 1, NDIM
+        do nmat_d1 = 1, opDim
+            do nmat_d2 = 1, opDim
                face_detwei_work=face_detwei* &
                     & face_kappa_gi(nmat_d1,nmat_d2,:)*face_normal(nmat_d2,:)
 
@@ -1833,7 +1829,7 @@ contains
 !                    & face_kappa_gi(nmat_d1,nmat_d2,:)*face_normal(nmat_d2,:))
 
                ! inlined version of above
-               do concurrent(iloc=1:FLOC,jloc=1:FLOC)
+               do concurrent(iloc=1:opFloc,jloc=1:opFloc)
                   face_shape_shape_work(iloc,jloc)= &
                        dot_product(face_u_shape%n(iloc,:)*face_u_shape%n(jloc,:),face_detwei_work)
                end do
@@ -1924,7 +1920,7 @@ contains
 #if defined (SCHEME_CDG)
         !        if(viscosity_scheme==CDG) then
             primal_flux_factor = 0.0
-            CDG_switch_in = (sum(switch_g(1:NDIM)*sum(face_normal,2)/size(face_normal,2))>0)
+            CDG_switch_in = (sum(switch_g(1:opDim)*sum(face_normal,2)/size(face_normal,2))>0)
             if(CDG_switch_in) primal_flux_factor = 1.0
 #else
         !        else
@@ -1933,11 +1929,11 @@ contains
         !        end if
 #endif
 
-        do primal_d1 = 1, NDIM
-            do primal_d2 = 1, NDIM
+        do primal_d1 = 1, opDim
+            do primal_d2 = 1, opDim
 
                ! These get used throughout this section.
-               do concurrent (iloc=1:FLOC,jloc=1:FLOC)
+               do concurrent (iloc=1:opFloc,jloc=1:opFloc)
                   face_detwei_work = face_detwei * &
                        face_normal(primal_d1,:) * &
                        face_kappa_gi(primal_d1,primal_d2,:)
@@ -2012,11 +2008,11 @@ contains
     subroutine local_assembly_bassi_rebay
 
         integer :: d3
-        real, dimension(NDIM, NDIM, NLOC) :: tensor_visc
+        real, dimension(opDim, opDim, opNloc) :: tensor_visc
 
-        do dim1=1, NDIM
-            do dim2=1,NDIM
-                do d3 = 1, NDIM
+        do dim1=1, opDim
+            do dim2=1,opDim
+                do d3 = 1, opDim
 
                     ! Div U * G^U * Viscosity * G * Grad U
                     ! Where G^U*G = inverse(Q_mass)
@@ -2044,8 +2040,8 @@ contains
         !   where a_{b,c} = \partial a_b / \partial x_c
         ! off diagonal terms define the coupling between the velocity components
 
-        real, dimension(NLOC, NLOC) :: Q_visc
-        real, dimension(NLOC) :: isotropic_visc
+        real, dimension(opNloc, opNloc) :: Q_visc
+        real, dimension(opNloc) :: isotropic_visc
         integer :: adim1, adim2, adim3, adim4
 
         isotropic_visc = Viscosity_ele(1,1,:)
@@ -2055,10 +2051,10 @@ contains
         ! ** BUG FIX: must use isotropic_visc here, so effect of LES not ignored
         Q_visc = mat_diag_mat( Q_inv, isotropic_visc )
 
-        do adim1=1,NDIM
-            do adim2=1,NDIM
-                do adim3=1,NDIM
-                    do adim4=1,NDIM
+        do adim1=1,opDim
+            do adim2=1,opDim
+                do adim3=1,opDim
+                    do adim4=1,opDim
                         if (adim1==adim2 .and. adim2==adim3 .and. adim3==adim4) then
                             Viscosity_mat(adim1,adim3,:,:) = Viscosity_mat(adim1,adim3,:,:) &
                                 + 2.0 * matmul(matmul(transpose(grad_U_mat_q(adim2,:,:)),Q_visc),grad_U_mat_q(adim4,:,:))
@@ -2114,14 +2110,14 @@ contains
         real :: C_h
         integer :: ip_d1, ip_d2
 
-        real, dimension(FNGI) :: kappa_n
+        real, dimension(opFngi) :: kappa_n
 
         ! FIXME: JRM HACK
         !face_kappa_gi = face_kappa_gi + ele_val_at_quad(tensor_eddy_visc, ele)
 
         kappa_n = 0.0
-        do ip_d1 = 1, NDIM
-            !            do ip_d2 = 1, NDIM
+        do ip_d1 = 1, opDim
+            !            do ip_d2 = 1, opDim
             !                kappa_n = kappa_n + &
             !                    face_normal(ip_d1,:)*face_kappa_gi(ip_d1,ip_d2,:)*face_normal(ip_d2,:)
             !            end do
@@ -2168,14 +2164,14 @@ contains
         integer :: laip_d
         ! Don't need these I think
         !        integer :: nfele, nele
-        !integer, dimension(FLOC) :: laip_U_face_loc
+        !integer, dimension(opFloc) :: laip_U_face_loc
 
         !laip_U_face_loc=face_local_nodes(U, face)
 
 
 
         if (face_boundary) then
-            do laip_d=1, NDIM
+            do laip_d=1, opDim
                 if(face_dirichlet(laip_d)) then
                     !!These terms are not included on Neumann integrals
 
@@ -2198,7 +2194,7 @@ contains
                 end if
             end do
         else
-            do laip_d=1, NDIM
+            do laip_d=1, opDim
                 !! Internal Degrees of Freedom
 
                 !penalty flux
@@ -2227,13 +2223,13 @@ contains
         implicit none
 
         integer :: pface_j, pface_dim
-        ! integer, dimension(FLOC) :: pface_U_face_loc
+        ! integer, dimension(opFloc) :: pface_U_face_loc
 
         ! pface_U_face_loc=face_local_nodes(U, face)
 
 
         if (face_boundary) then
-            do pface_dim=1, NDIM
+            do pface_dim=1, opDim
                 if(face_dirichlet(pface_dim)) then
                     !!These terms are not included on Neumann integrals
 
@@ -2241,37 +2237,37 @@ contains
 
                     !primal fluxes
 
-                    Viscosity_mat(pface_dim,pface_dim,u_face_l,1:NLOC) = &
-                        Viscosity_mat(pface_dim,pface_dim,u_face_l,1:NLOC) + &
+                    Viscosity_mat(pface_dim,pface_dim,u_face_l,1:opNloc) = &
+                        Viscosity_mat(pface_dim,pface_dim,u_face_l,1:opNloc) + &
                         face_primal_fluxes_mat(1,:,:)
 
-                    do pface_j = 1, FLOC
-                        Viscosity_mat(pface_dim,pface_dim,1:NLOC,u_face_l(pface_j)) = &
-                            Viscosity_mat(pface_dim,pface_dim,1:NLOC,u_face_l(pface_j)) + &
+                    do pface_j = 1, opFloc
+                        Viscosity_mat(pface_dim,pface_dim,1:opNloc,u_face_l(pface_j)) = &
+                            Viscosity_mat(pface_dim,pface_dim,1:opNloc,u_face_l(pface_j)) + &
                             face_primal_fluxes_mat(1,pface_j,:)
                     end do
 
                     !primal fluxes
 
-                    Viscosity_mat(pface_dim,pface_dim,1:NLOC,face_start:face_finish) = &
-                        Viscosity_mat(pface_dim,pface_dim,1:NLOC,face_start:face_finish) + &
+                    Viscosity_mat(pface_dim,pface_dim,1:opNloc,face_start:face_finish) = &
+                        Viscosity_mat(pface_dim,pface_dim,1:opNloc,face_start:face_finish) + &
                         transpose(face_primal_fluxes_mat(2,:,:))
 
                 end if
             end do
         else
-            do pface_dim=1, NDIM
+            do pface_dim=1, opDim
                 !! Internal Degrees of Freedom
 
                 !primal fluxes
 
-                Viscosity_mat(pface_dim,pface_dim,u_face_l,1:NLOC) = &
-                    Viscosity_mat(pface_dim,pface_dim,u_face_l,1:NLOC) + &
+                Viscosity_mat(pface_dim,pface_dim,u_face_l,1:opNloc) = &
+                    Viscosity_mat(pface_dim,pface_dim,u_face_l,1:opNloc) + &
                     face_primal_fluxes_mat(1,:,:)
 
-                do pface_j = 1, FLOC
-                    Viscosity_mat(pface_dim,pface_dim,1:NLOC,u_face_l(pface_j)) = &
-                        Viscosity_mat(pface_dim,pface_dim,1:NLOC,u_face_l(pface_j)) + &
+                do pface_j = 1, opFloc
+                    Viscosity_mat(pface_dim,pface_dim,1:opNloc,u_face_l(pface_j)) = &
+                        Viscosity_mat(pface_dim,pface_dim,1:opNloc,u_face_l(pface_j)) + &
                         face_primal_fluxes_mat(1,pface_j,:)
                 end do
 
@@ -2279,12 +2275,12 @@ contains
 
                 !primal fluxes
 
-                Viscosity_mat(pface_dim,pface_dim,face_start:face_finish,1:NLOC) = &
-                    Viscosity_mat(pface_dim,pface_dim,face_start:face_finish,1:NLOC) + &
+                Viscosity_mat(pface_dim,pface_dim,face_start:face_finish,1:opNloc) = &
+                    Viscosity_mat(pface_dim,pface_dim,face_start:face_finish,1:opNloc) + &
                     face_primal_fluxes_mat(2,:,:)
 
-                Viscosity_mat(pface_dim,pface_dim,1:NLOC,face_start:face_finish) = &
-                    Viscosity_mat(pface_dim,pface_dim,1:NLOC,face_start:face_finish) + &
+                Viscosity_mat(pface_dim,pface_dim,1:opNloc,face_start:face_finish) = &
+                    Viscosity_mat(pface_dim,pface_dim,1:opNloc,face_start:face_finish) + &
                     transpose(face_primal_fluxes_mat(2,:,:))
 
             end do
@@ -2382,19 +2378,19 @@ contains
 
         ! Internal variables
         integer :: cdg_i, cdg_j, cdg_dim1, cdg_dim2, cdg_face1, cdg_face2, cdg_outer_dim
-        ! integer, dimension(FLOC) :: cdg_U_face_loc
-        real, dimension(NDIM, NLOC, FLOC) :: cdg_R_mat
-        real, dimension(2,2, FLOC, FLOC) :: cdg_add_mat
+        ! integer, dimension(opFloc) :: cdg_U_face_loc
+        real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
+        real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
 
         ! cdg_U_face_loc=face_local_nodes(U, face)
 
         cdg_R_mat = 0.
-        do concurrent (cdg_dim1=1:NDIM, cdg_i=1:NLOC, cdg_j=1:FLOC)
+        do concurrent (cdg_dim1=1:opDim, cdg_i=1:opNloc, cdg_j=1:opFloc)
             cdg_R_mat(cdg_dim1,cdg_i,cdg_j) = &
                 &sum(inverse_mass_mat(cdg_i,u_face_l)*face_normal_mat(cdg_dim1, :, cdg_j))
         end do
 
-        do cdg_outer_dim=1, NDIM
+        do cdg_outer_dim=1, opDim
 
             cdg_add_mat = 0.0
             if(face_boundary) then
@@ -2414,8 +2410,8 @@ contains
 
                     do cdg_face1 = 1, 2
                         do cdg_face2 = 1, 2
-                            do cdg_dim1 = 1, NDIM
-                                do cdg_dim2 = 1, NDIM
+                            do cdg_dim1 = 1, opDim
+                                do cdg_dim2 = 1, opDim
                                     cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
                                         &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
                                         &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
@@ -2430,8 +2426,8 @@ contains
                 ! R(\tau,u) = -\int_e \tau.n^+(u^+ - u^-) dS
                 do cdg_face1 = 1, 2
                     do cdg_face2 = 1, 2
-                        do cdg_dim1 = 1, NDIM
-                            do cdg_dim2 = 1, NDIM
+                        do cdg_dim1 = 1, opDim
+                            do cdg_dim2 = 1, opDim
                                 cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
                                     &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
                                     &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
