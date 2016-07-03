@@ -4227,8 +4227,12 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     ! Benchmarking
     t0=mpi_wtime()
 
+#ifdef USE_CTO
     ! Only works for 3D
-    run_optimal=(u%dim==3)
+    run_optimal=(u%dim==opDim)
+#else
+    run_optimal=.false.
+#endif
 
     ewrite(1,*) 'Inside subcycle_momentum_dg'
 
@@ -4278,16 +4282,20 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     do i=1, subcycles
         if (limit_slope) then
 
+#ifdef USE_CTO
             if(run_optimal) then
                 ! filter wiggles from u
                 call limit_vb_opt(u_sub)
             else
+#endif
                 ! filter wiggles from u
                 do d =1, u%dim
                     u_cpt = extract_scalar_field_from_vector_field(u_sub,d)
                     call limit_vb(state, u_cpt)
                 end do
+#ifdef USE_CTO
             end if
+#endif
 
         end if
 
