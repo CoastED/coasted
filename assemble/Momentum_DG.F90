@@ -26,12 +26,12 @@
 !    USA
 #include "fdebug.h"
 
-#ifdef USE_CTO
 #include "compile_opt_defs.h"
-#endif
 
 #define NLOC 4
 #define NDIM 3
+
+
 
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum
@@ -160,9 +160,9 @@ contains
 
 
     ! Conditionally including the optimised CDG assembly code.
-#ifdef USE_CTO
+
 #include "Construct_Momentum_Element_DG_opt.F90"
-#endif
+
 
     subroutine construct_momentum_dg(u, p, rho, x, &
         & big_m, rhs, state, &
@@ -886,10 +886,9 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-#ifdef USE_CTO
-                if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
+                if(U%dim==3 .and. P%mesh%shape%degree==2 &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
-                    .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
+                    .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
                     print*, "Optimised DG assembly: Compact DG"
 
                     !    print*, "before assembly loop"
@@ -938,8 +937,7 @@ contains
 
 
                 else
-! USE_CTO
-#endif
+
                     !    print*, "main here1"
                     print*, "Non-optimised DG assembly"
 
@@ -981,9 +979,8 @@ contains
                     !    print*, "after assembly loop"
 
                     !$OMP END PARALLEL
-#ifdef USE_CTO
                 end if
-#endif
+
                 call profiler_toc(u, "element_loop")
 
                 if (have_wd_abs) then

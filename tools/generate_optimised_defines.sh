@@ -25,6 +25,7 @@ opt_compile="yes"
 opt_dimension=`grep -A 2 dimension\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 opt_surface_degree=`grep -A 2 surface_degree\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+viscosity_scheme=`grep -A 1 \<viscosity_scheme\> "$opt_flml_file" | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | awk '{print $1}'`
 
 # This isn't always needed in a simulation, but needs to be set.
 
@@ -60,6 +61,15 @@ vel_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 VelocityMesh | 
 pres_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 
 
+# Viscosity schemes
+
+case "$viscosity_scheme" in
+    "compact_discontinuous_galerkin" ) opt_visc_scheme="SCHEME_CDG" ;;
+    "bassi_rebay" ) opt_visc_scheme="SCHEME_BASSI" ;;
+    "interior_penalty" ) opt_visc_scheme="SCHEME_IP" ;;
+    * ) >&2 echo "Error. scheme $viscosity_scheme not recognised or supported."
+	exit 1;;
+esac
 
 
 # We're assuming the velocity and pressure elements are geometrically
@@ -147,6 +157,8 @@ cat > include/compile_opt_defs.h<< EOF
 #define opFngi $opt_fngi
 #define opPFloc $opt_p_floc
 #define opEFloc ( opNloc + opFaces* opFloc)
+
+#define $opt_visc_scheme
 EOF
 
 exit 0
