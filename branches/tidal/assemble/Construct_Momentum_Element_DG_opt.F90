@@ -254,7 +254,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Face objects and numberings.
     ! type(element_type), intent(in), pointer :: u_shape, u_shape_2, p_shape, q_shape
     type(element_type) :: face_u_shape, face_p_shape, face_q_shape
-    integer, dimension(opFloc) :: u_face_l, u_mesh_glno, u_face_glno_1, u_face_glno_2, Rho_face_glno_1
+    integer, dimension(opFloc) :: u_face_l, u_mesh_glno, u_face_glno_1, u_face_glno_2, Rho_face_glno_1, x_face_glno_1
 
     integer, dimension(opFloc) :: q_face_l
 
@@ -427,11 +427,11 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             if(have_isotropic_les) then
                 do concurrent(dim1=1:opDim)
                     Viscosity_ele(dim1, dim1, :) = &
-                        Viscosity_ele(dim1, dim1, :)+eddy_visc%val(u_ele)
+                        Viscosity_ele(dim1, dim1, :)+eddy_visc%val(x_ele)
                 end do
             else
                 ! Anisotropic / tensor LES
-                Viscosity_ele = Viscosity_ele + tensor_eddy_visc%val(:,:, u_ele)
+                Viscosity_ele = Viscosity_ele + tensor_eddy_visc%val(:,:, x_ele)
              end if
         end if
         u_val = u%val(:, u_ele)
@@ -1262,6 +1262,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
             u_face_glno_1 = face_global_nodes(U_nl, face)
             u_face_glno_2 = face_global_nodes(U_nl, face_2)
+            x_face_glno_1 = face_global_nodes(X, face)
             rho_face_glno_1 = face_global_nodes(Rho, face)
 
             ! face_u_shape_2=>face_shape(U, face_2)
@@ -1305,14 +1306,14 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 if(have_isotropic_les) then
                     tmp_face_tensor=0.
                     do concurrent(face_d1=1:opDim)
-                        tmp_face_tensor(face_d1, face_d1,:) = eddy_visc%val(u_face_glno_1)
+                        tmp_face_tensor(face_d1, face_d1,:) = eddy_visc%val(x_face_glno_1)
                     end do
                     face_kappa_gi = face_kappa_gi + &
                          tensormul( tmp_face_tensor, &
                          face_u_shape%n )
                 else
                     face_kappa_gi = face_kappa_gi + &
-                         tensormul( tensor_eddy_visc%val(:,:,u_face_glno_1), &
+                         tensormul( tensor_eddy_visc%val(:,:,x_face_glno_1), &
                          face_u_shape%n )
                 end if
              end if

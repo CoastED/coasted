@@ -80,8 +80,8 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:)
-        integer, allocatable, save :: node_visits(:), node_neigh_total_vol(:)
+        real, allocatable :: node_sum(:), node_vol_weighted_sum(:)
+        integer, allocatable :: node_visits(:), node_neigh_total_vol(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -174,8 +174,9 @@ contains
         node_vol_weighted_sum(:)=0.0
         node_neigh_total_vol(:)=0.0
 
+
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0
+        call zero(sgs_visc)
 
 
         do e=1, num_elements
@@ -217,19 +218,21 @@ contains
                 call set(sgs_visc, n, &
                     vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
                     + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
+
             end do
         else
             do n=1, num_nodes
                 call set(sgs_visc, n, &
                     rho*0.5*(node_sum(n) / node_visits(n) &
                     + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
+                 call set(sgs_visc, n, 0.0)
             end do
         end if
 
         call deallocate(u_grad)
-        deallocate(u_grad)
 
         t2=mpi_wtime()
+
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 

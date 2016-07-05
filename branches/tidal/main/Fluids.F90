@@ -458,9 +458,6 @@ contains
        call write_state(dump_no, state)
     end if
 
-    ! Moves the dump number past the start
-    dump_no = dump_no+1
-
 
     call initialise_convergence(filename, state)
     call initialise_steady_state(filename, state)
