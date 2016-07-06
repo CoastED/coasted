@@ -297,8 +297,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! ========== END OF INTERFACE VARIABLES ==========
 
-    have_les=.false.
-
     dg=.true.
     p0=.false.
 
