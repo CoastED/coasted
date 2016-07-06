@@ -73,14 +73,15 @@ contains
         integer :: u_cg_ele(ele_loc(u,1))
 
         real :: Cs, length, ele_vol, Cs_length_sq
-        real, dimension(mesh_dim(u), mesh_dim(u)) :: rate_of_strain, u_grad_node
+        real, dimension(u%dim, u%dim) :: rate_of_strain, u_grad_node
         real :: sgs_ele_av, visc_turb, mu
         real :: rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:)
-        integer, allocatable, save :: node_visits(:), node_neigh_total_vol(:)
+        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:), &
+             node_neigh_total_vol(:)
+        integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -184,6 +185,7 @@ contains
             u_cg_ele=ele_nodes(u_cg, e)
 
             ele_vol = element_volume(x, e)
+
             length=2.*(ele_vol**0.333333333333333333333)
             ! Factor of two included in length_scale_scalar
             Cs_length_sq = (Cs* length)**2.0
@@ -209,7 +211,8 @@ contains
             end do
         end do
 
-        ! Set final values. Two options here: one with Van Driest damping, one without
+        ! Set final values. Two options here: one with Van Driest damping, 
+        ! one without.
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
@@ -226,14 +229,12 @@ contains
                 call set(sgs_visc, n, &
                     rho*0.5*(node_sum(n) / node_visits(n) &
                     + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
-                 call set(sgs_visc, n, 0.0)
             end do
         end if
 
         call deallocate(u_grad)
 
         t2=mpi_wtime()
-
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
@@ -254,8 +255,7 @@ contains
         ! Passed parameters
         type(state_type), intent(in) :: state
 
-        type(vector_field), intent(in) :: u
-        type(vector_field), target, intent(in) :: x
+        type(vector_field), intent(in) :: u, x
         type(scalar_field), pointer :: dist_to_wall
         type(tensor_field), pointer :: sgs_visc
 
@@ -276,8 +276,9 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_sum(:,:,:), node_vol_weighted_sum(:,:,:)
-        integer, allocatable, save :: node_visits(:), node_neigh_total_vol(:)
+        real, allocatable,save:: node_sum(:,:,:),node_vol_weighted_sum(:,:,:),&
+             node_neigh_total_vol(:)
+        integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
