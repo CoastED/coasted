@@ -62,8 +62,7 @@ contains
         ! Passed parameters
         type(state_type), intent(in) :: state
 
-        type(vector_field), intent(in) :: u
-        type(vector_field), target, intent(in) :: x
+        type(vector_field), intent(in) :: u, x
         type(scalar_field), pointer :: sgs_visc, dist_to_wall
 
         ! Velocity (CG) field, pointer to X field, and gradient
@@ -80,8 +79,8 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable :: node_sum(:), node_vol_weighted_sum(:)
-        integer, allocatable :: node_visits(:), node_neigh_total_vol(:)
+        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:)
+        integer, allocatable, save :: node_visits(:), node_neigh_total_vol(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -90,6 +89,8 @@ contains
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.0, pow_m=2.0
+
+        print*, "calc_dg_sgs_scalar_viscosity"
 
         t1=mpi_wtime()
 
@@ -176,7 +177,7 @@ contains
 
 
         ! Set entire SGS visc field to zero value initially
-        call zero(sgs_visc)
+        sgs_visc%val(:)=0.0
 
 
         do e=1, num_elements
