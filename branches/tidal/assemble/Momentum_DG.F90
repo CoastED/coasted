@@ -297,7 +297,7 @@ contains
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
             & y_plus_debug, les_filter_width_debug
         type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: tensor_eddy_visc
+        type(vector_field), pointer :: vector_eddy_visc
 
         type(tensor_field), pointer :: uGrad
 
@@ -658,7 +658,7 @@ contains
 
                 ! Nullify here until have_les code works
                 nullify(eddy_visc)
-                nullify(tensor_eddy_visc)
+                nullify(vector_eddy_visc)
                 nullify(distance_to_wall)
                 nullify(y_plus_debug)
                 nullify(les_filter_width_debug)
@@ -677,11 +677,11 @@ contains
 ! Will eventually use partial_stress as an indicator
 !                    if(partial_stress) then
 
-                    ! Extract scalar or tensor eddy field
+                    ! Extract scalar or vector eddy field
                     if(have_isotropic_les) then
                         ewrite(1,*) "*** Scalar-based DG LES (experimental)"
                         ! les eddy visc field - needs to be nullified if non-existent
-                        nullify(tensor_eddy_visc)
+                        nullify(vector_eddy_visc)
                         eddy_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=stat)
                         ! Theoretically it should always work - unless someone
                         ! deletes the field in a chedckpoint FLML
@@ -691,16 +691,16 @@ contains
                             ewrite(1,*) "Found ScalarEddyViscosity field"
                         end if
                     else
-                        ewrite(1,*) "*** Tensor-based DG LES (experimental)"
+                        ewrite(1,*) "*** Split horz/vert DG LES (experimental)"
                         nullify(eddy_visc)
-                        tensor_eddy_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=stat)
+                        vector_eddy_visc => extract_vector_field(state, "VectorEddyViscosity", stat=stat)
 
                         ! Theoretically it should always work - unless someone
                         ! deletes the field in a checkpoint FLML
                         if (stat/=0) then
-                            FLAbort("Can't do tensor DG LES without a TensorEddyViscosity field")
+                            FLAbort("Can't do tensor DG LES without a VectorEddyViscosity field")
                         else
-                            ewrite(1,*) "Found TensorEddyViscosity field"
+                            ewrite(1,*) "Found VectorEddyViscosity field"
                         end if
                     end if
 
@@ -842,7 +842,7 @@ contains
                     if(have_isotropic_les) then
                         call calc_dg_sgs_scalar_viscosity(state, x, u)
                     else
-                        call calc_dg_sgs_tensor_viscosity(state, x, u)
+                        call calc_dg_sgs_vector_viscosity(state, x, u)
                     end if
                 end if
 
@@ -922,7 +922,7 @@ contains
                                 & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                                 have_les=have_les, have_isotropic_les=have_isotropic_les, &
                                 smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
+                                eddy_visc=eddy_visc, vector_eddy_visc=vector_eddy_visc, &
                                 prescribed_filter_width=prescribed_filter_width, &
                                 distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
                                 les_filter_width_debug=les_filter_width_debug )
@@ -967,7 +967,7 @@ contains
                                 & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                                 have_les=have_les, have_isotropic_les=have_isotropic_les, &
                                 smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
+                                eddy_visc=eddy_visc, vector_eddy_visc=vector_eddy_visc, &
                                 prescribed_filter_width=prescribed_filter_width, &
                                 distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
                                 les_filter_width_debug=les_filter_width_debug )
@@ -1049,278 +1049,6 @@ contains
 
 
  
-            subroutine les_tensor_viscosity_roman_elements(X, U, u_cg, p, uGrad, &
-                viscosity, &
-                colours, &
-                tensor_eddy_visc, &
-                smagorinsky_coefficient, &
-                prescribed_filter_width, &
-                have_van_driest, &
-                distance_to_wall, y_plus_debug, les_filter_width_debug)
-
-                integer, parameter :: MESH_DIM = 3
-
-                ! Parameter declarations
-                type(vector_field), intent(in) :: X, U, u_cg
-                type(scalar_field), intent(in) :: p
-                type(tensor_field), intent(inout) :: uGrad
-                type(tensor_field), intent(in) :: viscosity
-                type(integer_set),  intent(in), dimension(:), pointer :: colours
-    
-                type(tensor_field), intent(inout) :: tensor_eddy_visc
-                real, intent(in) :: smagorinsky_coefficient
-
-
-                logical :: have_van_driest
-                type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
-                type(scalar_field), pointer, intent(in) :: y_plus_debug, les_filter_width_debug
-    
-    
-                ! Stuff that would be inside construct_momentum_element_dg()
-                real, allocatable :: detwei(:)
-                integer :: ni, ele, ele_2, face, dim1, dim2, start, finish
-
-                real, dimension(U%dim, U%dim, ele_loc(u,1)) :: ug, viscEle
-                type(element_type), pointer :: u_shape
-                integer, dimension(:), pointer :: neigh
-    
-                ! Loop gubbins
-                real, dimension(U%dim, U%dim, ele_loc(u,1)):: centralEleLesVisc, neighLesVisc, workLesVisc
-                real, dimension(U%dim, U%dim) :: les_filter_width, lesViscNode, avLesVisc
-                real, dimension(ele_loc(u,1)) :: y_wall, y_plus, filter_scale
-                real, parameter :: y_plus_dilute=0.90
-                real, dimension(ele_loc(u,1)) :: magStrain, magStrainHorz, magStrainVert, sgsHorz, sgsVert
-                real :: iso_visc, magLesVisc, maxMagLesVisc
-                real, dimension(ele_loc(u,1), ele_loc(u,1)) :: M_inv
-                real :: depth, depthscale
-                real, parameter :: minDepth=5.25
-    
-                real, dimension(U%dim, U%dim, ele_loc(u,1)) :: tensor_visc
-                real, dimension(U%dim, ele_loc(u,1)) :: x_val
-    
-                integer :: i, j, n, nColours, nElements, nNeighbours, nValidNeighbours, neighEle
-                real :: dx(U%dim)
-                real :: lenHorzSq, lenVertSq, lenLesIso
-    
-                integer :: clr, nnid
-    
-                type(tensor_field), pointer :: prefilterVisc, smoothGrad, intermVisc
-                character(len=OPTION_PATH_LEN) :: solverPath
-                real, parameter :: lesFilterWidth=2.0, strainFilterWidth=3.0
-                real, parameter :: smagHorz = 0.06, smagVert = 0.20
-
-
-                ! DG LES smoothing solver schema options
-                solverPath = trim(u%option_path//"/prognostic"//&
-                    &"/spatial_discretisation/discontinuous_galerkin/les_model")
-
-
-                allocate(prefilterVisc)
-                call allocate(prefilterVisc, x%mesh, "PrefilterTensorEddyVisc")
-                call zero(prefilterVisc)
-
-                allocate(intermVisc)
-                call allocate(intermVisc, x%mesh, "IntermediateTensorEddyVisc")
-
-                allocate(smoothGrad)
-                call allocate(smoothGrad, u_cg%mesh, "smoothedStrain")
-
-                call anisotropic_smooth_tensor(uGrad, X, smoothGrad, strainFilterWidth, trim(solverPath))
-
-
-
-                u_shape=>ele_shape(U,1)
-    
-                allocate(detwei(ele_ngi(U,ele)))
-    
-                nElements = ele_count(tensor_eddy_visc)
-                element_loop: do ele = 1, nElements
-          
-                    y_wall = ele_val(distance_to_wall, ele)
-
-                    ! A few arrays to use further down
-                    ug=ele_val(smoothGrad, ele)
-                    neigh=>ele_neigh(X, ele)
-                    nNeighbours = size(neigh)
-                    viscEle = ele_val(Viscosity,ele)
-                    x_val=ele_val(X, ele)
-
-                    call les_length_scales_squared_roman(X, ele, lenHorzSq, lenVertSq)
-
-
-                    ! Calculate magnitude of vert, horz and total strains
-                    ! (Note: SGS horz/vert are averaged across element)
-                    magStrainHorz = 0.0
-                    magStrainVert = 0.0
-                    do n=1, ele_loc(u,1)
-                        FLAbort("This bit is wrong: should use strain rate tensor (0.5*(ug_ij+ug+ji)), not gradient tensor")
-!                    magStrainHorz(n) = magStrainHorz(n) + &
-!                        sqrt( 2*ug(1,1,n)**2 + 2*ug(2,2,n)**2 + 4*ug(1,2,n)**2)
-!
-!                    magStrainVert(n) = magStrainVert(n) + &
-!                        sqrt( 4*ug(1,3,n)**2 + 2*ug(3,3,n)**2 + 4*ug(3,2,n)**2)
-             
-!                    magStrain(n) = norm2(ug(:,:,n))
-                end do
-
-
-                ! SGS Horz and vert strain (see Roman)
-                sgsHorz(:) = ((smagHorz*lesFilterWidth)**2) * lenHorzSq * magStrainHorz(:)
-                sgsVert(:) = ((smagVert*lesFilterWidth)**2) * lenVertSq * magStrainVert(:)
-
-                !          lesViscNode = 0.0
-                !          do i=1, U%dim
-                !              do j=1, U%dim-1
-                !                  do n=1, NLOC
-                !                      lesViscNode(i,j) = lesViscNode(i,j) + sgsHorz(n)
-                !                  end do
-                !              end do
-                !          end do
-
-                !          do i=1, U%dim
-                !              do n=1, NLOC
-                !                  lesViscNode(i,U%dim) = lesViscNode(i,U%dim) + sgsVert(n)
-                !              end do
-                !          end do
-
-                !          lesViscNode = lesViscNode / NLOC
-
-                !          do n=1, NLOC
-                !              workLesVisc(:,:,n) = lesViscNode
-                !          end do
-
-
-                do i=1, U%dim
-                    do j=1, U%dim-1
-                        do n=1, ele_loc(u,1)
-                        workLesVisc(i,j,n) = sgsHorz(n)
-                    end do
-                end do
-            end do
-          
-            do i=1, U%dim
-                do n=1, ele_loc(u,1)
-                workLesVisc(i,U%dim,n) =  sgsVert(n)
-            end do
-        end do
-
-        !          lesViscNode = lesViscNode / NLOC
-
-        ! Field before we apply any filter, smoothing or Van Driest.
-        call set(prefilterVisc, &
-            ele_nodes(prefilterVisc, ele), workLesVisc)
-
-
-    end do element_loop
-
-    ! Update prefiltered viscosity field halo
-    call halo_update(prefilterVisc)
-
-
-    ! Smooth mesh. We need to do this to stop negative feedback -> instablity
-    if(.not. have_van_driest) then
-        call anisotropic_smooth_tensor(prefilterVisc, X, tensor_eddy_visc, lesFilterWidth, trim(solverPath))
-    else
-        call anisotropic_smooth_tensor(prefilterVisc, X, intermVisc, lesFilterWidth, trim(solverPath))
-
-        element_loop2: do ele = 1, nElements
-            !
-            !          ! ==== Filtering (averaging with neighbours)
-            !          ! This is a lot cheaper than doing a full smoothing solve.
-            !          ! But it currently doesn't work... or does it?
-            !
-            !          neigh=>ele_neigh(X, ele)
-            !          nNeighbours = size(neigh)
-            !
-            !          avLesVisc=0.0
-            !          nValidNeighbours=0
-            !          do ni=1, nNeighbours
-            !
-            !              neighEle = neigh(ni)
-            !              if(neighEle > 0) then
-            !                  neighLesVisc = ele_val(prefilterVisc, neighEle)
-            !
-            !                  do n=1, NLOC
-            !                      avLesVisc = avLesVisc + neighLesVisc(:,:,n)
-            !                  end do
-            !
-            !              end if
-            !              nValidNeighbours = nValidNeighbours+1
-            !          end do
-
-            !          centralEleLesVisc = ele_val(prefilterVisc, ele)
-            !          do n=1, NLOC
-            !              avLesVisc = avLesVisc + centralEleLesVisc(:,:,n)
-            !          end do
-            !
-            !          avLesVisc = avLesVisc / (NLOC * nValidNeighbours+1)
-            !          do n=1, NLOC
-            !              workLesVisc(:,:,n) = avLesVisc
-            !          end do
-            !
-            !
-            filter_scale=1.0
-            ! apply Van Driest damping functions
-            y_wall = ele_val(distance_to_wall, ele)
-            viscEle = ele_val(Viscosity,ele)
-            ug=ele_val(smoothGrad, ele)
-            x_val=ele_val(X, ele)
-
-            workLesVisc=ele_val(intermVisc, ele)
-
-            do n=1, NLOC
-            magStrain(n) = norm2(ug(:,:,n))
-            iso_visc = norm2( viscEle(:,:,n) )
-            depth = y_wall(n) + abs(x_val(3, n))
-
-            ! We're assuming tidal sim here. If less than minDepth, then node is coastline.
-            if(depth < minDepth) then
-                depthScale=0.2
-            else
-                depthScale=1.0
-            end if
-
-            ! y_plus_dilute dilutes the wall effect, necessary at low resolutions
-            y_plus(n) = y_wall(n) * magStrain(n) / sqrt(iso_visc)
-            filter_scale(n) = (1 - y_plus_dilute * exp(-1.0*y_plus(n)/25.0))*depthScale
-
-            workLesVisc(:,:,n) = workLesVisc (:,:,n) * filter_scale(n)
-        end do
-
-        ! debugging fields
-        if (associated(y_plus_debug)) then
-            call set(y_plus_debug, ele_nodes(y_plus_debug, ele), y_plus)
-        end if
-
-
-        call set(tensor_eddy_visc, &
-            ele_nodes(tensor_eddy_visc, ele), workLesVisc)
-
-    end do element_loop2
-
-end if
-
-call deallocate(prefilterVisc)
-deallocate(prefilterVisc)
-
-call deallocate(intermVisc)
-deallocate(intermVisc)
-
-call deallocate(smoothGrad)
-deallocate(smoothGrad)
-
-deallocate(detwei)
-
-
-! Need to update the halos for eddy viscosity
-call halo_update(tensor_eddy_visc)
-
-
-end subroutine les_tensor_viscosity_roman_elements
-
-
-
-
 
 subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
@@ -1331,7 +1059,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     &vvr_sf, ib_min_grad, nvfrac, &
     &inverse_mass, inverse_masslump, mass, subcycle_m, partial_stress, &
     have_les, have_isotropic_les, &
-    smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
+    smagorinsky_coefficient, eddy_visc, vector_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
     y_plus_debug, les_filter_width_debug )
 
@@ -1531,7 +1259,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     real, intent(in) :: smagorinsky_coefficient
     type(scalar_field), pointer, intent(inout) :: eddy_visc, y_plus_debug, &
         & les_filter_width_debug
-    type(tensor_field), pointer, intent(inout) :: tensor_eddy_visc
+    type(vector_field), pointer, intent(inout) :: vector_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
 
 
@@ -1655,14 +1383,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
         deallocate(dnvfrac_t)
     end if
 
-    if ((have_viscosity).and.assemble_element) then
-        if(associated(tensor_eddy_visc)) then
-            Viscosity_ele = ele_val(Viscosity,ele) + ele_val(tensor_eddy_visc, ele)
-        else
-            Viscosity_ele = ele_val(Viscosity,ele)
-        end if
-    end if
-   
+
     if (assemble_element) then
         u_val = ele_val(u, ele)
     end if
@@ -2159,28 +1880,15 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     if(have_viscosity.and.assemble_element) then
         if (primal) then
             do dim = 1, u%dim
-                if(associated(tensor_eddy_visc)) then
-                    if(multiphase) then
-                        ! Viscosity matrix is \int{grad(N_A)*viscosity*vfrac*grad(N_B)} for multiphase.
-                        Viscosity_mat(dim,dim,:loc,:loc) = &
-                            dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele) + ele_val_at_quad(tensor_eddy_visc, ele), &
-                            &                    du_t, detwei*nvfrac_gi)
-                    else
-                        Viscosity_mat(dim,dim,:loc,:loc) = &
-                            dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele) + ele_val_at_quad(tensor_eddy_visc, ele), &
-                            &                    du_t, detwei)
-                    end if
+                if(multiphase) then
+                    ! Viscosity matrix is \int{grad(N_A)*viscosity*vfrac*grad(N_B)} for multiphase.
+                    Viscosity_mat(dim,dim,:loc,:loc) = &
+                        dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
+                        &                    du_t, detwei*nvfrac_gi)
                 else
-                    if(multiphase) then
-                        ! Viscosity matrix is \int{grad(N_A)*viscosity*vfrac*grad(N_B)} for multiphase.
-                        Viscosity_mat(dim,dim,:loc,:loc) = &
-                            dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
-                            &                    du_t, detwei*nvfrac_gi)
-                    else
-                        Viscosity_mat(dim,dim,:loc,:loc) = &
-                            dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
-                            &                    du_t, detwei)
-                    end if
+                    Viscosity_mat(dim,dim,:loc,:loc) = &
+                        dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
+                        &                    du_t, detwei)
                 end if
             end do
 
@@ -2201,24 +1909,13 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
 
             ! Get kappa mat for CDG
             if(viscosity_scheme==CDG) then
-                if(associated(tensor_eddy_visc)) then
-                    if(multiphase) then
-                        ! kappa = mu*vfrac for multiphase
-                        kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei*nvfrac_gi, &
-                            & ele_val_at_quad(Viscosity,ele) + ele_val_at_quad(tensor_eddy_visc,ele))
-                    else
-                        kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei, &
-                            & ele_val_at_quad(Viscosity,ele) + ele_val_at_quad(tensor_eddy_visc,ele))
-                    end if
+                if(multiphase) then
+                    ! kappa = mu*vfrac for multiphase
+                    kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei*nvfrac_gi, &
+                        & ele_val_at_quad(Viscosity,ele))
                 else
-                    if(multiphase) then
-                        ! kappa = mu*vfrac for multiphase
-                        kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei*nvfrac_gi, &
-                            & ele_val_at_quad(Viscosity,ele))
-                    else
-                        kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei, &
-                            & ele_val_at_quad(Viscosity,ele))
-                    end if
+                    kappa_mat = shape_shape_tensor(u_shape,u_shape,detwei, &
+                        & ele_val_at_quad(Viscosity,ele))
                 end if
             end if
 
@@ -2366,8 +2063,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
                         & subcycle_m_tensor_addto, nvfrac, &
                         & ele2grad_mat=ele2grad_mat, kappa_mat=kappa_mat, &
                         & inverse_mass_mat=inverse_mass_mat, &
-                        & viscosity=viscosity, viscosity_mat=viscosity_mat, &
-                        & tensor_eddy_visc=tensor_eddy_visc)
+                        & viscosity=viscosity, viscosity_mat=viscosity_mat)
                 end if
             else
                 if(.not. turbine_face .or. turbine_fluxfac>=0) then
@@ -2377,8 +2073,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
                         & Rho, U, U_nl, U_mesh, P, q_mesh, surfacetension, &
                         & velocity_bc, velocity_bc_type, &
                         & pressure_bc, pressure_bc_type, hb_pressure, &
-                        & subcycle_m_tensor_addto, nvfrac, &
-                        & tensor_eddy_visc=tensor_eddy_visc)
+                        & subcycle_m_tensor_addto, nvfrac)
                 end if
             end if
 
@@ -2555,7 +2250,7 @@ contains
         real, dimension(U%dim, U%dim, ele_loc(U, ele)) :: tensor_visc
 
         ! The LES bit.
-        tensor_visc = Viscosity_ele + ele_val(tensor_eddy_visc, ele)
+        tensor_visc = Viscosity_ele
 
         do dim1=1, Viscosity%dim(1)
             do dim2=1,Viscosity%dim(2)
@@ -2595,12 +2290,7 @@ contains
 
         ! print*, "local_assembly_bassi_rebay()"
 
-        ! The LES bit.
-        if(associated(tensor_eddy_visc)) then
-            tensor_visc = Viscosity_ele + ele_val(tensor_eddy_visc, ele)
-        else
-            tensor_visc = Viscosity_ele
-        end if
+        tensor_visc = Viscosity_ele
 
         !      if (have_les) then
         !        call les_tensor_viscosity_roman(tensor_visc)
@@ -2905,12 +2595,6 @@ contains
 
         ! store sgs viscosity
 
-        if (associated(tensor_eddy_visc)) then
-            call set(tensor_eddy_visc, ele_nodes(tensor_eddy_visc, ele), les_visc)
-        end if
-
-
-        tensor_visc = tensor_visc + les_visc
 
     end subroutine les_tensor_viscosity
 
@@ -3045,10 +2729,6 @@ end do
 
 les_visc = les_visc / NLOC
 
-
-if (associated(tensor_eddy_visc)) then
-    call set(tensor_eddy_visc, ele_nodes(tensor_eddy_visc, ele), les_visc)
-end if
 
 ! Add to viscosity
 tensor_visc = tensor_visc + les_visc
@@ -3195,8 +2875,7 @@ subroutine construct_momentum_interface_dg(ele, face, face_2, ni, &
     & pressure_bc, pressure_bc_type, hb_pressure, &
     & subcycle_m_tensor_addto, nvfrac, &
     & ele2grad_mat, kappa_mat, inverse_mass_mat, &
-    & viscosity, viscosity_mat,  &
-    & tensor_eddy_visc )
+    & viscosity, viscosity_mat )
     !!< Construct the DG element boundary integrals on the ni-th face of
     !!< element ele.
     implicit none
@@ -3234,7 +2913,6 @@ subroutine construct_momentum_interface_dg(ele, face, face_2, ni, &
     real, dimension(:,:), intent(in), optional :: inverse_mass_mat
 
     type(tensor_field), intent(in), optional :: viscosity
-    type(tensor_field), pointer, optional :: tensor_eddy_visc
 
     !! Local viscosity matrix for assembly.
     real, intent(inout), dimension(:,:,:,:), optional :: viscosity_mat
@@ -3321,11 +2999,7 @@ subroutine construct_momentum_interface_dg(ele, face, face_2, ni, &
         allocate( kappa_gi(Viscosity%dim(1), Viscosity%dim(2), &
             face_ngi(Viscosity,face)) )
 
-        if(associated(tensor_eddy_visc)) then
-            kappa_gi = face_val_at_quad(Viscosity, face) + face_val_at_quad(tensor_eddy_visc, face)
-        else
-            kappa_gi = face_val_at_quad(Viscosity, face)
-        end if
+        kappa_gi = face_val_at_quad(Viscosity, face)
 
 
         !    print*, "@@ Viscosity%dim(1):", Viscosity%dim(1)

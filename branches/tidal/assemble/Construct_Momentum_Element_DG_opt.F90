@@ -15,7 +15,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &vvr_sf, ib_min_grad, nvfrac, &
     &inverse_mass, inverse_masslump, mass, subcycle_m, partial_stress, &
     have_les, have_isotropic_les, &
-    smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
+    smagorinsky_coefficient, eddy_visc, vector_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
     y_plus_debug, les_filter_width_debug )
 
@@ -213,7 +213,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, intent(in) :: smagorinsky_coefficient
     type(scalar_field), pointer, intent(inout) :: eddy_visc, y_plus_debug, &
         & les_filter_width_debug
-    type(tensor_field), pointer, intent(inout) :: tensor_eddy_visc
+    type(vector_field), pointer, intent(in) :: vector_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
     real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
@@ -427,9 +427,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                     Viscosity_ele(dim1, dim1, :) = &
                         Viscosity_ele(dim1, dim1, :)+eddy_visc%val(x_ele)
                 end do
-            else
-                ! Anisotropic / tensor LES
-                Viscosity_ele = Viscosity_ele + tensor_eddy_visc%val(:,:, x_ele)
+
+                ! Anisotropic (horz/vert split) is handled elsewhere
              end if
         end if
         u_val = u%val(:, u_ele)
@@ -1310,9 +1309,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                          tensormul( tmp_face_tensor, &
                          face_u_shape%n )
                 else
-                    face_kappa_gi = face_kappa_gi + &
-                         tensormul( tensor_eddy_visc%val(:,:,x_face_glno_1), &
-                         face_u_shape%n )
+! Need to do something else for vector_eddy_visc (h/v split)
+!                    face_kappa_gi = face_kappa_gi + &
+!                         tensormul( tensor_eddy_visc%val(:,:,x_face_glno_1), &
+!                         face_u_shape%n )
                 end if
              end if
 #endif

@@ -204,24 +204,28 @@ contains
     ! ========================================================================
     subroutine create_dg_les_field_options(phase_path, dg_path)
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
-            tensor_eddy_visc_path, scalar_eddy_visc_path
+            vector_eddy_visc_path, scalar_eddy_visc_path
 
         logical :: have_les_option, have_les_visc_field, have_isotropic_les, have_partial_stress
         integer :: stat
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
-        tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
+        vector_eddy_visc_path = trim(phase_path)//"vector_field::SplitEddyViscosity/"
 
         have_isotropic_les = have_option(trim(dg_path)//"les_model/isotropic")
         have_partial_stress = have_option(trim(dg_path)//"viscosity_scheme/partial_stress_form")
 
         have_les_option = have_option(trim(dg_path)//"les_model")
         have_les_visc_field = (have_option(trim(scalar_eddy_visc_path)) &
-            .or. have_option(trim(tensor_eddy_visc_path)))
+            .or. have_option(trim(vector_eddy_visc_path)))
+
+        ! Partial stress needs to be on for any kind of turbulence modelling.
+!        if(.not. have_partial_stress) then
+!            FLExit("Error. Partial stress must be selected for Large Eddy Simulation")
+!        end if
+
 
         if(have_les_option .and. .not. have_les_visc_field) then
-!           Will eventually use partial_stress as an indicator
-!            if(have_partial_stress) then
             if(have_isotropic_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
@@ -250,25 +254,25 @@ contains
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
 
             else
-                ! Create full SGS Eddy Viscosity tensor field
-                ewrite(1,*) "Creating TensorEddyViscosity field"
+                ! Create split horz/vert SGS Eddy Viscosity field (vector)
+                ewrite(1,*) "Creating VectorEddyViscosity field"
 
-                call add_option(trim(tensor_eddy_visc_path), stat)
-                call set_option_attribute(trim(tensor_eddy_visc_path)//"rank", "2", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic", stat)
+                call add_option(trim(vector_eddy_visc_path), stat)
+                call set_option_attribute(trim(vector_eddy_visc_path)//"rank", "1", stat)
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic", stat)
 
-                call set_option_attribute(trim(tensor_eddy_visc_path)//"diagnostic/algorithm/name", &
+                call set_option_attribute(trim(vector_eddy_visc_path)//"diagnostic/algorithm/name", &
                     "Internal", stat)
-                call set_option_attribute(trim(tensor_eddy_visc_path)//"diagnostic/algorithm/material_phase_support", &
+                call set_option_attribute(trim(vector_eddy_visc_path)//"diagnostic/algorithm/material_phase_support", &
                     "single", stat)
 
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/mesh/name", stat)
-                call set_option_attribute(trim(tensor_eddy_visc_path)//"diagnostic/mesh/name", &
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic/mesh/name", stat)
+                call set_option_attribute(trim(vector_eddy_visc_path)//"diagnostic/mesh/name", &
                     "CoordinateMesh", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/output", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat/include_in_stat", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic/output", stat)
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic/stat", stat)
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic/stat/include_in_stat", stat)
+                call add_option(trim(vector_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
             end if
         end if
 
