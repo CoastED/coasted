@@ -50,7 +50,7 @@ module dg_les
   public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_vector_viscosity
 
   ! This scales the Van Driest effect
-  real, parameter :: van_scale=0.75
+  real, parameter :: van_scale=1.0
 
 contains
 
