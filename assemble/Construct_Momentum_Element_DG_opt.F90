@@ -1063,6 +1063,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 Mass_mat = shape_shape(u_shape, u_shape, detwei)
                 inverse_mass_mat = mass_mat
                 call invert(inverse_mass_mat)
+                ele2grad_mat = shape_dshape(u_shape,du_t,detwei)
+                do concurrent (i=1:opDim)
+                    ele2grad_mat(i,:,:) = matmul(inverse_mass_mat, &
+                         ele2grad_mat(i,:,:))
+                end do
+
 #endif
 
             ! Get kappa mat for CDG
