@@ -34,7 +34,7 @@ PROGRAM	 = ./bin/$(FLUIDITY)
 FLDECOMP = ./bin/fldecomp
 
 LIB_FLUIDITY = ./lib/lib$(FLUIDITY).a
-SLIB_FLUIDITY = lib$(FLUIDITY).so
+SLIB_FLUIDITY = ./lib/lib$(FLUIDITY).so
 
 # Follow: www.gnu.org/prep/standards/html_node/Directory-Variables.html
 PACKAGE_NAME = @PACKAGE_NAME@
@@ -238,18 +238,79 @@ bin/form_pod_basis: fluidity_library reduced_modelling/Form_Pod_Basis_Main.F90
 
 static: fluidity_library
 
-shared: lib/shared/$(SLIB_FLUIDITY).1
+shared: $(SLIB_FLUIDITY) main.o 
+	@echo "BUILD shared library fluidity"
+	@echo "    MKDIR bin"
+	@mkdir -p bin
+	@echo "    LD $(PROGRAM)"
+	@$(EVAL) $(LINKER) -o $(PROGRAM) main.o $(LIBS)
 
-lib/shared/$(SLIB_FLUIDITY).1: fluidity_library 
+
+$(SLIB_FLUIDITY): $(OBJS) python_build sub_system scripts
 	@echo "BUILD shared libfluidity"
-	@rm -rf tmp
-	@mkdir -p tmp lib/shared
-	@cp $(LIB_FLUIDITY) tmp
-	@cd tmp; ar x lib$(FLUIDITY).a; rm lib$(FLUIDITY).a; cd ..
-	@echo "    LD lib$(FLUIDITY).so"
-	@$(EVAL) $(LINKER) -shared -Wl,-soname,$(SLIB_FLUIDITY).1 -o lib/shared/$(SLIB_FLUIDITY).1 tmp/* -L./lib -lvtkfortran 
-	@rm -rf tmp
-	@cd lib/shared; ln -sf $(SLIB_FLUIDITY).1 $(SLIB_FLUIDITY); cd ../..
+	@echo "    MKDIR lib"
+	@mkdir -p lib
+	@echo "    MAKE debug"
+	@cd debug; 	$(MAKE)
+	@echo '    MAKE libwm'
+	@cd libwm; $(MAKE)
+	@echo "    MAKE femtools"
+	@cd femtools;	$(MAKE)
+	@echo "    MAKE bathymetry"
+	@cd bathymetry; $(MAKE)
+	@echo "    MAKE ocean_forcing"
+	@cd ocean_forcing; $(MAKE)
+ifeq (@HYPERLIGHT@,yes)
+	@echo "    MAKE hyperlight"
+	@cd hyperlight; $(MAKE)
+endif
+	@echo "    MAKE sediments"
+	@cd sediments; $(MAKE)
+	@echo "    MAKE parameterisation"
+	@cd parameterisation; $(MAKE)
+	@echo "    MAKE forward_interfaces"
+	@cd forward_interfaces;	$(MAKE)
+	@echo "    MAKE horizontal_adaptivity"
+	@cd horizontal_adaptivity;   	$(MAKE)
+	@echo "    MAKE preprocessor"
+	@cd preprocessor; $(MAKE)
+	@echo "    MAKE error_measures"
+	@cd error_measures;   	$(MAKE)
+	@echo "    MAKE assemble"
+	@cd assemble;   	$(MAKE)
+	@echo "    MAKE diagnostics"
+	@cd diagnostics;   	$(MAKE)
+	@echo "    MAKE reduced_modelling"
+	@cd reduced_modelling;   	$(MAKE)
+	@echo "    MAKE adjoint"
+	@cd adjoint; $(MAKE)
+	@echo "    MAKE main"
+	@cd main; $(MAKE)
+	@echo "    MAKE options_check"
+	@./tools/make_check_options.py
+	@cd preprocessor; $(MAKE) check_options.o
+	@echo "    MAKE register_diagnostics"
+	@./tools/make_register_diagnostics.py
+	@cd preprocessor; $(MAKE) register_diagnostics.o
+	@echo "    BUILDING fluidity_library"
+	$(EVAL) $(LINKER) -Llib -shared -Wl,-soname,$(SLIB_FLUIDITY) -o $(SLIB_FLUIDITY) \
+debug/*.o \
+libwm/*.o \
+femtools/*.o \
+bathymetry/*.o \
+ocean_forcing/*.o \
+sediments/*.o \
+parameterisation/*.o \
+forward_interfaces/*.o \
+horizontal_adaptivity/*.o \
+preprocessor/*.o \
+error_measures/*.o \
+assemble/*.o \
+diagnostics/*.o \
+reduced_modelling/*.o \
+adjoint/*.o \
+main/*.o \
+-lvtkfortran -lnetcdf_c++ -lnetcdff -lnetcdf
 
 fltools: fluidity_library
 	@$(MAKE) fldecomp
