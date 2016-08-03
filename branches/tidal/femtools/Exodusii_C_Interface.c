@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "confdefs.h"
 #ifdef HAVE_LIBNETCDF
 #include "netcdf.h"
@@ -7,6 +8,13 @@
 #ifdef HAVE_LIBEXOIIV2C
 #include "exodusII.h"
 #endif
+
+/* Quick and dirty hack to satisfy FLExit() dependency for shared Fluidity 
+ * build
+ */
+
+#define FLExit(X) {fprintf(stderr, X); exit(1);}
+
 
 /* Open ExodusII File for reading */
 int c_read_ex_open(const char *path, int mode, int *comp_ws, int *io_ws, float *version)
