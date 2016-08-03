@@ -64,9 +64,10 @@ LINKER  = @LINKER@ @LDFLAGS@ $(CXXFLAGS)
 
 FLLINKER = @FLLINKER@ @LDFLAGS@ $(FCFLAGS)
 
-LIBS    = -L./lib -l$(FLUIDITY) @LIB_FEMDEM@ ./lib/libadaptivity.a \
+EXTLIBS  = @LIB_FEMDEM@ ./lib/libadaptivity.a \
            ./lib/libvtkfortran.a ./lib/libspatialindex.a ./lib/libspud.a ./lib/libjudy.a  \
            @LIBS@ @BLAS_LIBS@
+LIBS    = -L./lib -l$(FLUIDITY) @EXTLIBS@
 
 OBJS = $(shell find . -mindepth 2 -maxdepth 2 -name '*.c' -o -name '*.cpp' -o -name '*.[fF]' -o -name '*.F90' | grep -v ^./lib | xargs)
 MAKE = @MAKE@ -s
@@ -237,6 +238,30 @@ bin/form_pod_basis: fluidity_library reduced_modelling/Form_Pod_Basis_Main.F90
 
 
 static: fluidity_library
+
+patcompat: main.o lib/lib$(FLUIDITY).a
+	@echo "BUILD pat-compatible fluidity"
+	@echo "    MKDIR bin"
+	@mkdir -p bin
+	@echo "    LD $(PROGRAM)"
+	@$(EVAL) $(LINKER) -o $(PROGRAM) main.o \
+debug/*.o \
+libwm/*.o \
+femtools/*.o \
+bathymetry/*.o \
+ocean_forcing/*.o \
+sediments/*.o \
+parameterisation/*.o \
+forward_interfaces/*.o \
+horizontal_adaptivity/*.o \
+preprocessor/*.o \
+error_measures/*.o \
+assemble/*.o \
+diagnostics/*.o \
+reduced_modelling/*.o \
+adjoint/*.o \
+main/*.o \
+$(EXTLIBS)
 
 shared: $(SLIB_FLUIDITY) main.o 
 	@echo "BUILD shared library fluidity"
