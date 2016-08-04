@@ -67,7 +67,7 @@ FLLINKER = @FLLINKER@ @LDFLAGS@ $(FCFLAGS)
 EXTLIBS  = @LIB_FEMDEM@ ./lib/libadaptivity.a \
            ./lib/libvtkfortran.a ./lib/libspatialindex.a ./lib/libspud.a ./lib/libjudy.a  \
            @LIBS@ @BLAS_LIBS@
-LIBS    = -L./lib -l$(FLUIDITY) @EXTLIBS@
+LIBS    = -L./lib -l$(FLUIDITY) $(EXTLIBS)
 
 OBJS = $(shell find . -mindepth 2 -maxdepth 2 -name '*.c' -o -name '*.cpp' -o -name '*.[fF]' -o -name '*.F90' | grep -v ^./lib | xargs)
 MAKE = @MAKE@ -s
