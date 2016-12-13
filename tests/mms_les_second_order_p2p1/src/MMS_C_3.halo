@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<halos process="3" nprocs="16">
+    <halo level="1" n_private_nodes="68">
+        <halo_data process="0">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="1">
+            <send>1 2 3 4 5 11 12 20 28 36 </send>
+            <receive>70 71 72 73 74 76 77 79 81 83 </receive>
+        </halo_data>
+        <halo_data process="2">
+            <send>36 43 44 50 55 60 65 68 </send>
+            <receive>85 87 89 90 92 94 96 99 103 </receive>
+        </halo_data>
+        <halo_data process="3">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="4">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="5">
+            <send>13 21 29 37 45 51 56 61 </send>
+            <receive>80 82 84 86 88 91 93 95 </receive>
+        </halo_data>
+        <halo_data process="6">
+            <send>1 6 13 </send>
+            <receive>69 75 78 </receive>
+        </halo_data>
+        <halo_data process="7">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="8">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="9">
+            <send>61 62 66 67 68 </send>
+            <receive>97 98 100 101 102 </receive>
+        </halo_data>
+        <halo_data process="10">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="11">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="12">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="13">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="14">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="15">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+    </halo>
+    <halo level="2" n_private_nodes="68">
+        <halo_data process="0">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="1">
+            <send>1 2 3 4 5 6 7 8 9 10 11 12 18 19 20 27 28 35 36 44 </send>
+            <receive>106 107 108 109 110 70 71 72 73 74 112 113 76 77 115 79 117 81 119 83 121 </receive>
+        </halo_data>
+        <halo_data process="2">
+            <send>28 34 35 36 42 43 44 49 50 54 55 59 60 64 65 67 68 </send>
+            <receive>85 123 87 125 89 90 127 92 129 130 94 132 96 134 99 136 103 139 144 </receive>
+        </halo_data>
+        <halo_data process="3">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="4">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="5">
+            <send>6 13 14 21 22 29 30 37 38 45 46 51 52 56 57 61 62 </send>
+            <receive>118 80 120 82 122 84 124 86 126 88 128 91 131 93 133 95 </receive>
+        </halo_data>
+        <halo_data process="6">
+            <send>1 2 6 7 13 14 21 </send>
+            <receive>104 105 111 69 114 75 116 78 </receive>
+        </halo_data>
+        <halo_data process="7">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="8">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="9">
+            <send>56 57 61 62 63 64 65 66 67 68 </send>
+            <receive>135 97 98 137 138 100 101 102 140 141 142 143 </receive>
+        </halo_data>
+        <halo_data process="10">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="11">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="12">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="13">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="14">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+        <halo_data process="15">
+            <send></send>
+            <receive></receive>
+        </halo_data>
+    </halo>
+</halos>
