@@ -27,6 +27,8 @@
 
 #include "fdebug.h"
 
+#define HAVE_LIBTURB 1
+
 module fluids_module
 
   use AuxilaryOptions
@@ -785,6 +787,8 @@ contains
           ! Do turbine stuff here.
           if (has_vector_field(state(1), "VelocitySource")) then
 
+            print*, "**** its:", its
+
              ! This assumes VelocitySource uses the Coordinate mesh
              coord = extract_vector_field(state(1), "Coordinate")
              coord_x = extract_scalar_field_from_vector_field(coord, 1)
@@ -815,8 +819,7 @@ contains
 
              if( .not. has_scalar_field(state(1), "BladeDistribution") ) then
 
-                call turbineFarmFluidityInterface(new_mesh_geometry, &
-                     coord%mesh%nodes,&
+                call turbineFarmFluidityInterface( coord%mesh%nodes,&
                      vel%mesh%nodes,&
                      coord_x%val, coord_y%val, coord_z%val, &
                      vel_x%val, vel_y%val, vel_z%val, &
@@ -824,13 +827,12 @@ contains
                      velSrc_x%val, velSrc_y%val, velSrc_z%val, &
                      current_time, dt, &
                      its, nonlinear_iterations, &
-                     .false. )
+                     new_mesh_geometry )
              else
                 bladeDistField = extract_scalar_field(state(1), &
                      "BladeDistribution")
 
-                call turbineFarmFluidityInterface(new_mesh_geometry, &
-                     coord%mesh%nodes,&
+                call turbineFarmFluidityInterface( coord%mesh%nodes,&
                      vel%mesh%nodes,&
                      coord_x%val, coord_y%val, coord_z%val, &
                      vel_x%val, vel_y%val, vel_z%val, &
@@ -838,7 +840,7 @@ contains
                      velSrc_x%val, velSrc_y%val, velSrc_z%val, &
                      current_time, dt, &
                      its, nonlinear_iterations, &
-                     .false., &
+                     new_mesh_geometry, &
                      bladeDistField%val )
 
              end if
