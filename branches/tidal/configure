@@ -9868,7 +9868,7 @@ then
   opt_flml_file=`eval "echo $enable_cto"`
   echo "Configuring optimised compile for $opt_flml_file..."
 
-  if `sh tools/generate_optimised_defines.sh "$opt_flml_file"`
+  if `bash tools/generate_optimised_defines.sh "$opt_flml_file"`
   then
     cat >> confdefs.h << EOF
 #define USE_CTO 1
