@@ -25,13 +25,13 @@ opt_compile="yes"
 opt_dimension=`grep -A 2 dimension\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 opt_surface_degree=`grep -A 2 surface_degree\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-viscosity_scheme=`grep -A 1 \<viscosity_scheme\> "$opt_flml_file" | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | awk '{print $1}'`
+viscosity_scheme=`grep -A 1 \<viscosity_scheme\> "$opt_flml_file" | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | sed 's/[<>]//g' | awk '{print $1}'`
 
 # This isn't always needed in a simulation, but needs to be set.
 
-if [ "$opt_surface_degree" == "" ] 
+if [ "$opt_surface_degree" == "" ]
 then
-	opt_surface_degree=$opt_quad_degree
+	opt_surface_degree="$opt_quad_degree"
 fi
 
 # Disable 1D and 2D for now.

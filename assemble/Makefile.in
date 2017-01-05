@@ -81,10 +81,6 @@ OBJS    = Momentum_Diagnostic_Fields.o \
 
 .SUFFIXES: .F90 .c .cpp .o .a
 
-# This creates the optimised DG assembly routines from a template
-Construct_Elements_%.F90: Construct_Momentum_Element_DG_template.F90
-	@echo "Creating Construct_Elements_$*.F90 from template"
-	@sed 's/ELEMENT_CONFIG/$*/'  Construct_Momentum_Element_DG_template.F90 > Construct_Elements_$*.F90
 
 .F90.o:
 	@echo "        FC $<"
