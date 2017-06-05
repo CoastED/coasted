@@ -24,14 +24,9 @@
 !    License along with this library; if not, write to the Free Software
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
+
 #include "fdebug.h"
-
 #include "compile_opt_defs.h"
-
-#define NLOC 4
-#define NDIM 3
-
-
 
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum

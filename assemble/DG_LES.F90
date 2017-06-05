@@ -233,11 +233,11 @@ contains
         end if
 
         call deallocate(u_grad)
+        deallocate(u_grad)
 
         t2=mpi_wtime()
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
-
 
 
     end subroutine calc_dg_sgs_scalar_viscosity
@@ -416,8 +416,7 @@ contains
                 sgs_horz = Cs_length_horz_sq * mag_strain_horz
                 sgs_vert = Cs_length_vert_sq * mag_strain_vert
 
-                visc_turb(1) = sgs_horz
-                visc_turb(2) = sgs_horz
+                visc_turb(1:2) = sgs_horz
                 visc_turb(3) = sgs_vert
 
                 sgs_ele_av = sgs_ele_av + visc_turb/NLOC

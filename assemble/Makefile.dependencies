@@ -450,7 +450,8 @@ Interpolation_manager.o ../include/interpolation_manager.mod: \
 ../include/les_module.mod: LES.o
 	@true
 
-../include/dg_les.mod: DG_LES.o
+../include/dg_les.mod: DG_LES.o \
+   ../include/compile_opt_defs.h
 	@true
 
 LES.o ../include/les_module.mod: LES.F90 ../include/fdebug.h \
@@ -543,7 +544,8 @@ Momentum_CG.o ../include/momentum_cg.mod: Momentum_CG.F90 \
    ../include/state_module.mod ../include/transform_elements.mod \
    ../include/upwind_stabilisation.mod ../include/vector_tools.mod
 
-../include/momentum_dg.mod: Momentum_DG.o
+../include/momentum_dg.mod: Momentum_DG.o \
+   ../include/compile_opt_defs.h
 	@true
 
 Momentum_DG.o ../include/momentum_dg.mod: Momentum_DG.F90 \

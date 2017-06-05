@@ -114,14 +114,5 @@ Mba3d_Integration.o ../include/mba3d_integration.mod: \
 ../include/mba3d_mba_nodal.mod
 endif
 
-# Special case for Momentum_DG.F90
-
-Momentum_DG.o: \
-Construct_Elements_DG1_TET_QUAD_3_CDG.F90 \
-Construct_Elements_DG1_TET_QUAD_3_BASSI.F90 \
-Construct_Elements_DG1_TET_QUAD_4_CDG.F90 \
-Construct_Elements_DG1_TET_QUAD_4_BASSI.F90 \
-Construct_Momentum_Element_DG_opt.F90
-
 include Makefile.dependencies
 
