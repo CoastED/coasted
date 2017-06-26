@@ -27,7 +27,7 @@
 
 #include "fdebug.h"
 
-#define HAVE_LIBTURB 1
+! #define HAVE_LIBTURB 1
 
 module fluids_module
 
