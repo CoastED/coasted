@@ -1,4 +1,36 @@
+!    Copyright (C) 2008 Imperial College London and others.
+!
+!    Please see the AUTHORS file in the main source directory for a full list
+!    of copyright holders.
+!
+!    Prof. C Pain
+!    Applied Modelling and Computation Group
+!    Department of Earth Science and Engineering
+!    Imperial College London
+!
+!    amcgsoftware@imperial.ac.uk
+!
+!    This library is free software; you can redistribute it and/or
+!    modify it under the terms of the GNU Lesser General Public
+!    License as published by the Free Software Foundation,
+!    version 2.1 of the License.
+!
+!    This library is distributed in the hope that it will be useful,
+!    but WITHOUT ANY WARRANTY; without even the implied warranty of
+!    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+!    Lesser General Public License for more details.
+!
+!    You should have received a copy of the GNU Lesser General Public
+!    License along with this library; if not, write to the Free Software
+!    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
+!    USA
+
+! **** Assumptions made here: ****
+! - Only velocity is DG
+! - DG velocity fields are all same element types
+
 #include "fdebug.h"
+#include "compile_opt_defs.h"
 
 module dgtools
 
@@ -190,8 +222,8 @@ contains
     integer, intent(in), optional :: dirichlet_flag
 
     !local variables
-    real, dimension(ele_loc(dg_mesh,ele),ele_loc(dg_mesh,ele)) :: local_mass
-    real, dimension(dg_mesh%shape%ngi) :: detwei
+    real, dimension(opNloc, opNloc) :: local_mass
+    real, dimension(opNgi) :: detwei
     integer, dimension(:), pointer :: ele_dg
     type(element_type), pointer :: shape_dg,shape_X
     integer :: i
@@ -306,8 +338,8 @@ contains
     integer, intent(in), optional :: dirichlet_flag
 
     !local variables
-    real, dimension(ele_loc(dg_mesh,ele),ele_loc(dg_mesh,ele)) :: local_mass
-    real, dimension(dg_mesh%shape%ngi) :: detwei
+    real, dimension(opNloc, opNloc) :: local_mass
+    real, dimension(opNgi) :: detwei
     integer, dimension(:), pointer :: ele_dg
     type(element_type), pointer :: shape_dg,shape_X
     integer :: i
@@ -397,8 +429,8 @@ contains
     integer, intent(in), optional :: dirichlet_flag
 
     !local variables
-    real, dimension(ele_loc(mesh,ele),ele_loc(mesh,ele)) :: local_mass
-    real, dimension(mesh%shape%ngi) :: detwei
+    real, dimension(opNloc, opNloc) :: local_mass
+    real, dimension(opNgi) :: detwei
     integer, dimension(:), pointer :: ele_dg
     type(element_type), pointer :: shape_dg,shape_X
     integer :: i
@@ -428,7 +460,7 @@ contains
        end do
     end if
 
-    do i = 1, ele_loc(mesh,ele)
+    do i = 1, opNloc
        call set(mass,ele_dg(i),ele_dg(i),sum(local_mass(i,:)))
     end do
 
@@ -510,7 +542,7 @@ contains
     type(csr_matrix) :: mass_comp
     type(scalar_field) :: s_field
     !
-    do i = 1, v_field%dim
+    do i = 1, opDim
        mass_comp = block(block_mass,i,i)
        s_field = extract_scalar_field_from_vector_field(v_field,i)
        call dg_apply_mass(mass_comp,s_field)
@@ -625,7 +657,7 @@ contains
       ! Drop the extra reference to sparsity.
       call deallocate(sparsity)
       
-      do dim=1, vfield%dim
+      do dim=1,opDim
         
          allocate(dirichlet_list(sum(vfield_bc_type(dim,:))))
          count = 0

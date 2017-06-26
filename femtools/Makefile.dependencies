@@ -243,7 +243,8 @@ Detector_Tools.o ../include/detector_tools.mod: Detector_Tools.F90 \
    ../include/fields.mod ../include/fldebug.mod \
    ../include/integer_hash_table_module.mod ../include/spud.mod
 
-../include/dgtools.mod: Dgtools.o
+../include/dgtools.mod: Dgtools.o \
+   ../include/compile_opt_defs.h
 	@true
 
 Dgtools.o ../include/dgtools.mod: Dgtools.F90 \
