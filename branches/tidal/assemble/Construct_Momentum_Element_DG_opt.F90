@@ -1007,8 +1007,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! Highly experimental at the moment..
                 ! - Angus (26/03/2016) - with lots of help from JamesM
 
-                strain_gi, strain_prod_gi
-
                 do gi=1, opNgi
                     do iloc=1, opNloc
                         do jloc=1, opNloc
