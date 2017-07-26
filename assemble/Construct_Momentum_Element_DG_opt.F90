@@ -1007,51 +1007,70 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! Highly experimental at the moment..
                 ! - Angus (26/03/2016) - with lots of help from JamesM
 
-                do gi=1, opNgi
-                    do iloc=1, opNloc
-                        do jloc=1, opNloc
-                          Viscosity_mat(1,1,iloc,jloc) = Viscosity_mat(1,1,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*(2.0*du_t(iloc,gi,1)*du_t(jloc,gi,1) &
-                                                                               + du_t(iloc,gi,2)*du_t(jloc,gi,2) &
-                                                                               + du_t(iloc,gi,3)*du_t(jloc,gi,3))
-                          Viscosity_mat(1,2,iloc,jloc) = Viscosity_mat(1,2,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,2)*du_t(jloc,gi,1)
-                          Viscosity_mat(1,3,iloc,jloc) = Viscosity_mat(1,3,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,3)*du_t(jloc,gi,1)
+                ! do gi=1, opNgi
+                !     do iloc=1, opNloc
+                !         do jloc=1, opNloc
+                !           Viscosity_mat(1,1,iloc,jloc) = &
+                !                Viscosity_mat(1,1,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) &
+                !                *(2.0*du_t(iloc,gi,1)*du_t(jloc,gi,1) &
+                !                + du_t(iloc,gi,2)*du_t(jloc,gi,2) &
+                !                + du_t(iloc,gi,3)*du_t(jloc,gi,3))
 
-                          Viscosity_mat(2,1,iloc,jloc) = Viscosity_mat(2,1,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,1)*du_t(jloc,gi,2)
-                          Viscosity_mat(2,2,iloc,jloc) = Viscosity_mat(2,2,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*(      du_t(iloc,gi,1)*du_t(jloc,gi,1) &
-                                                                  + 2.0 * du_t(iloc,gi,2)*du_t(jloc,gi,2) &
-                                                                             + du_t(iloc,gi,3)*du_t(jloc,gi,3))
-                          Viscosity_mat(2,3,iloc,jloc) = Viscosity_mat(2,3,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,3)*du_t(jloc,gi,2)
+                !           Viscosity_mat(1,2,iloc,jloc) = &
+                !                Viscosity_mat(1,2,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) &
+                !                *du_t(iloc,gi,2)*du_t(jloc,gi,1)
 
-                          Viscosity_mat(3,1,iloc,jloc) = Viscosity_mat(3,1,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,1)*du_t(jloc,gi,3)
-                          Viscosity_mat(3,2,iloc,jloc) = Viscosity_mat(3,2,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*du_t(iloc,gi,2)*du_t(jloc,gi,3)
-                          Viscosity_mat(3,3,iloc,jloc) = Viscosity_mat(3,3,iloc,jloc) &
-                            + visc_ele_quad(1,1,gi)*(      du_t(iloc,gi,1)*du_t(jloc,gi,1) &
-                                                                             + du_t(iloc,gi,2)*du_t(jloc,gi,2) &
-                                                                  + 2.0 *  du_t(iloc,gi,3)*du_t(jloc,gi,3))
-                        end do
-                    end do
-                end do
+                !           Viscosity_mat(1,3,iloc,jloc) = &
+                !                Viscosity_mat(1,3,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) * du_t(iloc,gi,3)*du_t(jloc,gi,1)
+
+                !           Viscosity_mat(2,1,iloc,jloc) = &
+                !                Viscosity_mat(2,1,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) * du_t(iloc,gi,1)*du_t(jloc,gi,2)
+
+                !           Viscosity_mat(2,2,iloc,jloc) = &
+                !                Viscosity_mat(2,2,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi)*(du_t(iloc,gi,1)*du_t(jloc,gi,1) &
+                !                + 2.0 * du_t(iloc,gi,2)*du_t(jloc,gi,2) &
+                !                + du_t(iloc,gi,3)*du_t(jloc,gi,3))
+
+                !           Viscosity_mat(2,3,iloc,jloc) = &
+                !                Viscosity_mat(2,3,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) * du_t(iloc,gi,3)*du_t(jloc,gi,2)
+
+                !           Viscosity_mat(3,1,iloc,jloc) = &
+                !                Viscosity_mat(3,1,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) * du_t(iloc,gi,1)*du_t(jloc,gi,3)
+
+                !           Viscosity_mat(3,2,iloc,jloc) = &
+                !                Viscosity_mat(3,2,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi) * du_t(iloc,gi,2)*du_t(jloc,gi,3)
+
+                !           Viscosity_mat(3,3,iloc,jloc) = &
+                !                Viscosity_mat(3,3,iloc,jloc) &
+                !                + visc_ele_quad(1,1,gi)*(du_t(iloc,gi,1)*du_t(jloc,gi,1) &
+                !                + du_t(iloc,gi,2)*du_t(jloc,gi,2) &
+                !                + 2.0 * du_t(iloc,gi,3)*du_t(jloc,gi,3))
+
+                !         end do
+                !     end do
+                ! end do
                 do gi=1, opNgi
                     do iloc=1, opNloc
                         node_stress_diag = matmul(du_t(iloc,gi,:), visc_ele_quad(:,:, gi))
                         visc_grad_dot_u = visc_ele_quad(:,:, gi) * sum(du_t(iloc,gi, :))
 
                         do jloc=1, opNloc
-                            visc_dot_prod = ( dot_product(node_stress_diag, du_t(jloc,gi,:)) &
-                            + dot_product(node_stress_diag, du_t(jloc,gi,:))) &
+                           visc_dot_prod = &
+                                ( dot_product(node_stress_diag, du_t(jloc,gi,:)) &
+                                + dot_product(node_stress_diag, du_t(jloc,gi,:))) &
                                 * detwei(gi)
-                            resid_stress_term = matmul(visc_grad_dot_u, du_t(jloc,gi,:))*detwei(gi)
+                           resid_stress_term = matmul(visc_grad_dot_u, du_t(jloc,gi,:))*detwei(gi)
 
                             do concurrent(idim=1:opDim)
-                                Viscosity_mat(idim,idim,iloc,jloc) = &
+                               Viscosity_mat(idim,idim,iloc,jloc) = &
                                     Viscosity_mat(idim,idim,iloc,jloc) &
                                     + visc_dot_prod + resid_stress_term(idim)
                             end do
@@ -1068,10 +1087,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
                         ! Is this faster than that below?
                         do jloc=1, opNloc
-                            visc_dot_prod = dot_product(node_stress_diag, du_t(jloc,gi,:))*detwei(gi)
+                           visc_dot_prod = dot_product(node_stress_diag, du_t(jloc,gi,:))*detwei(gi)
 
                             do concurrent(idim=1:opDim)
-                                Viscosity_mat(idim,idim,iloc,jloc) = &
+                               Viscosity_mat(idim,idim,iloc,jloc) = &
                                     Viscosity_mat(idim,idim,iloc,jloc) &
                                     + visc_dot_prod
                             end do
@@ -1327,7 +1346,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 ! (Am I sure about this?)
 #ifndef SCHEME_BASSI
             ! If viscosity varies, calculate matrix at every iteration
-            if(Viscosity%field_TYPE==FIELD_TYPE_NORMAL) then
+            if(Viscosity%field_TYPE==FIELD_TYPE_NORMAL .or. have_les) then
                face_kappa_gi = tensormul( Viscosity%val(:,:,u_face_glno_1), &
                     face_u_shape%n )
             end if
@@ -1354,6 +1373,9 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !                    face_kappa_gi = face_kappa_gi + &
 !                         tensormul( tensor_eddy_visc%val(:,:,x_face_glno_1), &
 !                         face_u_shape%n )
+
+
+
                 end if
              end if
 #endif
