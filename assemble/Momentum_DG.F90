@@ -292,7 +292,7 @@ contains
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
             & y_plus_debug, les_filter_width_debug
         type(vector_field), pointer :: u_cg
-        type(vector_field), pointer :: vector_eddy_visc
+        type(tensor_field), pointer :: tensor_eddy_visc
 
         type(tensor_field), pointer :: uGrad
 
@@ -653,7 +653,7 @@ contains
 
                 ! Nullify here until have_les code works
                 nullify(eddy_visc)
-                nullify(vector_eddy_visc)
+                nullify(tensor_eddy_visc)
                 nullify(distance_to_wall)
                 nullify(y_plus_debug)
                 nullify(les_filter_width_debug)
@@ -676,26 +676,26 @@ contains
                     if(have_isotropic_les) then
                         ewrite(1,*) "*** Scalar-based DG LES (experimental)"
                         ! les eddy visc field - needs to be nullified if non-existent
-                        nullify(vector_eddy_visc)
+                        nullify(tensor_eddy_visc)
                         eddy_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=stat)
                         ! Theoretically it should always work - unless someone
-                        ! deletes the field in a chedckpoint FLML
+                        ! deletes the field in a checkpoint FLML
                         if (stat/=0) then
                             FLAbort("Can't do scalar DG LES without a ScalarEddyViscosity field")
                         else
                             ewrite(1,*) "Found ScalarEddyViscosity field"
                         end if
                     else
-                        ewrite(1,*) "*** Split horz/vert DG LES (experimental)"
+                        ewrite(1,*) "*** Tensor DG LES (experimental)"
                         nullify(eddy_visc)
-                        vector_eddy_visc => extract_vector_field(state, "VectorEddyViscosity", stat=stat)
+                        tensor_eddy_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=stat)
 
                         ! Theoretically it should always work - unless someone
                         ! deletes the field in a checkpoint FLML
                         if (stat/=0) then
-                            FLAbort("Can't do tensor DG LES without a VectorEddyViscosity field")
+                            FLAbort("Can't do tensor DG LES without a TensorEddyViscosity field")
                         else
-                            ewrite(1,*) "Found VectorEddyViscosity field"
+                            ewrite(1,*) "Found TensorEddyViscosity field"
                         end if
                     end if
 
@@ -917,7 +917,7 @@ contains
                                 & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                                 have_les=have_les, have_isotropic_les=have_isotropic_les, &
                                 smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, vector_eddy_visc=vector_eddy_visc, &
+                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                                 prescribed_filter_width=prescribed_filter_width, &
                                 distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
                                 les_filter_width_debug=les_filter_width_debug )

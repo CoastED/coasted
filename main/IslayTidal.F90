@@ -117,7 +117,9 @@ module islay_tidal
             real :: k2amp, k2phase, k1amp, k1phase, o1amp, o1phase
         end type
 
+
   public set_islay_boundary_absorption, set_islay_boundary_nonhydrostatic_pressure
+
 
   contains
         subroutine set_islay_boundary_absorption(state)
@@ -223,10 +225,10 @@ module islay_tidal
     end subroutine set_islay_boundary_absorption
 
 
-    subroutine init_boundary_data(northBC, westBC, southBC, eastBC)
+    subroutine init_pressure_boundary_data(northBC, westBC, southBC, eastBC)
         type(BoundaryPoint), allocatable, dimension(:) :: northBC, westBC, southBC, eastBC
-        integer :: northct, westct, southct, eastct
 
+        integer :: northct, westct, southct, eastct
         integer, parameter :: fd =1103
 
         integer :: err, i, nlines
@@ -262,6 +264,8 @@ module islay_tidal
             if(abs(lon-maxlon) < 0.01) eastct=eastct+1
 
         end do
+
+
 999  continue
 
 
@@ -324,37 +328,43 @@ module islay_tidal
 
         close(fd)
 
-        ! WORK IN PROGRESS
 
-    end subroutine init_boundary_data
+
+    end subroutine init_pressure_boundary_data
 
     subroutine  set_islay_boundary_nonhydrostatic_pressure(state)
         type(state_type), dimension(:), pointer :: state
         type(Scalar_Field) :: pressure
-        type(Vector_Field) :: position
+        type(Vector_Field) :: pos, remap
         type(BoundaryPoint), allocatable, dimension(:), save :: northBC, westBC, southBC, eastBC
 
-        integer :: npnodes, ncnodes, i
+        integer :: nnodes, i
         integer, save :: readConstituents
 
-        real :: lon, lat, x, y
+        real :: lon, lat, x(3)
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
 
         if(readConstituents==0) then
-            call init_boundary_data(northBC, westBC, southBC, eastBC)
+            call init_pressure_boundary_data(northBC, westBC, southBC, eastBC)
             readConstituents=1
         end if
 
         pressure = extract_scalar_field(state(1), "Pressure")
-        position = extract_vector_field(state(1), "Coordinate")
+        pos = extract_vector_field(state(1), "Coordinate")
 
-        npnodes = pressure%mesh%nodes
-        ncnodes = position%mesh%nodes
+        ! Positions remapped to Pressure space
+        call allocate(remap, 3, pressure%mesh, name="PressureCoordinate")
+        call remap_field(pos, remap)
 
-        print*, "@@ npnodes, ncnodes:", npnodes, ncnodes
+        nnodes = remap%mesh%nodes
+
+        do i=1, nnodes
+            x = remap%val(:,i)
+
+        end do
 
 
 

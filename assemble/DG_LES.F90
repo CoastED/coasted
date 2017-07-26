@@ -47,7 +47,7 @@ module dg_les
 
   private
 
-  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_vector_viscosity
+  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_tensor_viscosity
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
@@ -251,13 +251,13 @@ contains
     ! Split horizontal/vertical LES SGS viscosity
     ! ========================================================================
 
-    subroutine calc_dg_sgs_vector_viscosity(state, x, u)
+    subroutine calc_dg_sgs_tensor_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
         type(vector_field), intent(in) :: u, x
         type(scalar_field), pointer :: dist_to_wall
-        type(vector_field), pointer :: sgs_visc
+        type(tensor_field), pointer :: sgs_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -271,12 +271,12 @@ contains
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
         real :: mag_strain_horz, mag_strain_vert
         real :: sgs_horz, sgs_vert
-        real, dimension(u%dim) :: sgs_ele_av, visc_turb
+        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb
         real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
 
-        real, allocatable,save:: node_sum(:,:), node_vol_weighted_sum(:,:),&
+        real, allocatable,save:: node_sum(:, :,:), node_vol_weighted_sum(:,:,:),&
              node_neigh_total_vol(:)
         integer, allocatable, save :: node_visits(:)
 
@@ -300,7 +300,7 @@ contains
         allocate(u_grad)
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
 
-        sgs_visc => extract_vector_field(state, "VectorEddyViscosity", stat=state_flag)
+        sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
         call grad(u_cg, x, u_grad)
 
 
@@ -373,19 +373,19 @@ contains
                 deallocate(node_neigh_total_vol)
             end if
 
-            allocate(node_sum(u%dim, num_nodes))
-            allocate(node_vol_weighted_sum(u%dim, num_nodes))
+            allocate(node_sum(u%dim, u%dim, num_nodes))
+            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
         end if
 
-        node_sum(:,:)=0.0
+        node_sum(:,:,:)=0.0
         node_visits(:)=0
-        node_vol_weighted_sum(:,:)=0.0
+        node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:,:)=0.0
+        sgs_visc%val(:,:,:)=0.0
 
 
         do e=1, num_elements
@@ -416,11 +416,13 @@ contains
                 sgs_horz = Cs_length_horz_sq * mag_strain_horz
                 sgs_vert = Cs_length_vert_sq * mag_strain_vert
 
-                visc_turb(1:2) = sgs_horz
-                visc_turb(3) = sgs_vert
+                ! As per Roman et al, 2010.
+                visc_turb(1:2, 1:2) = sgs_horz
+                visc_turb(3, :) = sgs_vert
+                visc_turb(:, 3) = sgs_vert
 
                 sgs_ele_av = sgs_ele_av + visc_turb/NLOC
-                node_sum(:,gnode) = node_sum(:,gnode) + visc_turb
+                node_sum(:,:, gnode) = node_sum(:,:, gnode) + visc_turb
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
@@ -428,7 +430,7 @@ contains
             do ln=1, NLOC
                 gnode = u_cg_ele(ln)
 
-                node_vol_weighted_sum(:,gnode) = node_vol_weighted_sum(:,gnode) + ele_vol*sgs_ele_av
+                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
                 node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
             end do
         end do
@@ -442,14 +444,14 @@ contains
                 vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
 
                 call set(sgs_visc, n, &
-                    vd_damping * rho*0.5*(node_sum(:,n) / node_visits(n) &
-                    + node_vol_weighted_sum(:,n) / node_neigh_total_vol(n)) )
+                    vd_damping * rho*0.5*(node_sum(:,:,n) / node_visits(n) &
+                    + node_vol_weighted_sum(:,:,n) / node_neigh_total_vol(n)) )
             end do
         else
             do n=1, num_nodes
                 call set(sgs_visc, n, &
-                    rho*0.5*(node_sum(:,n) / node_visits(n) &
-                    + node_vol_weighted_sum(:,n) / node_neigh_total_vol(n)) )
+                    rho*0.5*(node_sum(:,:,n) / node_visits(n) &
+                    + node_vol_weighted_sum(:,:, n) / node_neigh_total_vol(n)) )
             end do
         end if
 
@@ -460,7 +462,7 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-    end subroutine calc_dg_sgs_vector_viscosity
+    end subroutine calc_dg_sgs_tensor_viscosity
 
 
 
