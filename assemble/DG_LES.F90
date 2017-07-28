@@ -365,14 +365,17 @@ contains
         ! We only allocate if mesh connectivity unchanged from
         ! last iteration; reuse saved arrays otherwise
 
+        print*, ":::: new_mesh_connectivity=", new_mesh_connectivity
         if(new_mesh_connectivity) then
             if(allocated(node_sum)) then
+                print*, ":::: node_sum allocated, deallocating old arrays"
                 deallocate(node_sum)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_visits)
                 deallocate(node_neigh_total_vol)
             end if
 
+            print*, ":::: allocating new arrays"
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
