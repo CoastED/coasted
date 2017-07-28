@@ -99,7 +99,6 @@ contains
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
         ! Allocate gradient field
-        allocate(u_grad)
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
 
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
@@ -233,7 +232,6 @@ contains
         end if
 
         call deallocate(u_grad)
-        deallocate(u_grad)
 
         t2=mpi_wtime()
 
@@ -261,7 +259,8 @@ contains
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: u_grad, mviscosity
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
 
         integer :: e, num_elements, n, num_nodes, ln
         integer :: u_cg_ele(ele_loc(u,1))
@@ -288,6 +287,8 @@ contains
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.0, pow_m=2.0
 
+        print*, "In calc_dg_sgs_tensor_viscosity()"
+
         t1=mpi_wtime()
 
         nullify(dist_to_wall)
@@ -297,7 +298,6 @@ contains
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
         ! Allocate gradient field
-        allocate(u_grad)
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
 
         sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
@@ -365,17 +365,14 @@ contains
         ! We only allocate if mesh connectivity unchanged from
         ! last iteration; reuse saved arrays otherwise
 
-        print*, ":::: new_mesh_connectivity=", new_mesh_connectivity
         if(new_mesh_connectivity) then
             if(allocated(node_sum)) then
-                print*, ":::: node_sum allocated, deallocating old arrays"
                 deallocate(node_sum)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_visits)
                 deallocate(node_neigh_total_vol)
             end if
 
-            print*, ":::: allocating new arrays"
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
@@ -459,7 +456,6 @@ contains
         end if
 
         call deallocate(u_grad)
-        deallocate(u_grad)
 
         t2=mpi_wtime()
 
