@@ -837,7 +837,7 @@ contains
                     if(have_isotropic_les) then
                         call calc_dg_sgs_scalar_viscosity(state, x, u)
                     else
-                        call calc_dg_sgs_vector_viscosity(state, x, u)
+                        call calc_dg_sgs_tensor_viscosity(state, x, u)
                     end if
                 end if
 
@@ -962,7 +962,7 @@ contains
                                 & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                                 have_les=have_les, have_isotropic_les=have_isotropic_les, &
                                 smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, vector_eddy_visc=vector_eddy_visc, &
+                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                                 prescribed_filter_width=prescribed_filter_width, &
                                 distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
                                 les_filter_width_debug=les_filter_width_debug )
@@ -1054,7 +1054,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     &vvr_sf, ib_min_grad, nvfrac, &
     &inverse_mass, inverse_masslump, mass, subcycle_m, partial_stress, &
     have_les, have_isotropic_les, &
-    smagorinsky_coefficient, eddy_visc, vector_eddy_visc, &
+    smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
     y_plus_debug, les_filter_width_debug )
 
@@ -1254,7 +1254,7 @@ subroutine construct_momentum_element_dg(ele, big_m, rhs, &
     real, intent(in) :: smagorinsky_coefficient
     type(scalar_field), pointer, intent(inout) :: eddy_visc, y_plus_debug, &
         & les_filter_width_debug
-    type(vector_field), pointer, intent(inout) :: vector_eddy_visc
+    type(tensor_field), pointer, intent(inout) :: tensor_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
 
 

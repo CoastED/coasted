@@ -549,6 +549,7 @@ Momentum_CG.o ../include/momentum_cg.mod: Momentum_CG.F90 \
 	@true
 
 Momentum_DG.o ../include/momentum_dg.mod: Momentum_DG.F90 \
+   Construct_Momentum_Element_DG_opt.F90 \
    ../include/dg_les.mod \
    ../include/boundary_conditions.mod \
    ../include/boundary_conditions_from_options.mod ../include/colouring.mod \

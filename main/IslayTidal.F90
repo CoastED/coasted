@@ -109,7 +109,7 @@ module islay_tidal
 
         integer, parameter :: ndim = 3
 
-        real, parameter :: thickness = 500
+        real, parameter :: thickness = 1000
 
         type BoundaryPoint
             real :: x, y
@@ -134,7 +134,8 @@ module islay_tidal
         real :: absorb, wt, wt2, x, y, depth
         integer, save :: alreadyran
         real, allocatable, save :: absarray(:)
-        real, parameter :: relaxhours = 0.5
+        real, parameter :: relaxhours = 0.1
+!        real, parameter :: relaxhours = 0.5
 !        real, parameter :: shoreHours=0.25
 !        real, parameter :: minShoreDepth = 5, maxShoreDepth=10
 !        real :: shoreAbs, shoreScale
