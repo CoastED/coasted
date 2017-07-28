@@ -154,6 +154,12 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Addto matrices for when subcycling is performed
     real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
 
+    ! dshape_tensor stuff (partial_stress)
+    real, dimension(opDim, opDim, opNloc, opNloc) :: sh_tensout, sh_outtens
+    real, dimension(opDim, opNloc) :: sh_to_temp
+    real, dimension(opNloc, opDim) :: sh_ot_temp
+    real, dimension(opNloc, opNloc) :: sh_dt_temp
+
     !Switch to select if we are assembling the primal or dual form
     logical :: primal
 
@@ -1001,19 +1007,35 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     if(assemble_element) then
 
         if (primal) then
-!             if(multiphase) then
-!               ! Viscosity matrix is \int{grad(N_A)*viscosity*vfrac*grad(N_B)} for multiphase.
-!               Viscosity_mat(dim,dim,:loc,:loc) = &
-!                    dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
-!                    du_t, detwei*nvfrac_gi)
-!             else
+            !             if(multiphase) then
+            !               ! Viscosity matrix is \int{grad(N_A)*viscosity*vfrac*grad(N_B)} for multiphase.
+            !               Viscosity_mat(dim,dim,:loc,:loc) = &
+            !                    dshape_tensor_dshape(du_t, ele_val_at_quad(Viscosity,ele), &
+            !                    du_t, detwei*nvfrac_gi)
+            !             else
 
-               do idim=1, opDim
-                   Viscosity_mat(idim,idim,:opNloc,:opNloc) = &
-                        dshape_tensor_dshape(du_t, visc_ele_quad, &
-                        du_t, detwei)
-               end do
+            ! Unoptimised
+            !                   Viscosity_mat(idim,idim,:opNloc,:opNloc) = &
+            !                        dshape_tensor_dshape(du_t, visc_ele_quad, &
+            !                        du_t, detwei)
+
+            ! Optimised (unrolled)
+            do idim=1, opDim
+                sh_dt_temp = 0.0
+
+                do gi=1,opNgi
+                    do concurrent(iloc=1:opNloc, jloc=1:opNloc)
+                        sh_dt_temp (iloc,jloc)=sh_dt_temp (iloc,jloc) &
+                            + dot_product( &
+                            matmul(du_t(iloc,gi,:), visc_ele_quad(:,:,gi)), &
+                            du_t(jloc,gi,:))*detwei(gi)
+                    end do
+                    Viscosity_mat(idim,idim,:opNloc,:opNloc) = sh_dt_temp
+                end do
+            end do
+
 !            end if
+
             if(partial_stress) then
                                 ! This is where to stick the partial stress stuff for LES
                                 ! - Angus
@@ -1095,42 +1117,43 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 !                end do
 
                 ! James Percival's attempt
-                    Viscosity_mat(:,:,:opNloc,:opNloc) = &
-                        Viscosity_mat(:,:,:opNloc,:opNloc) &
-                        + 0.5*dshape_tensor_outer_dshape(du_t, visc_ele_quad, &
-                        du_t, detwei) &
-                        + 0.5*dshape_outer_tensor_dshape(du_t, visc_ele_quad, &
-                        du_t, detwei)
+!                   Non-inlined
+!                    Viscosity_mat(:,:,:opNloc,:opNloc) = &
+!                        Viscosity_mat(:,:,:opNloc,:opNloc) &
+!                        + 0.5*dshape_tensor_outer_dshape(du_t, visc_ele_quad, &
+!                        du_t, detwei) &
+!                        + 0.5*dshape_outer_tensor_dshape(du_t, visc_ele_quad, &
+!                        du_t, detwei)
 
-!                if(have_isotropic_les) then
-!
-!
-!                else
-!
-!                    ! Using a revised version of AC's partial stress, as
-!                    ! couldn't work out how to do similar with James'
-!                    ! formulation
-!                    do gi=1, opNgi
-!                        do iloc=1, opNloc
-!                            node_stress_diag = matmul(du_t(iloc,gi,:), visc_ele_quad(:,:, gi))
-!                            visc_grad_dot_u = visc_ele_quad(:,:, gi) * sum(du_t(iloc,gi, :))
-!
-!                            do jloc=1, opNloc
-!                                visc_dot_prod = &
-!                                    ( dot_product(node_stress_diag, du_t(jloc,gi,:)) &
-!                                    + dot_product(node_stress_diag, du_t(jloc,gi,:))) &
-!                                    * detwei(gi)
-!                                resid_stress_term = matmul(visc_grad_dot_u, du_t(jloc,gi,:))*detwei(gi)
-!                                do concurrent(idim=1:opDim)
-!                                    Viscosity_mat(idim,idim,iloc,jloc) = &
-!                                        Viscosity_mat(idim,idim,iloc,jloc) &
-!                                        + visc_dot_prod + resid_stress_term(idim)
-!                                end do
-!                            end do
-!                        end do
-!                    end do
-!
-!                end if
+                ! Ugly but faster in-lined version
+
+                ! dshape_tensor_outer_dshape
+                sh_tensout=0.0
+
+                do gi=1,opNgi
+                   sh_to_temp= matmul(visc_ele_quad(:,:,gi) ,transpose(du_t(:,gi,:)))*detwei(gi)
+
+                   do concurrent (iloc=1:opNloc,jloc=1:opNloc,idim=1:opDim)
+                      sh_tensout(:,idim,iloc,jloc)=sh_tensout(:,idim,iloc,jloc) &
+                           + sh_to_temp(:,jloc)*du_t(iloc,gi,idim)
+                   end do
+                end do
+
+                ! dshape_outer_tensor_dshape
+                sh_outtens=0.0
+
+                do gi=1,opNgi
+                    sh_ot_temp = matmul(du_t(:,gi,:), visc_ele_quad(:,:,gi)) * detwei(gi)
+
+                    do concurrent (iloc=1:opNloc,jloc=1:opNloc,idim=1:opDim)
+                        sh_outtens(:,idim,iloc,jloc)=sh_outtens(:,idim,iloc,jloc) &
+                            +du_t(jloc,gi,:)*sh_ot_temp(iloc,idim)
+                    end do
+                end do
+
+                Viscosity_mat(:,:,:opNloc,:opNloc) = &
+                    Viscosity_mat(:,:,:opNloc,:opNloc) &
+                    + 0.5*( sh_tensout + sh_outtens)
 
             else
                 ! Tensor form
