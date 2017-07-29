@@ -88,7 +88,7 @@ module islay_tidal
                                simulation_start_time, &
                                simulation_start_cpu_time, &
                                simulation_start_wall_time, &
-                               topology_mesh_name
+                               topology_mesh_name, new_mesh_geometry
   use eventcounter
 
   use multiphase_module
@@ -124,15 +124,14 @@ module islay_tidal
   contains
         subroutine set_islay_boundary_absorption(state)
         type(state_type), dimension(:), pointer :: state
-        type(Vector_Field) :: velAbs, position
-        type(Scalar_Field) :: distTop, distBottom
+        type(Vector_Field), pointer :: velAbs, position
+        type(Scalar_Field), pointer :: distTop, distBottom
 
         integer :: i, j, ncnodes, nvnodes
-        logical :: doNotRecalculate
+        logical :: recalcAbs
         real :: relaxtime
 
         real :: absorb, wt, wt2, x, y, depth
-        integer, save :: alreadyran
         real, allocatable, save :: absarray(:)
         real, parameter :: relaxhours = 0.1
 !        real, parameter :: relaxhours = 0.5
@@ -140,15 +139,14 @@ module islay_tidal
 !        real, parameter :: minShoreDepth = 5, maxShoreDepth=10
 !        real :: shoreAbs, shoreScale
 
-
         if(.not. has_vector_field(state(1), "VelocityAbsorption")) then
             FLAbort("Error: you must have a diagnostic velocity absorption field (internal algorithm) on the Coordinate mesh to use set_islay_boundary_absorption()")
         end if
 
-        velAbs     = extract_vector_field(state(1), "VelocityAbsorption")
-        position   = extract_vector_field(state(1), "Coordinate")
-        distTop    = extract_scalar_field(state(1), "DistanceToTop")
-        distBottom = extract_scalar_field(state(1), "DistanceToBottom")
+        velAbs     => extract_vector_field(state(1), "VelocityAbsorption")
+        position   => extract_vector_field(state(1), "Coordinate")
+!        distTop    => extract_scalar_field(state(1), "DistanceToTop")
+!        distBottom => extract_scalar_field(state(1), "DistanceToBottom")
 
 
         print*, "*** Setting sponge layer absorption for Islay"
@@ -161,67 +159,68 @@ module islay_tidal
             FLAbort("set_islay_boundary_absorption(): VelocityAbsorption must be on Coordinate mesh")
         end if
 
-        ! If we don't want to recalculate, then don't.
-        if(have_option(trim(velAbs%option_path)//"/diagnostic/do_not_recalculate") &
-            .and. allocated(absarray)) then
-
-           velAbs%val(1, :) = absarray(:)
-           velAbs%val(2, :) = absarray(:)
-           velAbs%val(3, :) = absarray(:)
-
-           return
-        end if
-
-        if( .not. allocated(absarray) ) then
-            allocate(absarray(ncnodes))
-        end if
-
-        do i=1, ncnodes
-            depth = distBottom%val(i)+distTop%val(i)
-!             if(depth <= minShoreDepth) then
-!               shoreAbs = 1.0/(shoreHours*60.0*60.0)
-!             elseif(depth > maxShoreDepth) then
-!                shoreAbs=0.0
-!             else
-!                shoreScale=1.0-(depth-minShoreDepth)/(maxShoreDepth-minShoreDepth)
-!                shoreAbs = shoreScale/(shoreHours*60.0*60.0)
-!            end if
-
-            absorb = 0.
-
-            wt = 0.
-            wt2 = 0.
-
-            x = position%val(1, i)
-            y = position%val(2, i)
-
-            if(x < minx+thickness) then
-                wt=1.0-(x-minx)/thickness
-
-            elseif(x > maxx-thickness) then
-                wt=1.0-(maxx-x)/thickness
-
+        recalcAbs=.false.
+        if(new_mesh_geometry) then
+            if( .not. allocated(absarray) ) then
+                print*, "*** allocating absarray"
+                allocate(absarray(ncnodes))
+            else
+                print*, "*** deallocating/reallocating absarray"
+                deallocate(absarray)
+                allocate(absarray(ncnodes))
             end if
 
-            if(y < miny+thickness) then
-                wt2=1.0-(y-miny)/thickness
-            elseif(y > maxy-thickness) then
-                wt2=1.0-(maxy-y)/thickness
-            end if
+            recalcAbs=.true.
+        end if
 
-            if(wt2>wt) wt=wt2
+        if(recalcAbs) then
+            do i=1, ncnodes
+                depth = distBottom%val(i)+distTop%val(i)
+    !             if(depth <= minShoreDepth) then
+    !               shoreAbs = 1.0/(shoreHours*60.0*60.0)
+    !             elseif(depth > maxShoreDepth) then
+    !                shoreAbs=0.0
+    !             else
+    !                shoreScale=1.0-(depth-minShoreDepth)/(maxShoreDepth-minShoreDepth)
+    !                shoreAbs = shoreScale/(shoreHours*60.0*60.0)
+    !            end if
 
-            absorb=wt/relaxtime
+                absorb = 0.
 
- !           if(shoreAbs > absorb) absorb=shoreAbs
+                wt = 0.
+                wt2 = 0.
 
-            velAbs%val(1, i) = absorb
-            velAbs%val(2, i) = absorb
-            velAbs%val(3, i) = absorb
-            absarray(i) = absorb
-        end do
+                x = position%val(1, i)
+                y = position%val(2, i)
 
-        alreadyran = 1
+                if(x < minx+thickness) then
+                    wt=1.0-(x-minx)/thickness
+
+                elseif(x > maxx-thickness) then
+                    wt=1.0-(maxx-x)/thickness
+
+                end if
+
+                if(y < miny+thickness) then
+                    wt2=1.0-(y-miny)/thickness
+                elseif(y > maxy-thickness) then
+                    wt2=1.0-(maxy-y)/thickness
+                end if
+
+                if(wt2>wt) wt=wt2
+
+                absorb=wt/relaxtime
+
+     !           if(shoreAbs > absorb) absorb=shoreAbs
+
+                absarray(i) = absorb
+            end do
+        end if
+
+        ! Copy to velocity absorption array.
+        velAbs%val(1, :) = absarray(:)
+        velAbs%val(2, :) = absarray(:)
+        velAbs%val(3, :) = absarray(:)
 
     end subroutine set_islay_boundary_absorption
 
@@ -237,6 +236,8 @@ module islay_tidal
         real :: lon, lat, x, y, scalex, scaley
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
+
+        print*, "init_pressure_boundary_data()"
 
         open(fd, file="tidalconst/islay_tidal_const.csv", access="sequential", iostat=err)
 
@@ -368,7 +369,7 @@ module islay_tidal
         end do
 
 
-
+        call deallocate(remap)
     end subroutine  set_islay_boundary_nonhydrostatic_pressure
 
   end module islay_tidal
