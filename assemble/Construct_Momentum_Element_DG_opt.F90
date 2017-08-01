@@ -4,7 +4,7 @@
 
 !------------------ Start of template code ------------------------------
 
-subroutine construct_momentum_elements_dg_opt( colours, big_m, rhs, &
+subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
     & u_shape, p_shape, q_shape, &
     & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
@@ -23,7 +23,8 @@ subroutine construct_momentum_elements_dg_opt( colours, big_m, rhs, &
     !!< acceleration form.
     implicit none
 
-    type(integer_set), dimension(:), pointer, intent(in) :: colours
+    ! type(integer_set), dimension(:), pointer, intent(in) :: colours
+    integer, dimension(:), intent(in) :: colour_ele_list
 
     !! Main momentum matrix.
     type(petsc_csr_matrix), intent(inout) :: big_m
@@ -320,11 +321,9 @@ subroutine construct_momentum_elements_dg_opt( colours, big_m, rhs, &
 
 
 
-    colour_loop_cdg: do clr = 1, size(colours)
-       nele = key_count(colours(clr))
+       element_loop_cdg: do nnid = 1, size(colour_ele_list)
 
-       element_loop_cdg: do nnid = 1, nele
-          ele = fetch(colours(clr), nnid)
+          ele = colour_ele_list(nnid)
 
     assemble_element = .not.dg.or.element_neighbour_owned(U, ele).or.element_owned(U, ele)
 
@@ -1898,7 +1897,7 @@ subroutine construct_momentum_elements_dg_opt( colours, big_m, rhs, &
 
 
  end do element_loop_cdg
-end do colour_loop_cdg
+
 
 contains
 
