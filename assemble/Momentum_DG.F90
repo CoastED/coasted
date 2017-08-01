@@ -305,6 +305,13 @@ contains
         ! Shape functions
         type(element_type), pointer :: u_shape, p_shape, q_shape
 
+        ! element lists per colour
+        type ColouredListType
+            integer, allocatable :: list(:)
+        end type ColouredListType
+
+        type(ColouredListType), allocatable :: coloured_ele_lists(:)
+
         t0 = mpi_wtime()
 
         ewrite(1, *) "In construct_momentum_dg"
@@ -841,31 +848,6 @@ contains
                     end if
                 end if
 
-!                allocate(uGrad)
-!                call allocate(uGrad, pvelocity%mesh, "ProjectedVelocityGradient")
-!                ! Calculate current velocity gradient. This is a handy thing to have.
-!                call grad(pvelocity, X, uGrad)
-!
-!                if(have_les .and. .not. partial_stress) then
-!                    print*, "calling les_tensor_viscosity_roman_elements()"
-!
-!                    call les_tensor_viscosity_roman_elements(X, U, pvelocity, p, uGrad, &
-!                        viscosity, &
-!                        colours, &
-!                        tensor_eddy_visc=tensor_eddy_visc, &
-!                        smagorinsky_coefficient=smagorinsky_coefficient, &
-!                        prescribed_filter_width=prescribed_filter_width, &
-!                        have_van_driest=have_van_driest, &
-!                        distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
-!                        les_filter_width_debug=les_filter_width_debug )
-!                end if
-
-                !    if ( have_les .and. partial_stress .and. associated(eddy_visc)) then
-                !      ! eddy visc is calculated in momentum_dg element loop. we need to do a halo_update
-                !      call halo_update(eddy_visc)
-                !    end if
-
-
                 ! This will eventually have a switch statement.
                 ! switch(sim_type)
                 ! case(optimised_assembly_case)
@@ -877,6 +859,28 @@ contains
                 ! Establish local shape functions
                 !----------------------------------------------------------------------
 
+                if(new_mesh_connectivity .or. .not. allocated(coloured_ele_lists)) then
+                    if(allocated(coloured_ele_lists)) then
+                        do clr=1, size(colours)
+                            deallocate(coloured_ele_lists(clr)%list)
+                        end do
+                        deallocate(coloured_ele_lists)
+                    else
+                        allocate(coloured_ele_lists(size(colours)))
+                        do clr=1, size(colours)
+                            allocate(coloured_ele_lists(clr)%list(key_count(colours(clr))))
+                        end do
+                    end if
+
+                    do clr=1, size(colours)
+                        len = key_count(colours(clr))
+
+                        do nnid=1, len
+                            coloured_ele_lists(clr)%list(nnid)=fetch(colours(clr), nnid)
+                        end do
+                    end do
+                end if
+
                 u_shape=>ele_shape(U, 1)
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
@@ -886,26 +890,39 @@ contains
                     .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
                     print*, "Optimised DG assembly: Compact DG"
 
+                    !$OMP PARALLEL DEFAULT(SHARED) &
+                    !$OMP PRIVATE(clr)
 
-                    call construct_momentum_elements_dg_opt( colours, big_m, rhs, &
-                         X, U, advecting_velocity, U_mesh, X_old, X_new, &
-                         u_shape, p_shape, q_shape, &
-                         Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
-                         swe_bottom_drag, swe_u_nl, &
-                         P, old_pressure, Rho, surfacetension, q_mesh, &
-                         velocity_bc, velocity_bc_type, &
-                         pressure_bc, pressure_bc_type, &
-                         turbine_conn_mesh, on_sphere, depth, have_wd_abs, &
-                         alpha_u_field, Abs_wd, vvr_sf, ib_min_grad, nvfrac, &
-                         inverse_mass=inverse_mass, &
-                         inverse_masslump=inverse_masslump, &
-                         mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
-                         have_les=have_les, have_isotropic_les=have_isotropic_les, &
-                         smagorinsky_coefficient=smagorinsky_coefficient, &
-                         eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
-                         prescribed_filter_width=prescribed_filter_width, &
-                         distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
-                         les_filter_width_debug=les_filter_width_debug )
+                    !$OMP DO SCHEDULE(STATIC)
+
+                    colour_loop_opt: do clr=1, size(colours)
+
+                        call construct_momentum_elements_dg_opt( &
+
+                            coloured_ele_lists(clr)%list, big_m, rhs, &
+                             X, U, advecting_velocity, U_mesh, X_old, X_new, &
+                             u_shape, p_shape, q_shape, &
+                             Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
+                             swe_bottom_drag, swe_u_nl, &
+                             P, old_pressure, Rho, surfacetension, q_mesh, &
+                             velocity_bc, velocity_bc_type, &
+                             pressure_bc, pressure_bc_type, &
+                             turbine_conn_mesh, on_sphere, depth, have_wd_abs, &
+                             alpha_u_field, Abs_wd, vvr_sf, ib_min_grad, nvfrac, &
+                             inverse_mass=inverse_mass, &
+                             inverse_masslump=inverse_masslump, &
+                             mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
+                             have_les=have_les, have_isotropic_les=have_isotropic_les, &
+                             smagorinsky_coefficient=smagorinsky_coefficient, &
+                             eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
+                             prescribed_filter_width=prescribed_filter_width, &
+                             distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
+                             les_filter_width_debug=les_filter_width_debug )
+
+                    end do colour_loop_opt
+                    !$OMP END DO
+
+                    !$OMP END PARALLEL
 
                 else
 
