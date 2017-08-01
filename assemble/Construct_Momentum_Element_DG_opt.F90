@@ -4,7 +4,7 @@
 
 !------------------ Start of template code ------------------------------
 
-subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
+subroutine construct_momentum_elements_dg_opt( colours, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
     & u_shape, p_shape, q_shape, &
     & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
@@ -23,10 +23,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     !!< acceleration form.
     implicit none
 
-    !    type(integer_set), dimension(:), intent(in), pointer :: colours
+    type(integer_set), dimension(:), pointer, intent(in) :: colours
 
-    !! Index of current element
-    integer, intent(in) :: ele
     !! Main momentum matrix.
     type(petsc_csr_matrix), intent(inout) :: big_m
     !! Momentum right hand side vector for each point.
@@ -224,7 +222,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
     integer :: iloc, jloc, idim, jdim, idim2, jdim2
-
+    integer :: ele, nele, clr, nnid
     integer :: nmat_d1,nmat_d2
 
 
@@ -321,17 +319,16 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 #endif
 
 
-    !    u_face_shape => U%mesh%faces%shape
-    !    p_face_shape => P%mesh%faces%shape
-    !    q_face_shape => q_mesh%faces%shape
 
-    ! In parallel, we construct terms on elements we own and those in
-    ! the L1 element halo.
-    ! Note that element_neighbour_owned(U, ele) may return .false. if
-    ! ele is owned.  For example, if ele is the only owned element on
-    ! this process.  Hence we have to check for element ownership
-    ! directly as well.
+    colour_loop_cdg: do clr = 1, size(colours)
+       nele = key_count(colours(clr))
+
+       element_loop_cdg: do nnid = 1, nele
+          ele = fetch(colours(clr), nnid)
+
     assemble_element = .not.dg.or.element_neighbour_owned(U, ele).or.element_owned(U, ele)
+
+
 
     big_m_diag_addto = 0.0
     big_m_tensor_addto = 0.0
@@ -1898,6 +1895,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !        end do
 !
 !    end subroutine add_diagonal_to_tensor
+
+
+ end do element_loop_cdg
+end do colour_loop_cdg
 
 contains
 

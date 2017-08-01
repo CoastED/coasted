@@ -886,50 +886,26 @@ contains
                     .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
                     print*, "Optimised DG assembly: Compact DG"
 
-                    !    print*, "before assembly loop"
 
-                    !$OMP PARALLEL DEFAULT(SHARED) &
-                    !$OMP PRIVATE(clr, nnid, ele, len)
-
-                    !    print*, "before assembly loop"
-
-                    colour_loop_cdg: do clr = 1, size(colours)
-                        len = key_count(colours(clr))
-
-                        ! print*, "clr:", clr, "OpenMP thread:", omp_get_thread_num()
-
-                        !$OMP DO SCHEDULE(STATIC)
-                        element_loop_cdg: do nnid = 1, len
-                            ele = fetch(colours(clr), nnid)
-
-                            call construct_momentum_elements_dg_opt( ele, big_m, rhs, &
-                                & X, U, advecting_velocity, U_mesh, X_old, X_new, &
-                                & u_shape, p_shape, q_shape, &
-                                & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
-                                & swe_bottom_drag, swe_u_nl, &
-                                & P, old_pressure, Rho, surfacetension, q_mesh, &
-                                & velocity_bc, velocity_bc_type, &
-                                & pressure_bc, pressure_bc_type, &
-                                & turbine_conn_mesh, on_sphere, depth, have_wd_abs, &
-                                & alpha_u_field, Abs_wd, vvr_sf, ib_min_grad, nvfrac, &
-                                & inverse_mass=inverse_mass, &
-                                & inverse_masslump=inverse_masslump, &
-                                & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
-                                have_les=have_les, have_isotropic_les=have_isotropic_les, &
-                                smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
-                                prescribed_filter_width=prescribed_filter_width, &
-                                distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
-                                les_filter_width_debug=les_filter_width_debug )
-
-                        end do element_loop_cdg
-                !   !$OMP END DO
-
-                    end do colour_loop_cdg
-                    !    print*, "after assembly loop"
-
-                    !$OMP END PARALLEL
-
+                    call construct_momentum_elements_dg_opt( colours, big_m, rhs, &
+                         X, U, advecting_velocity, U_mesh, X_old, X_new, &
+                         u_shape, p_shape, q_shape, &
+                         Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
+                         swe_bottom_drag, swe_u_nl, &
+                         P, old_pressure, Rho, surfacetension, q_mesh, &
+                         velocity_bc, velocity_bc_type, &
+                         pressure_bc, pressure_bc_type, &
+                         turbine_conn_mesh, on_sphere, depth, have_wd_abs, &
+                         alpha_u_field, Abs_wd, vvr_sf, ib_min_grad, nvfrac, &
+                         inverse_mass=inverse_mass, &
+                         inverse_masslump=inverse_masslump, &
+                         mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
+                         have_les=have_les, have_isotropic_les=have_isotropic_les, &
+                         smagorinsky_coefficient=smagorinsky_coefficient, &
+                         eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
+                         prescribed_filter_width=prescribed_filter_width, &
+                         distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
+                         les_filter_width_debug=les_filter_width_debug )
 
                 else
 
