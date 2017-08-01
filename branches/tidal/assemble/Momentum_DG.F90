@@ -894,7 +894,6 @@ contains
                     !$OMP PRIVATE(clr)
 
                     !$OMP DO SCHEDULE(STATIC)
-
                     colour_loop_opt: do clr=1, size(colours)
 
                         call construct_momentum_elements_dg_opt( &
@@ -920,7 +919,7 @@ contains
                              les_filter_width_debug=les_filter_width_debug )
 
                     end do colour_loop_opt
-                    !$OMP END DO
+                    !$OMP END DO NOWAIT
 
                     !$OMP END PARALLEL
 
