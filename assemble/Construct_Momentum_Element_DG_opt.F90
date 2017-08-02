@@ -111,7 +111,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     integer :: start, finish
 
     ! Variable transform times quadrature weights.
-    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei
+    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
     ! Transformed gradient function for velocity.
     ! Transformed gradient function for grid velocity.
     ! Transformed gradient function for auxiliary variable.
@@ -136,6 +136,8 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     integer, dimension(opNloc ):: u_ele, p_ele, x_ele
     type(element_type), intent(in), pointer :: u_shape, p_shape, q_shape
     !    type(element_type), pointer :: u_face_shape, p_face_shape, q_face_shape
+
+    type(element_type), pointer :: rho_shape
 
     ! Neighbours of this element.
     integer, dimension(:), pointer :: neigh, X_neigh
@@ -300,10 +302,16 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 
     integer :: face_d1, face_d2
 
+    real :: dt_theta
+
     ! ========== END OF INTERFACE VARIABLES ==========
 
     dg=.true.
     p0=.false.
+
+    dt_theta = dt * theta
+
+    rho_shape => ele_shape(rho, 1)
 
 #if defined (SCHEME_CDG)
     !    select case (viscosity_scheme)
@@ -394,7 +402,10 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     !----------------------------------------------------------------------
 
                 ! JRM: Start inlining?
-    Rho_q=ele_val_at_quad(Rho, ele)
+    !Rho_q=ele_val_at_quad(Rho, ele)
+    Rho_q = matmul(ele_val(rho, ele), rho_shape%n)
+    detwei_rhoq=detwei*Rho_q
+
 
 !    if(multiphase) then
 !
@@ -467,7 +478,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 !        if(multiphase) then
 !            rho_mat = shape_shape(u_shape, u_shape, detwei*Rho_q*nvfrac_gi)
 !        else
-            rho_mat = shape_shape(u_shape, u_shape, detwei*Rho_q)
+            rho_mat = shape_shape(u_shape, u_shape, detwei_rhoq)
 !        end if
 
     end if
@@ -528,8 +539,8 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
         Coriolis_mat = shape_shape(u_shape, u_shape, Rho_q*Coriolis_q*detwei)
 
         ! cross terms in U_ and V_ for coriolis
-        big_m_tensor_addto(U_, V_, :opNloc, :opNloc) = big_m_tensor_addto(U_, V_, :opNloc, :opNloc) - dt*theta*coriolis_mat
-        big_m_tensor_addto(V_, U_, :opNloc, :opNloc) = big_m_tensor_addto(V_, U_, :opNloc, :opNloc) + dt*theta*coriolis_mat
+        big_m_tensor_addto(U_, V_, :opNloc, :opNloc) = big_m_tensor_addto(U_, V_, :opNloc, :opNloc) - dt_theta*coriolis_mat
+        big_m_tensor_addto(V_, U_, :opNloc, :opNloc) = big_m_tensor_addto(V_, U_, :opNloc, :opNloc) + dt_theta*coriolis_mat
 
         if(acceleration)then
             rhs_addto(U_, :opNloc) = rhs_addto(U_, :opNloc) + matmul(coriolis_mat, u_val(V_,:))
@@ -557,8 +568,8 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                 !         /                                          /
                 !  - beta | (grad T dot U_nl) T Rho dV + (1. - beta) | T (U_nl dot grad T) Rho dV
                 !         /                                          /
-                Advection_mat = -beta*dshape_dot_vector_shape(du_t, U_nl_q, u_shape, detwei*Rho_q) &
-                    + (1.-beta)*shape_vector_dot_dshape(u_shape, U_nl_q, du_t, detwei*Rho_q)
+                Advection_mat = -beta*dshape_dot_vector_shape(du_t, U_nl_q, u_shape, detwei_rhoq) &
+                    + (1.-beta)*shape_vector_dot_dshape(u_shape, U_nl_q, du_t, detwei_rhoq)
 !            end if
 
             if(move_mesh) then
@@ -567,7 +578,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 !                        + dshape_dot_vector_shape(du_t, ele_val_at_quad(U_mesh,ele), u_shape, detwei * Rho_q)
                     Advection_mat = Advection_mat &
                         + dshape_dot_vector_shape(du_t, ele_u_mesh_quad, &
-                        u_shape, detwei * Rho_q)
+                        u_shape, detwei_rhoq)
                 else
 !                    Advection_mat = Advection_mat &
 !                        - shape_vector_dot_dshape(u_shape, ele_val_at_quad(U_mesh,ele), du_t, detwei * Rho_q) &
@@ -575,7 +586,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     Advection_mat = Advection_mat &
                         - shape_vector_dot_dshape(u_shape, ele_u_mesh_quad, &
                             du_t, detwei * Rho_q) &
-                        - shape_shape(u_shape, u_shape, ele_div_at_quad(U_mesh, ele, dug_t) * detwei * Rho_q)
+                        - shape_shape(u_shape, u_shape, ele_div_at_quad(U_mesh, ele, dug_t) * detwei_rhoq)
                 end if
             end if
         else
@@ -608,8 +619,8 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     !    /                                          /
                     !  - | (grad T dot U_nl) T Rho dV - (1. - beta) | T ( div U_nl ) T Rho dV
                     !    /                                          /
-                    Advection_mat = - dshape_dot_vector_shape(du_t, U_nl_q, u_shape, detwei*Rho_q) &
-                        - (1.-beta) * shape_shape(u_shape, u_shape, U_nl_div_q*detwei*Rho_q)
+                    Advection_mat = - dshape_dot_vector_shape(du_t, U_nl_q, u_shape, detwei_rhoq) &
+                        - (1.-beta) * shape_shape(u_shape, u_shape, U_nl_div_q*detwei_rhoq)
 !                end if
 
             else
@@ -634,13 +645,13 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     !  /                                   /
                     !  | T (U_nl dot grad T) Rho dV + beta | T ( div U_nl ) T Rho dV
                     !  /                                   /
-                    Advection_mat = shape_vector_dot_dshape(u_shape, U_nl_q, du_t, detwei*Rho_q) &
-                        + beta * shape_shape(u_shape, u_shape, U_nl_div_q * detwei*Rho_q)
+                    Advection_mat = shape_vector_dot_dshape(u_shape, U_nl_q, du_t, detwei_rhoq) &
+                        + beta * shape_shape(u_shape, u_shape, U_nl_div_q * detwei_rhoq)
 !                end if
 
                 if(move_mesh) then
                     Advection_mat = Advection_mat &
-                        - shape_shape(u_shape, u_shape, ele_div_at_quad(U_mesh, ele, dug_t) * detwei * Rho_q)
+                        - shape_shape(u_shape, u_shape, ele_div_at_quad(U_mesh, ele, dug_t) * detwei_rhoq)
                 end if
             end if
         end if
@@ -653,7 +664,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
             else
                 big_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
                     &= big_m_tensor_addto(dim, dim, :opNloc, :opNloc) &
-                    &+ dt*theta*advection_mat
+                    &+ dt_theta*advection_mat
             end if
             if(acceleration.and..not.subcycle) then
                 rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(advection_mat, u_val(dim,:))
@@ -664,7 +675,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 
     if(have_source.and.acceleration.and.assemble_element) then
         ! Momentum source matrix.
-        Source_mat = shape_shape(U_shape, ele_shape(Source,ele), detwei*Rho_q)
+        Source_mat = shape_shape(U_shape, ele_shape(Source,ele), detwei_rhoq)
         if(lump_source) then
             source_lump = sum(source_mat, 2)
             do dim = 1, opDim
@@ -789,12 +800,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
             ! Form the implicit buoyancy absorption terms
             if (on_sphere) then
                 do i=1, opNgi
-                    ib_abs_diag(3,i)=-theta*dt*gravity_magnitude*drho_dz(i)
+                    ib_abs_diag(3,i)=-dt_theta*gravity_magnitude*drho_dz(i)
                 end do
                 ib_abs=rotate_diagonal_to_sphere_gi(X, ele, ib_abs_diag)
             else
                 do i=1, opNgi
-                    ib_abs_diag(:,i)=theta*dt*gravity_magnitude*drho_dz(i)*grav_at_quads(:,i)
+                    ib_abs_diag(:,i)=dt_theta*gravity_magnitude*drho_dz(i)*grav_at_quads(:,i)
                 end do
             end if
 
@@ -823,7 +834,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
         ! the absorption cannot be used in the pressure correction.
         if (on_sphere) then
 
-            Abs_mat_sphere = shape_shape_tensor(U_shape, U_shape, detwei*rho_q, tensor_absorption_gi)
+            Abs_mat_sphere = shape_shape_tensor(U_shape, U_shape, detwei_rhoq, tensor_absorption_gi)
             Abs_mat = shape_shape_vector(U_shape, U_shape, detwei*rho_q, absorption_gi)
             if (have_wd_abs) then
                 FLExit("Wetting and drying absorption does currently not work on the sphere.")
@@ -837,7 +848,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                         do dim2 = 1, opDim
                             do i = 1, opNloc
                                 big_m_tensor_addto(dim, dim2, i, i) = big_m_tensor_addto(dim, dim2, i, i) + &
-                                    & dt*theta*Abs_lump_sphere(dim,dim2,i)
+                                    & dt_theta*Abs_lump_sphere(dim,dim2,i)
                             end do
                         end do
                         if (acceleration) then
@@ -857,12 +868,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     if(have_mass) then
                         do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
-                                1.0/(l_masslump+dt*theta*abs_lump(dim,:)) )
+                                1.0/(l_masslump+dt_theta*abs_lump(dim,:)) )
                         end do
                     else
                         do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
-                                1.0/(dt*theta*abs_lump(dim,:)) )
+                                1.0/(dt_theta*abs_lump(dim,:)) )
                         end do
                     end if
                 end if
@@ -874,7 +885,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                         do dim2 = 1, opDim
                             big_m_tensor_addto(dim, dim2, :opNloc, :opNloc) = &
                                 big_m_tensor_addto(dim, dim2, :opNloc, :opNloc) + &
-                                & dt*theta*Abs_mat_sphere(dim,dim2,:,:)
+                                & dt_theta*Abs_mat_sphere(dim,dim2,:,:)
                         end do
                         if (acceleration) then
                             rhs_addto(dim, :opNloc) = rhs_addto(dim, :opNloc) - matmul(Abs_mat_sphere(dim,dim,:,:), u_val(dim,:))
@@ -892,12 +903,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     if(have_mass) then
                         do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
-                                inverse(rho_mat + dt*theta*Abs_mat(dim,:,:)))
+                                inverse(rho_mat + dt_theta*Abs_mat(dim,:,:)))
                         end do
                     else
                         do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
-                                inverse(dt*theta*Abs_mat(dim,:,:)))
+                                inverse(dt_theta*Abs_mat(dim,:,:)))
                         end do
                     end if
                 end if
@@ -906,12 +917,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 
         else
 
-            Abs_mat = shape_shape_vector(U_shape, U_shape, detwei*rho_q, absorption_gi)
+            Abs_mat = shape_shape_vector(U_shape, U_shape, detwei_rhoq, absorption_gi)
 
             if (have_wd_abs) then
                 !! Wetting and drying absorption becomes active when water level reaches d_0
                 alpha_u_quad=ele_val_at_quad(alpha_u_field, ele)
-                Abs_mat = Abs_mat + shape_shape_vector(U_shape, U_shape, alpha_u_quad*detwei*rho_q, &
+                Abs_mat = Abs_mat + shape_shape_vector(U_shape, U_shape, alpha_u_quad*detwei_rhoq, &
                     &                                 ele_val_at_quad(Abs_wd,ele))
             end if
 
@@ -920,7 +931,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 
                 if (assemble_element) then
                     do dim = 1, opDim
-                        big_m_diag_addto(dim, :opNloc) = big_m_diag_addto(dim, :opNloc) + dt*theta*abs_lump(dim,:)
+                        big_m_diag_addto(dim, :opNloc) = big_m_diag_addto(dim, :opNloc) + dt_theta*abs_lump(dim,:)
                     end do
                     if(acceleration) then
                         do dim = 1, opDim
@@ -933,12 +944,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     if(have_mass) then
                         do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
-                                1.0/(l_masslump+dt*theta*abs_lump(dim,:)) )
+                                1.0/(l_masslump+dt_theta*abs_lump(dim,:)) )
                         end do
                     else
                         do dim = 1, opDim
                             call set( inverse_masslump, dim, u_ele, &
-                                1.0/(dt*theta*abs_lump(dim,:)) )
+                                1.0/(dt_theta*abs_lump(dim,:)) )
                         end do
                     end if
                 end if
@@ -948,7 +959,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                 if (assemble_element) then
                     do dim = 1, opDim
                         big_m_tensor_addto(dim, dim, :opNloc, :opNloc) = big_m_tensor_addto(dim, dim, :opNloc, :opNloc) + &
-                            & dt*theta*Abs_mat(dim,:,:)
+                            & dt_theta*Abs_mat(dim,:,:)
                     end do
                     if(acceleration) then
                         do dim = 1, opDim
@@ -961,12 +972,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     if(have_mass) then
                         do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
-                                inverse(rho_mat + dt*theta*Abs_mat(dim,:,:)))
+                                inverse(rho_mat + dt_theta*Abs_mat(dim,:,:)))
                         end do
                     else
                         do dim = 1, opDim
                             call set(inverse_mass, dim, dim, u_ele, u_ele, &
-                                inverse(dt*theta*Abs_mat(dim,:,:)))
+                                inverse(dt_theta*Abs_mat(dim,:,:)))
                         end do
                     end if
                 end if
@@ -1605,12 +1616,12 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
                     else
                         big_m_tensor_addto(face_dim, face_dim, u_face_l, u_face_l) = &
                             big_m_tensor_addto(face_dim, face_dim, u_face_l, u_face_l) + &
-                            face_nnAdvection_out*dt*theta
+                            face_nnAdvection_out*dt_theta
 
                         if (.not.face_dirichlet(face_dim)) then
                             big_m_tensor_addto(face_dim, face_dim, u_face_l, face_start:face_finish) = &
                                 big_m_tensor_addto(face_dim, face_dim, u_face_l, face_start:face_finish) + &
-                                face_nnAdvection_in*dt*theta
+                                face_nnAdvection_in*dt_theta
                         end if
 
                         if (.not.face_dirichlet(face_dim)) then
@@ -1795,7 +1806,7 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
         end if
 
         ! Insert viscosity in matrix.
-        big_m_tensor_addto = big_m_tensor_addto + Viscosity_mat*theta*dt
+        big_m_tensor_addto = big_m_tensor_addto + Viscosity_mat*dt_theta
 
         if (acceleration) then
             do dim1=1, opDim
@@ -1900,41 +1911,6 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 
 
 contains
-
-
-    subroutine bassi_rebay_viscosity
-        integer :: idim
-        real, dimension(opFngi) :: coefficient_detwei
-
-        do idim=1,opDim
-
-            coefficient_detwei = face_detwei*face_normal(idim,:)
-! No multiphase for now.
-!
-!            if(multiphase) then
-!                coefficient_detwei = coefficient_detwei*face_nvfrac_gi
-!            end if
-
-            if(.not. face_boundary) then
-                ! Internal face.
-                Grad_U_mat_q(idim, q_face_l, U_face_l)=&
-                    Grad_U_mat_q(idim, q_face_l, U_face_l) &
-                    +0.5*shape_shape(face_q_shape, face_U_shape, coefficient_detwei)
-
-                ! External face.
-                Grad_U_mat_q(idim, q_face_l, start:finish)=&
-                    +0.5*shape_shape(face_q_shape, face_U_shape, coefficient_detwei)
-            else
-                ! Boundary case. Put the whole integral in the external bit.
-
-                ! External face.
-                Grad_U_mat_q(idim, q_face_l, face_start:face_finish)=&
-                    +shape_shape(face_q_shape, face_U_shape, coefficient_detwei)
-            end if
-        end do
-
-    end subroutine bassi_rebay_viscosity
-
 
     subroutine get_normal_mat
         !!< We assemble
@@ -2142,73 +2118,6 @@ contains
         end do
 
     end subroutine primal_fluxes
-
-
-
-    ! Bassi-Rebay tensor form - ie. homogenous viscosity, incompressible
-    subroutine local_assembly_bassi_rebay
-
-        integer :: d3
-        real, dimension(opDim, opDim, opNloc) :: tensor_visc
-
-        do dim1=1, opDim
-            do dim2=1,opDim
-                do d3 = 1, opDim
-
-                    ! Div U * G^U * Viscosity * G * Grad U
-                    ! Where G^U*G = inverse(Q_mass)
-                    Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
-                        +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
-                        &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
-                        &     ,grad_U_mat_q(dim2,:,:))
-
-                end do
-            end do
-        end do
-
-    end subroutine local_assembly_bassi_rebay
-
-
-    ! Bassi-Rebay tensor form - the one you want for incompressible LES.
-    subroutine local_assembly_bassi_rebay_stress_form
-
-        ! Instead of:
-        !   M_v = G^T_m (\nu Q^{-1})_mn G_n
-        ! We construct:
-        !   M_v_rs = G^T_m A_rmsn Q^{-1} G_n
-        ! where A is a dim x dim x dim x dim linear operator:
-        !   A_rmsn = \partial ( \nu ( u_{r,m} + u_{m,r} ) ) / \partial u_{s,n}
-        !   where a_{b,c} = \partial a_b / \partial x_c
-        ! off diagonal terms define the coupling between the velocity components
-
-        real, dimension(opNloc, opNloc) :: Q_visc
-        real, dimension(opNloc) :: isotropic_visc
-        integer :: adim1, adim2, adim3, adim4
-
-        isotropic_visc = Viscosity_ele(1,1,:)
-
-        ! isotropic viscosity (just take the first component as scalar value)
-        ! Q_visc = mat_diag_mat(Q_inv, Viscosity_ele(1,1,:))
-        ! ** BUG FIX: must use isotropic_visc here, so effect of LES not ignored
-        Q_visc = mat_diag_mat( Q_inv, isotropic_visc )
-
-        do adim1=1,opDim
-            do adim2=1,opDim
-                do adim3=1,opDim
-                    do adim4=1,opDim
-                        if (adim1==adim2 .and. adim2==adim3 .and. adim3==adim4) then
-                            Viscosity_mat(adim1,adim3,:,:) = Viscosity_mat(adim1,adim3,:,:) &
-                                + 2.0 * matmul(matmul(transpose(grad_U_mat_q(adim2,:,:)),Q_visc),grad_U_mat_q(adim4,:,:))
-                        else if  ((adim1==adim3 .and. adim2==adim4) .or. (adim2==adim3 .and. adim1==adim4)) then
-                            Viscosity_mat(adim1,adim3,:,:) = Viscosity_mat(adim1,adim3,:,:) &
-                                + matmul(matmul(transpose(grad_U_mat_q(adim2,:,:)),Q_visc),grad_U_mat_q(adim4,:,:))
-                        end if
-                    end do
-                end do
-            end do
-        end do
-
-    end subroutine local_assembly_bassi_rebay_stress_form
 
 
     subroutine interior_penalty
