@@ -658,12 +658,12 @@ contains
                     "/isotropic")
 
 
-                ! Nullify here until have_les code works
-                nullify(eddy_visc)
-                nullify(tensor_eddy_visc)
-                nullify(distance_to_wall)
-                nullify(y_plus_debug)
-                nullify(les_filter_width_debug)
+!                ! Nullify here until have_les code works
+!                nullify(eddy_visc)
+!                nullify(tensor_eddy_visc)
+!                nullify(distance_to_wall)
+!                nullify(y_plus_debug)
+!                nullify(les_filter_width_debug)
 
                 ! Commented out until it works...
                 if(have_les) then
@@ -919,7 +919,7 @@ contains
                              les_filter_width_debug=les_filter_width_debug )
 
                     end do colour_loop_opt
-                    !$OMP END DO NOWAIT
+                    !$OMP END DO
 
                     !$OMP END PARALLEL
 
