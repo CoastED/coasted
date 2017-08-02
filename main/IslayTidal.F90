@@ -95,6 +95,7 @@ module islay_tidal
   use detector_parallel, only: sync_detector_coordinates, deallocate_detector_list_array
   use momentum_diagnostic_fields, only: calculate_densities
   use sediment_diagnostics, only: calculate_sediment_flux
+  use physics_from_options
 
   implicit none
 
@@ -225,10 +226,10 @@ module islay_tidal
     end subroutine set_islay_boundary_absorption
 
 
-    subroutine init_pressure_boundary_data(northBC, westBC, southBC, eastBC)
-        type(BoundaryPoint), allocatable, dimension(:) :: northBC, westBC, southBC, eastBC
+    subroutine init_pressure_boundary_data(tidalBC)
+        type(BoundaryPoint), allocatable :: tidalBC(:)
 
-        integer :: northct, westct, southct, eastct
+        integer :: tidalct
         integer, parameter :: fd =1103
 
         integer :: err, i, nlines
@@ -242,12 +243,7 @@ module islay_tidal
         open(fd, file="tidalconst/islay_tidal_const.csv", access="sequential", iostat=err)
 
         ! How many lines in the file?
-        nlines=0
-
-        northct=0
-        westct=0
-        southct=0
-        eastct=0
+        tidalct=0
 
         ! Ignore header row
         read(fd, '(A)', end=999) lineText
@@ -256,23 +252,15 @@ module islay_tidal
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
                 o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
-            ! Northern boundary
-            if(abs(lat-maxlat) < 0.01) northct=northct+1
-            ! Western boundary
-            if(abs(lon-minlon) < 0.01) westct=westct+1
-            ! Southern boundary
-            if(abs(lat-minlat) < 0.01) southct=southct+1
-            ! Eastern boundary
-            if(abs(lon-maxlon) < 0.01) eastct=eastct+1
-
+            tidalct=tidalct+1
         end do
 
-
 999  continue
+        nlines=tidalct
 
 
         ! now we know how to allocate
-        allocate( northBC(northct), southBC(southct), westBC(westct), eastBC(eastct) )
+        allocate( tidalBC(tidalct) )
 
         rewind(fd)
 
@@ -282,10 +270,7 @@ module islay_tidal
         scalex=sizelon/sizex
         scaley=sizelat/sizey
 
-        northct=0
-        westct=0
-        southct=0
-        eastct=0
+        tidalct=0
 
         do i=1, nlines-1
             read(fd, *) lon, lat, m2amp, m2phase, s2amp, s2phase, &
@@ -295,62 +280,54 @@ module islay_tidal
             x = (lon-minlon) / scalex
             y = (lat-minlat) / scaley
 
-            ! Northern boundary
-            if(abs(lat-maxlat) < 0.01) then
-                northBC(northct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
-                    s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
-                    k1amp, k1phase, o1amp, o1phase)
-                northct=northct+1
-            end if
+            tidalBC(tidalct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
+                s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
+                k1amp, k1phase, o1amp, o1phase)
 
-            ! Western boundary
-            if(abs(lon-minlon) < 0.01) then
-                westBC(westct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
-                    s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
-                    k1amp, k1phase, o1amp, o1phase)
-                westct=westct+1
-            end if
-
-            ! Southern boundary
-            if(abs(lat-minlat) < 0.01) then
-                southBC(southct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
-                    s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
-                    k1amp, k1phase, o1amp, o1phase)
-                southct=southct+1
-            end if
-
-            ! Eastern boundary
-            if(abs(lon-maxlon) < 0.01) then
-                eastBC(eastct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
-                    s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
-                    k1amp, k1phase, o1amp, o1phase)
-                eastct=eastct+1
-            end if
+            tidalct=tidalct+1
         end do
 
         close(fd)
 
-
-
     end subroutine init_pressure_boundary_data
 
-    subroutine  set_islay_boundary_nonhydrostatic_pressure(state)
+
+
+    subroutine  set_islay_boundary_nonhydrostatic_pressure(state, t)
         type(state_type), dimension(:), pointer :: state
+        real, intent(in) :: t
+
         type(Scalar_Field) :: pressure
         type(Vector_Field) :: pos, remap
-        type(BoundaryPoint), allocatable, dimension(:), save :: northBC, westBC, southBC, eastBC
+        type(BoundaryPoint), allocatable, dimension(:), save :: tidalpt
+        type(BoundaryPoint) :: thisbp
 
-        integer :: nnodes, i
+        integer :: nnodes, i, j, npoints
         integer, save :: readConstituents
 
         real :: lon, lat, x(3)
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
-        real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
+        ! real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
+
+        real :: m2ang, s2ang, n2ang, k2ang
+        real :: dist, wt, sumwt, rampTime, rampval, rho0
+
+        real, parameter :: pi=3.14159265359, piConv=2.0*pi/360.0, grav=9.81
+
+        call get_fs_reference_density_from_options(rho0, state(1)%option_path)
+
+
+        m2ang = piConv / 12.4206012
+        s2ang = piConv / 12.0
+        n2ang = piConv / 12.65834751
+        k2ang = piConv / 11.96723606
+
+        ramptime=48*60*60
 
         print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
 
         if(readConstituents==0) then
-            call init_pressure_boundary_data(northBC, westBC, southBC, eastBC)
+            call init_pressure_boundary_data(tidalpt)
             readConstituents=1
         end if
 
@@ -362,9 +339,55 @@ module islay_tidal
         call remap_field(pos, remap)
 
         nnodes = remap%mesh%nodes
+        npoints = size(tidalpt)
 
         do i=1, nnodes
+
+            ! Only the four main tidal constituents for now
+            m2amp=0
+            m2phase=0
+            s2amp=0
+            s2phase=0
+            n2amp=0
+            n2phase=0
+            k2amp=0
+            k2phase=0
+
             x = remap%val(:,i)
+
+            sumwt=0
+
+            ! Calculate contributions to mesh points from each tidal boundary
+            ! constituent point
+
+            do j=1, npoints
+                dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
+                wt=1/dist
+                sumwt=sumwt+wt
+
+                m2amp = m2amp + wt*tidalpt(j)%m2amp
+                m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
+                s2amp = s2amp + wt*tidalpt(j)%s2amp
+                s2phase = s2phase + wt*tidalpt(j)%s2phase * piConv
+
+                n2amp = n2amp + wt*tidalpt(j)%n2amp
+                n2phase = n2phase + wt*tidalpt(j)%n2phase * piConv
+                k2amp = k2amp + wt*tidalpt(j)%k2amp
+                k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
+            end do
+
+            ! now set pressure
+            if(t<ramptime) then
+                rampval=t/ramptime
+            else
+                rampval=1
+            end if
+
+            pressure%val(i) = rampval * rho0 * grav &
+                *  ( m2amp * cos(m2ang*t - m2phase) &
+                + s2amp * cos(s2ang*t - s2phase) &
+                + n2amp * cos(n2ang*t - n2phase) &
+                + k2amp * cos(k2ang*t - k2phase) )
 
         end do
 
