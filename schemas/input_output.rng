@@ -48,6 +48,11 @@ Set the name of the prescribed NEMO pressure scalar field below.</a:documentatio
           <data type="string" datatypeLibrary=""/>
         </attribute>
       </element>
+      <element name="tidal_csv">
+        <a:documentation>Use text file of constituents from main/IslayTidal.F90 
+tidalconst/boundaries.csv</a:documentation>
+        <empty/>
+      </element>
     </choice>
   </define>
   <define name="input_choice_real_plus_file">

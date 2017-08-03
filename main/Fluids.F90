@@ -780,7 +780,6 @@ contains
           ! Do Islay modelling stuff (absorption and tidal BCs)
           if(have_option("/turn_on_islay_options")) then
             call set_islay_boundary_absorption(state)
-            call set_islay_boundary_nonhydrostatic_pressure(state,  current_time)
           end if
 
 #ifdef HAVE_LIBTURB
