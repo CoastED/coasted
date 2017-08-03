@@ -185,6 +185,8 @@ module islay_tidal
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
+        real, parameter :: pi=3.141592653, piConv=2.0*pi/360.0
+
         print*, "init_pressure_boundary_data()"
 
         open(fd, file="tidalconst/boundaries.csv", access="sequential", iostat=err)
@@ -227,9 +229,10 @@ module islay_tidal
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
                 o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
-            tidalBC(tidalct+1)=BoundaryPoint(lon, lat, m2amp, m2phase, &
-                s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
-                k1amp, k1phase, o1amp, o1phase)
+            tidalBC(tidalct+1)=BoundaryPoint(lon, lat, &
+                 m2amp, m2phase*piConv, s2amp, s2phase*piConv, &
+                 n2amp, n2phase*piConv, k2amp, k2phase*piConv, &
+                 k1amp, k1phase*piConv, o1amp, o1phase*piConv)
 
             tidalct=tidalct+1
         end do
@@ -259,12 +262,13 @@ module islay_tidal
         ! real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         real :: m2ang, s2ang, n2ang, k2ang
-        real :: dist, wt, sumwt, rampTime, rampval, rho0, pval, pscale1
+        real :: dist, sumwt, rampTime, rampval, rho0, pval, pscale1
 
         real :: t
-        real, parameter :: pi=3.14159265359, piConv=2.0*pi/360.0, grav=9.81
+        real, parameter :: pi=3.1415926535, grav=9.81
+        real, parameter :: piConv=2.0*pi/360.0, toangvel=2.*pi/3600
 
-        real, allocatable, save :: dists(:)
+        real, allocatable, save :: dists(:), wts(:)
         real :: maxdist
 
         print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
@@ -274,10 +278,10 @@ module islay_tidal
 
         call set(surface_field, 0.0)
 
-        m2ang = piConv / 12.4206012
-        s2ang = piConv / 12.0
-        n2ang = piConv / 12.65834751
-        k2ang = piConv / 11.96723606
+        m2ang = toangvel / 12.4206012
+        s2ang = toangvel / 12.0
+        n2ang = toangvel / 12.65834751
+        k2ang = toangvel / 11.96723606
 
         t = current_time
 
@@ -296,6 +300,7 @@ module islay_tidal
         ! Now allocate distance-from-specified-tidal-points array
         if( .not. allocated(dists)) then
            allocate(dists(nspecpoints))
+           allocate(wts(nspecpoints))
         end if
 
         ! Positions remapped to Pressure space
@@ -312,6 +317,7 @@ module islay_tidal
         else
            rampval=1
         end if
+
         pscale1 = rampval * rho0 * grav
 
         do i=1, nnodes
@@ -345,19 +351,20 @@ module islay_tidal
 
             sumwt=0
             do j=1, nspecpoints
-               wt = abs(maxdist-dists(j))/maxdist
-               sumwt = sumwt+wt
+               wts(j) = abs(maxdist-dists(j))/maxdist
+
+               m2amp = m2amp + wts(j)*tidalpt(j)%m2amp
+               m2phase = m2phase+ wts(j)*tidalpt(j)%m2phase * piConv
+               s2amp = s2amp + wts(j)*tidalpt(j)%s2amp
+               s2phase = s2phase + wts(j)*tidalpt(j)%s2phase * piConv
                
-               m2amp = m2amp + wt*tidalpt(j)%m2amp
-               m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
-               s2amp = s2amp + wt*tidalpt(j)%s2amp
-               s2phase = s2phase + wt*tidalpt(j)%s2phase * piConv
-               
-               n2amp = n2amp + wt*tidalpt(j)%n2amp
-               n2phase = n2phase + wt*tidalpt(j)%n2phase * piConv
-               k2amp = k2amp + wt*tidalpt(j)%k2amp
-               k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
+               n2amp = n2amp + wts(j)*tidalpt(j)%n2amp
+               n2phase = n2phase + wts(j)*tidalpt(j)%n2phase * piConv
+               k2amp = k2amp + wts(j)*tidalpt(j)%k2amp
+               k2phase = k2phase + wts(j)*tidalpt(j)%k2phase * piConv
             end do
+
+            sumwt = sum(wts)
 
             ! now set pressure
             pval = (pscale1/sumwt) &
@@ -366,8 +373,7 @@ module islay_tidal
                 + n2amp * cos(n2ang*t - n2phase) &
                 + k2amp * cos(k2ang*t - k2phase) )
 
-            surface_field%val(i)=pval
-!            call addto(surface_field, i, pval)
+            call addto(surface_field, i, pval)
         end do
 
         ! call deallocate(remap)
