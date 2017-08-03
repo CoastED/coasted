@@ -23,7 +23,11 @@ input_choice_real_plus_boundary_forcing =
         ## Set the name of the prescribed NEMO pressure scalar field below.
         element NEMO_data {
            attribute field_name { string }
-        }
+        }|
+
+        ## Use text file of constituents from main/IslayTidal.F90 
+        ## tidalconst/boundaries.csv
+        element tidal_csv { empty }
    )
 
 input_choice_real_plus_file =

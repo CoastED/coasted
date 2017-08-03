@@ -117,3 +117,7 @@ synthetic_bc.o ../include/synthetic_bc.mod: synthetic_bc.F90 \
    ../include/parallel_tools.mod ../include/spud.mod \
    ../include/state_module.mod
 
+
+Boundary_Conditions_From_Options.o: ../include/islay_tidal.mod
+
+../include/islay_tidal.mod: IslayTidal.o
