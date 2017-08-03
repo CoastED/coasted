@@ -248,8 +248,6 @@ module islay_tidal
         type(vector_field), intent(in):: bc_position
         character(len=*), intent(in):: bc_type_path, field_name
 
-        type(Scalar_Field), pointer :: pressure
-        type(Vector_Field) :: pos, remap
         type(BoundaryPoint), allocatable, dimension(:), save :: tidalpt
         type(BoundaryPoint) :: thisbp
 
@@ -261,10 +259,13 @@ module islay_tidal
         ! real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         real :: m2ang, s2ang, n2ang, k2ang
-        real :: dist, wt, sumwt, rampTime, rampval, rho0, pval
+        real :: dist, wt, sumwt, rampTime, rampval, rho0, pval, pscale1
 
         real :: t
         real, parameter :: pi=3.14159265359, piConv=2.0*pi/360.0, grav=9.81
+
+        real, allocatable, save :: dists(:)
+        real :: maxdist
 
         print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
 
@@ -286,22 +287,51 @@ module islay_tidal
         if(readConstituents==0) then
             call init_pressure_boundary_data(tidalpt)
             readConstituents=1
+
         end if
 
-        pressure => extract_scalar_field(state, "Pressure")
-        pos = extract_vector_field(state, "Coordinate")
+        nnodes = node_count(bc_position)
+        nspecpoints = size(tidalpt)
+
+        ! Now allocate distance-from-specified-tidal-points array
+        if( .not. allocated(dists)) then
+           allocate(dists(nspecpoints))
+        end if
 
         ! Positions remapped to Pressure space
         ! call allocate(remap, 3, pressure%mesh, name="PressureCoordinate")
         ! call remap_field(pos, remap)
 
-        nnodes = node_count(bc_position)
-        nspecpoints = size(tidalpt)
+        ! Individual distances from each specified tidal point
 
-        print*, "nnodes:", nnodes
-        print*, "nspecpoints:", nspecpoints
+!        print*, "nnodes:", nnodes
+!        print*, "nspecpoints:", nspecpoints
+
+        if(t<ramptime) then
+           rampval=t/ramptime
+        else
+           rampval=1
+        end if
+        pscale1 = rampval * rho0 * grav
 
         do i=1, nnodes
+
+            x = bc_position%val(:,i)
+!            print*, "node coord: ", x(1), x(2)
+
+            sumwt=0
+
+            ! Calculate distances to mesh points from each tidal boundary
+            ! constituent point
+
+            maxdist=0
+            do j=1, nspecpoints
+!                print*, "    spec point:", tidalpt(j)%x, tidalpt(j)%y
+                dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
+!                print*, "dist:", dist
+                if(maxdist<dist) maxdist=dist
+                dists(j) = dist
+            end do
 
             ! Only the four main tidal constituents for now
             m2amp=0
@@ -313,52 +343,32 @@ module islay_tidal
             k2amp=0
             k2phase=0
 
-            x = bc_position%val(:,i)
-            print*, "node coord: ", x(1), x(2)
-
             sumwt=0
-
-            ! Calculate contributions to mesh points from each tidal boundary
-            ! constituent point
-
             do j=1, nspecpoints
-                dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
-                print*, "dist:", dist
-                wt=1/dist
-                sumwt=sumwt+wt
-
-                m2amp = m2amp + wt*tidalpt(j)%m2amp
-                m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
-                s2amp = s2amp + wt*tidalpt(j)%s2amp
-                s2phase = s2phase + wt*tidalpt(j)%s2phase * piConv
-
-                n2amp = n2amp + wt*tidalpt(j)%n2amp
-                n2phase = n2phase + wt*tidalpt(j)%n2phase * piConv
-                k2amp = k2amp + wt*tidalpt(j)%k2amp
-                k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
+               wt = abs(maxdist-dists(j))/maxdist
+               sumwt = sumwt+wt
+               
+               m2amp = m2amp + wt*tidalpt(j)%m2amp
+               m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
+               s2amp = s2amp + wt*tidalpt(j)%s2amp
+               s2phase = s2phase + wt*tidalpt(j)%s2phase * piConv
+               
+               n2amp = n2amp + wt*tidalpt(j)%n2amp
+               n2phase = n2phase + wt*tidalpt(j)%n2phase * piConv
+               k2amp = k2amp + wt*tidalpt(j)%k2amp
+               k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
             end do
 
-!            print*,"wt:", wt
-
             ! now set pressure
-            if(t<ramptime) then
-                rampval=t/ramptime
-            else
-                rampval=1
-            end if
-
-            pval = rampval * sumwt * rho0 * grav &
+            pval = (pscale1/sumwt) &
                 *  ( m2amp * cos(m2ang*t - m2phase) &
                 + s2amp * cos(s2ang*t - s2phase) &
                 + n2amp * cos(n2ang*t - n2phase) &
                 + k2amp * cos(k2ang*t - k2phase) )
 
-            print*,"pval:", pval
-
-            call addto(surface_field, i, pval)
-
+            surface_field%val(i)=pval
+!            call addto(surface_field, i, pval)
         end do
-
 
         ! call deallocate(remap)
     end subroutine  set_islay_boundary_nonhydrostatic_pressure
