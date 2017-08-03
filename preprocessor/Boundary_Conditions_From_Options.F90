@@ -727,6 +727,7 @@ contains
        call get_boundary_condition(field, i+1, surface_mesh=surface_mesh, &
             surface_element_list=surface_element_list)
 
+
        if((surface_mesh%shape%degree==0).and.(bc_type=="dirichlet")) then
 
          ! if the boundary condition is on a 0th degree mesh and is of type strong dirichlet
@@ -738,7 +739,6 @@ contains
          ! then remap these to the surface
          bc_position = get_coordinates_remapped_to_surface(temp_position, surface_mesh, surface_element_list) 
          call deallocate(temp_position)
-
        else
          ! in all other cases the positions are remapped to the actual surface
          bc_position = get_coordinates_remapped_to_surface(position, surface_mesh, surface_element_list) 
@@ -753,7 +753,7 @@ contains
 
           bc_type_path=trim(bc_path_i)//"/type[0]"
 
-          surface_field => extract_surface_field(field, bc_name, "value")
+          surface_field => extract_surface_field(field, trim(bc_name), "value")
           
           ! work out time level at which to evaluate:
           call get_option("/timestepping/current_time", time)

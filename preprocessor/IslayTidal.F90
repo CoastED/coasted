@@ -32,8 +32,7 @@ module islay_tidal
   use fetools
   use fields
   use field_options
-  use field_derivatives
-  use smoothing_module
+  use spud
   use vector_tools
   use state_module
   use state_fields_module
@@ -182,13 +181,17 @@ module islay_tidal
 
         integer :: err, i, nlines
         character(len=1000) :: lineText
-        real :: lon, lat, x, y, scalex, scaley
+        real :: lon, lat
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         print*, "init_pressure_boundary_data()"
 
         open(fd, file="tidalconst/boundaries.csv", access="sequential", iostat=err)
+
+        if(.not. err == 0) then
+            FLExit("Could not open tidal/boundaries.csv")
+        end if
 
         ! How many lines in the file?
         tidalct=0
@@ -206,6 +209,8 @@ module islay_tidal
 999  continue
         nlines=tidalct
 
+        print*, "Tidal const lines:", tidalct
+
 
         ! now we know how to allocate
         allocate( tidalBC(tidalct) )
@@ -213,10 +218,7 @@ module islay_tidal
         rewind(fd)
 
         ! Read first line in again.
-        read(fd, '(A)', end=999) lineText
-
-        scalex=sizelon/sizex
-        scaley=sizelat/sizey
+        read(fd, '(A)', end=998) lineText
 
         tidalct=0
 
@@ -225,17 +227,14 @@ module islay_tidal
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
                 o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
-            x = (lon-minlon) / scalex
-            y = (lat-minlat) / scaley
-
-            tidalBC(tidalct+1)=BoundaryPoint(x, y, m2amp, m2phase, &
+            tidalBC(tidalct+1)=BoundaryPoint(lon, lat, m2amp, m2phase, &
                 s2amp, s2phase, n2amp, n2phase, k2amp, k2phase, &
                 k1amp, k1phase, o1amp, o1phase)
 
             tidalct=tidalct+1
         end do
 
-        close(fd)
+998        close(fd)
 
     end subroutine init_pressure_boundary_data
 
@@ -267,7 +266,10 @@ module islay_tidal
         real :: t
         real, parameter :: pi=3.14159265359, piConv=2.0*pi/360.0, grav=9.81
 
-        call get_fs_reference_density_from_options(rho0, state%option_path)
+        print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
+
+        ! Needs to be hard-wired for flredecomp
+        call get_option("/material_phase[0]/equation_of_state/fluids/linear/reference_density", rho0)
 
         call set(surface_field, 0.0)
 
@@ -278,9 +280,8 @@ module islay_tidal
 
         t = current_time
 
-        ramptime=48*60*60
 
-        print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
+        ramptime=48*60*60
 
         if(readConstituents==0) then
             call init_pressure_boundary_data(tidalpt)
@@ -291,11 +292,14 @@ module islay_tidal
         pos = extract_vector_field(state, "Coordinate")
 
         ! Positions remapped to Pressure space
-        call allocate(remap, 3, pressure%mesh, name="PressureCoordinate")
-        call remap_field(pos, remap)
+        ! call allocate(remap, 3, pressure%mesh, name="PressureCoordinate")
+        ! call remap_field(pos, remap)
 
         nnodes = node_count(bc_position)
         nspecpoints = size(tidalpt)
+
+        print*, "nnodes:", nnodes
+        print*, "nspecpoints:", nspecpoints
 
         do i=1, nnodes
 
@@ -309,7 +313,8 @@ module islay_tidal
             k2amp=0
             k2phase=0
 
-            x = node_val(bc_position, i)
+            x = bc_position%val(:,i)
+            print*, "node coord: ", x(1), x(2)
 
             sumwt=0
 
@@ -318,6 +323,7 @@ module islay_tidal
 
             do j=1, nspecpoints
                 dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
+                print*, "dist:", dist
                 wt=1/dist
                 sumwt=sumwt+wt
 
@@ -332,6 +338,8 @@ module islay_tidal
                 k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
             end do
 
+!            print*,"wt:", wt
+
             ! now set pressure
             if(t<ramptime) then
                 rampval=t/ramptime
@@ -345,12 +353,14 @@ module islay_tidal
                 + n2amp * cos(n2ang*t - n2phase) &
                 + k2amp * cos(k2ang*t - k2phase) )
 
+            print*,"pval:", pval
+
             call addto(surface_field, i, pval)
 
         end do
 
 
-        call deallocate(remap)
+        ! call deallocate(remap)
     end subroutine  set_islay_boundary_nonhydrostatic_pressure
 
   end module islay_tidal
