@@ -29,72 +29,20 @@
 
 module islay_tidal
 
-  use AuxilaryOptions
-  use MeshDiagnostics
-  use signal_vars
-  use spud
-  use equation_of_state
-  use timers
-  use adapt_state_module
-  use adapt_state_prescribed_module
-  use FLDebug
-  use sparse_tools
-  use elements
+  use fetools
   use fields
-  use boundary_conditions_from_options
-  use populate_state_module
-  use populate_sub_state_module
-  use reserve_state_module
-  use vtk_interfaces
-  use Diagnostic_variables
-  use diagnostic_fields_new, only : &
-    & calculate_diagnostic_variables_new => calculate_diagnostic_variables, &
-    & check_diagnostic_dependencies
-  use diagnostic_fields_wrapper
-  use diagnostic_children
-  use advection_diffusion_cg
-  use advection_diffusion_DG
-  use advection_diffusion_FV
-  use field_equations_cv, only: solve_field_eqn_cv, initialise_advection_convergence, coupled_cv_field_eqn
-  use vertical_extrapolation_module
-  use qmesh_module
-  use checkpoint
-  use write_state_module
-  use synthetic_bc
-  use goals
-  use adaptive_timestepping
-  use conformity_measurement
-  ! Use Solid-fluid coupling and ALE - Julian- 18-09-06
-  use ale_module
-  use adjacency_lists
-  use multimaterial_module
-  use parallel_tools
-  use SolidConfiguration
+  use field_options
+  use field_derivatives
+  use smoothing_module
+  use vector_tools
+  use state_module
+  use state_fields_module
 
-  use biology
-  use momentum_equation
-  use timeloop_utilities
-  use field_priority_lists
-  use boundary_conditions
-  use spontaneous_potentials, only: calculate_electrical_potential
-  use saturation_distribution_search_hookejeeves
-  use discrete_properties_module
-
-  use iceshelf_meltrate_surf_normal
-  use halos
-  use memory_diagnostics
-  use free_surface_module
   use global_parameters, only: current_time, dt, timestep, OPTION_PATH_LEN, &
                                simulation_start_time, &
                                simulation_start_cpu_time, &
                                simulation_start_wall_time, &
                                topology_mesh_name, new_mesh_geometry
-  use eventcounter
-
-  use multiphase_module
-  use detector_parallel, only: sync_detector_coordinates, deallocate_detector_list_array
-  use momentum_diagnostic_fields, only: calculate_densities
-  use sediment_diagnostics, only: calculate_sediment_flux
   use physics_from_options
 
   implicit none
@@ -240,7 +188,7 @@ module islay_tidal
 
         print*, "init_pressure_boundary_data()"
 
-        open(fd, file="tidalconst/islay_tidal_const.csv", access="sequential", iostat=err)
+        open(fd, file="tidalconst/boundaries.csv", access="sequential", iostat=err)
 
         ! How many lines in the file?
         tidalct=0
@@ -293,16 +241,20 @@ module islay_tidal
 
 
 
-    subroutine  set_islay_boundary_nonhydrostatic_pressure(state, t)
-        type(state_type), dimension(:), pointer :: state
-        real, intent(in) :: t
+    subroutine  set_islay_boundary_nonhydrostatic_pressure(state, &
+            surface_field, bc_position, bc_type_path, field_name)
 
-        type(Scalar_Field) :: pressure
+        type(state_type) :: state
+        type(scalar_field), intent(inout):: surface_field
+        type(vector_field), intent(in):: bc_position
+        character(len=*), intent(in):: bc_type_path, field_name
+
+        type(Scalar_Field), pointer :: pressure
         type(Vector_Field) :: pos, remap
         type(BoundaryPoint), allocatable, dimension(:), save :: tidalpt
         type(BoundaryPoint) :: thisbp
 
-        integer :: nnodes, i, j, npoints
+        integer :: nnodes, i, j, nspecpoints
         integer, save :: readConstituents
 
         real :: lon, lat, x(3)
@@ -310,17 +262,21 @@ module islay_tidal
         ! real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         real :: m2ang, s2ang, n2ang, k2ang
-        real :: dist, wt, sumwt, rampTime, rampval, rho0
+        real :: dist, wt, sumwt, rampTime, rampval, rho0, pval
 
+        real :: t
         real, parameter :: pi=3.14159265359, piConv=2.0*pi/360.0, grav=9.81
 
-        call get_fs_reference_density_from_options(rho0, state(1)%option_path)
+        call get_fs_reference_density_from_options(rho0, state%option_path)
 
+        call set(surface_field, 0.0)
 
         m2ang = piConv / 12.4206012
         s2ang = piConv / 12.0
         n2ang = piConv / 12.65834751
         k2ang = piConv / 11.96723606
+
+        t = current_time
 
         ramptime=48*60*60
 
@@ -331,15 +287,15 @@ module islay_tidal
             readConstituents=1
         end if
 
-        pressure = extract_scalar_field(state(1), "Pressure")
-        pos = extract_vector_field(state(1), "Coordinate")
+        pressure => extract_scalar_field(state, "Pressure")
+        pos = extract_vector_field(state, "Coordinate")
 
         ! Positions remapped to Pressure space
         call allocate(remap, 3, pressure%mesh, name="PressureCoordinate")
         call remap_field(pos, remap)
 
-        nnodes = remap%mesh%nodes
-        npoints = size(tidalpt)
+        nnodes = node_count(bc_position)
+        nspecpoints = size(tidalpt)
 
         do i=1, nnodes
 
@@ -353,14 +309,14 @@ module islay_tidal
             k2amp=0
             k2phase=0
 
-            x = remap%val(:,i)
+            x = node_val(bc_position, i)
 
             sumwt=0
 
             ! Calculate contributions to mesh points from each tidal boundary
             ! constituent point
 
-            do j=1, npoints
+            do j=1, nspecpoints
                 dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
                 wt=1/dist
                 sumwt=sumwt+wt
@@ -383,11 +339,13 @@ module islay_tidal
                 rampval=1
             end if
 
-            pressure%val(i) = rampval * rho0 * grav &
+            pval = rampval * sumwt * rho0 * grav &
                 *  ( m2amp * cos(m2ang*t - m2phase) &
                 + s2amp * cos(s2ang*t - s2phase) &
                 + n2amp * cos(n2ang*t - n2phase) &
                 + k2amp * cos(k2ang*t - k2phase) )
+
+            call addto(surface_field, i, pval)
 
         end do
 

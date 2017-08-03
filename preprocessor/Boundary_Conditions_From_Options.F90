@@ -52,6 +52,7 @@ use integer_set_module !for iceshelf
 use sediment, only: set_sediment_reentrainment
 use halos_numbering
 use halos_base
+use islay_tidal
 
 implicit none
 
@@ -774,6 +775,10 @@ contains
 
           else if (have_option(trim(bc_type_path)//"/NEMO_data")) then
             call set_nemo_bc_value(state, surface_field, bc_position, trim(bc_type_path), field%name, surface_element_list)
+
+          else if (have_option(trim(bc_type_path)//"/tidal_csv")) then
+            call set_islay_boundary_nonhydrostatic_pressure(state, &
+                surface_field, bc_position, trim(bc_type_path), field%name)
 
           else if (have_option(trim(bc_type_path)//"/from_field")) then
             ! The parent field contains the boundary values that you want to apply to surface_field.
