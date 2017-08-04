@@ -274,7 +274,7 @@ module islay_tidal
         real, parameter :: piConv=2.0*pi/360.0, toangvel=2.*pi/3600
 
         real, allocatable, save :: dists(:)
-        real :: distsum
+        real :: maxdist
 
         character(len=256) :: boundary_label
 
@@ -337,6 +337,7 @@ module islay_tidal
             ! Calculate distances to mesh points from each tidal boundary
             ! constituent point
 
+            dists=0.0
             do j=1, nspecpoints
                 if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
 !                print*, "    spec point:", tidalpt(j)%x, tidalpt(j)%y
@@ -346,7 +347,7 @@ module islay_tidal
                 end if
             end do
 
-            distsum=sum(dists)
+            maxdist=maxval(dists)
 
             ! Only the four main tidal constituents for now
             m2amp=0
@@ -361,7 +362,7 @@ module islay_tidal
             sumwt=0
             do j=1, nspecpoints
                if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
-                  wt = abs(distsum-dists(j))/distsum
+                  wt = maxdist-dists(j)
 
                   sumwt=sumwt+wt
 
