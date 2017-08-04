@@ -50,8 +50,11 @@ Set the name of the prescribed NEMO pressure scalar field below.</a:documentatio
       </element>
       <element name="tidal_csv">
         <a:documentation>Use text file of constituents from main/IslayTidal.F90 
-tidalconst/boundaries.csv</a:documentation>
-        <empty/>
+tidalconst/boundaries.csv . boundary_label tag identifies
+the relevant part of constituents file.</a:documentation>
+        <attribute name="boundary_label">
+          <data type="string" datatypeLibrary=""/>
+        </attribute>
       </element>
     </choice>
   </define>
