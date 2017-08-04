@@ -60,6 +60,7 @@ module islay_tidal
         real, parameter :: thickness = 1000
 
         type BoundaryPoint
+            character(len=256) :: boundary_label
             real :: x, y
             real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase
             real :: k2amp, k2phase, k1amp, k1phase, o1amp, o1phase
@@ -181,6 +182,7 @@ module islay_tidal
 
         integer :: err, i, nlines
         character(len=1000) :: lineText
+        character(len=256) :: boundary_label
         real :: lon, lat
         real :: m2amp, m2phase, s2amp, s2phase, n2amp, n2phase, k2amp, k2phase
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
@@ -201,7 +203,8 @@ module islay_tidal
         ! Ignore header row
         read(fd, '(A)', end=999) lineText
         do
-            read(fd, *, end=999) lon, lat, m2amp, m2phase, s2amp, s2phase, &
+            read(fd, *, end=999) boundary_label, &
+                lon, lat, m2amp, m2phase, s2amp, s2phase, &
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
                 o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
@@ -225,11 +228,13 @@ module islay_tidal
         tidalct=0
 
         do i=1, nlines-1
-            read(fd, *) lon, lat, m2amp, m2phase, s2amp, s2phase, &
+            read(fd, *) boundary_label, &
+                lon, lat, m2amp, m2phase, s2amp, s2phase, &
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
                 o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
-            tidalBC(tidalct+1)=BoundaryPoint(lon, lat, &
+            tidalBC(tidalct+1)=BoundaryPoint(trim(boundary_label), &
+                 lon, lat, &
                  m2amp, m2phase*piConv, s2amp, s2phase*piConv, &
                  n2amp, n2phase*piConv, k2amp, k2phase*piConv, &
                  k1amp, k1phase*piConv, o1amp, o1phase*piConv)
@@ -262,19 +267,22 @@ module islay_tidal
         ! real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         real :: m2ang, s2ang, n2ang, k2ang
-        real :: dist, sumwt, rampTime, rampval, rho0, pval, pscale1
+        real :: dist, wt, sumwt, rampTime, rampval, rho0, pval, pscale1
 
         real :: t
         real, parameter :: pi=3.1415926535, grav=9.81
         real, parameter :: piConv=2.0*pi/360.0, toangvel=2.*pi/3600
 
-        real, allocatable, save :: dists(:), wts(:)
-        real :: maxdist
+        real, allocatable, save :: dists(:)
+        real :: distsum
+
+        character(len=256) :: boundary_label
 
         print*, "*** set_islay_boundary_nonhydrostatic_pressure()"
 
         ! Needs to be hard-wired for flredecomp
         call get_option("/material_phase[0]/equation_of_state/fluids/linear/reference_density", rho0)
+        call get_option(trim(bc_type_path)//"/tidal_csv/boundary_label", boundary_label)
 
         call set(surface_field, 0.0)
 
@@ -300,7 +308,6 @@ module islay_tidal
         ! Now allocate distance-from-specified-tidal-points array
         if( .not. allocated(dists)) then
            allocate(dists(nspecpoints))
-           allocate(wts(nspecpoints))
         end if
 
         ! Positions remapped to Pressure space
@@ -330,14 +337,16 @@ module islay_tidal
             ! Calculate distances to mesh points from each tidal boundary
             ! constituent point
 
-            maxdist=0
             do j=1, nspecpoints
+                if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
 !                print*, "    spec point:", tidalpt(j)%x, tidalpt(j)%y
-                dist = sqrt( (x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0 )
+                   dist = sqrt((x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0)
 !                print*, "dist:", dist
-                if(maxdist<dist) maxdist=dist
-                dists(j) = dist
+                   dists(j) = dist
+                end if
             end do
+
+            distsum=sum(dists)
 
             ! Only the four main tidal constituents for now
             m2amp=0
@@ -351,20 +360,22 @@ module islay_tidal
 
             sumwt=0
             do j=1, nspecpoints
-               wts(j) = abs(maxdist-dists(j))/maxdist
+               if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
+                  wt = abs(distsum-dists(j))/distsum
 
-               m2amp = m2amp + wts(j)*tidalpt(j)%m2amp
-               m2phase = m2phase+ wts(j)*tidalpt(j)%m2phase * piConv
-               s2amp = s2amp + wts(j)*tidalpt(j)%s2amp
-               s2phase = s2phase + wts(j)*tidalpt(j)%s2phase * piConv
-               
-               n2amp = n2amp + wts(j)*tidalpt(j)%n2amp
-               n2phase = n2phase + wts(j)*tidalpt(j)%n2phase * piConv
-               k2amp = k2amp + wts(j)*tidalpt(j)%k2amp
-               k2phase = k2phase + wts(j)*tidalpt(j)%k2phase * piConv
+                  sumwt=sumwt+wt
+
+                  m2amp = m2amp + wt*tidalpt(j)%m2amp
+                  m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
+                  s2amp = s2amp + wt*tidalpt(j)%s2amp
+                  s2phase = s2phase + wt*tidalpt(j)%s2phase * piConv
+                  
+                  n2amp = n2amp + wt*tidalpt(j)%n2amp
+                  n2phase = n2phase + wt*tidalpt(j)%n2phase * piConv
+                  k2amp = k2amp + wt*tidalpt(j)%k2amp
+                  k2phase = k2phase + wt*tidalpt(j)%k2phase * piConv
+               end if
             end do
-
-            sumwt = sum(wts)
 
             ! now set pressure
             pval = (pscale1/sumwt) &
