@@ -26,8 +26,11 @@ input_choice_real_plus_boundary_forcing =
         }|
 
         ## Use text file of constituents from main/IslayTidal.F90 
-        ## tidalconst/boundaries.csv
-        element tidal_csv { empty }
+        ## tidalconst/boundaries.csv . boundary_label tag identifies
+        ## the relevant part of constituents file.
+        element tidal_csv { 
+           attribute boundary_label { string }
+        }
    )
 
 input_choice_real_plus_file =
