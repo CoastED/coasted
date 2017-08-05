@@ -82,8 +82,8 @@ module islay_tidal
 
         real :: absorb, wt, wt2, x, y, depth
         real, allocatable, save :: absarray(:)
-        real, parameter :: relaxhours = 0.1
-!        real, parameter :: relaxhours = 0.5
+!        real, parameter :: relaxhours = 0.1
+        real, parameter :: relaxhours = 0.5, vertMult=5.0
 !        real, parameter :: shoreHours=0.25
 !        real, parameter :: minShoreDepth = 5, maxShoreDepth=10
 !        real :: shoreAbs, shoreScale
@@ -169,7 +169,7 @@ module islay_tidal
         ! Copy to velocity absorption array.
         velAbs%val(1, :) = absarray(:)
         velAbs%val(2, :) = absarray(:)
-        velAbs%val(3, :) = absarray(:)
+        velAbs%val(3, :) = absarray(:)*vertMult
 
     end subroutine set_islay_boundary_absorption
 
@@ -227,7 +227,7 @@ module islay_tidal
 
         tidalct=0
 
-        do i=1, nlines-1
+        do i=1, nlines
             read(fd, *) boundary_label, &
                 lon, lat, m2amp, m2phase, s2amp, s2phase, &
                 n2amp, n2phase, k2amp, k2phase, k1amp, k1phase, &
