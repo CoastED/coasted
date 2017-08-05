@@ -82,8 +82,8 @@ module islay_tidal
 
         real :: absorb, wt, wt2, x, y, depth
         real, allocatable, save :: absarray(:)
-!        real, parameter :: relaxhours = 0.1
-        real, parameter :: relaxhours = 0.5, vertMult=5.0
+        real, parameter :: relaxhours = 0.1, vertMult=1.0
+!        real, parameter :: relaxhours = 0.5, vertMult=1.0
 !        real, parameter :: shoreHours=0.25
 !        real, parameter :: minShoreDepth = 5, maxShoreDepth=10
 !        real :: shoreAbs, shoreScale
@@ -188,13 +188,14 @@ module islay_tidal
         real :: k1amp, k1phase, o1amp, o1phase, p1amp, p1phase, q1amp, q1phase
 
         real, parameter :: pi=3.141592653, piConv=2.0*pi/360.0
+        character(len=*), parameter:: tcname="tidalconst/constituents.csv"
 
         print*, "init_pressure_boundary_data()"
 
-        open(fd, file="tidalconst/boundaries.csv", access="sequential", iostat=err)
+        open(fd, file=trim(tcname), status="old", access="sequential", iostat=err)
 
         if(.not. err == 0) then
-            FLExit("Could not open tidal/boundaries.csv")
+            FLExit("Could not open "//trim(tcname))
         end if
 
         ! How many lines in the file?
@@ -274,7 +275,7 @@ module islay_tidal
         real, parameter :: piConv=2.0*pi/360.0, toangvel=2.*pi/3600
 
         real, allocatable, save :: dists(:)
-        real :: maxdist
+        real :: distsum
 
         character(len=256) :: boundary_label
 
@@ -332,22 +333,23 @@ module islay_tidal
             x = bc_position%val(:,i)
 !            print*, "node coord: ", x(1), x(2)
 
-            sumwt=0
 
             ! Calculate distances to mesh points from each tidal boundary
             ! constituent point
 
             dists=0.0
+            distsum=0.0
             do j=1, nspecpoints
+!                print*, "Boundary: ", trim(boundary_label), "  ,  point boundary: ", trim(tidalpt(j)%boundary_label)
                 if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
+ !                   print*, "boundaries matched"
 !                print*, "    spec point:", tidalpt(j)%x, tidalpt(j)%y
                    dist = sqrt((x(1)-tidalpt(j)%x)**2.0 + (x(2)-tidalpt(j)%y)**2.0)
-!                print*, "dist:", dist
+ !               print*, "dist:", dist
                    dists(j) = dist
+                   distsum=distsum+dist
                 end if
             end do
-
-            maxdist=maxval(dists)
 
             ! Only the four main tidal constituents for now
             m2amp=0
@@ -359,12 +361,10 @@ module islay_tidal
             k2amp=0
             k2phase=0
 
-            sumwt=0
             do j=1, nspecpoints
                if(trim(boundary_label) == trim(tidalpt(j)%boundary_label)) then
-                  wt = maxdist-dists(j)
-
-                  sumwt=sumwt+wt
+                  wt = (distsum-dists(j))/distsum
+!                  print*, "wt:", wt
 
                   m2amp = m2amp + wt*tidalpt(j)%m2amp
                   m2phase = m2phase+ wt*tidalpt(j)%m2phase * piConv
@@ -379,7 +379,7 @@ module islay_tidal
             end do
 
             ! now set pressure
-            pval = (pscale1/sumwt) &
+            pval = pscale1 &
                 *  ( m2amp * cos(m2ang*t - m2phase) &
                 + s2amp * cos(s2ang*t - s2phase) &
                 + n2amp * cos(n2ang*t - n2phase) &
