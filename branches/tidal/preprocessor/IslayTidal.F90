@@ -83,6 +83,7 @@ module islay_tidal
         real :: absorb, wt, wt2, x, y, depth
         real, allocatable, save :: absarray(:)
         real, parameter :: relaxhours = 0.1, vertMult=1.0
+!        real, parameter :: relaxhours = 0.25, vertMult=1.0
 !        real, parameter :: relaxhours = 0.5, vertMult=1.0
 !        real, parameter :: shoreHours=0.25
 !        real, parameter :: minShoreDepth = 5, maxShoreDepth=10
@@ -295,7 +296,7 @@ module islay_tidal
         t = current_time
 
 
-        ramptime=48*60*60
+        ramptime=72*60*60
 
         if(readConstituents==0) then
             call init_pressure_boundary_data(tidalpt)
