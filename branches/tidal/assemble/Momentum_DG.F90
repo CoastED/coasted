@@ -282,6 +282,10 @@ contains
         type(scalar_field), pointer :: vfrac
         type(scalar_field) :: nvfrac ! Non-linear approximation to the PhaseVolumeFraction
 
+        ! Free surface stabilisation
+        logical :: have_free_stab
+        real :: free_stab_param
+
         ! Partial stress - sp911
         logical :: partial_stress
 
@@ -296,6 +300,7 @@ contains
 
         type(tensor_field), pointer :: uGrad
 
+        logical :: freeStab
 
         ! Benchmarking stuff
         real (kind=8) :: t0, t1, assemble_dt, total_dt, percent_dg
@@ -322,6 +327,13 @@ contains
         acceleration= .not. present_and_false(acceleration_form)
         ewrite(2, *) "Acceleration form? ", acceleration
 
+        ! Free surface stabilisation
+        have_free_stab=.false.
+        if (have_option(trim(U%option_path)//"/type::free_surface/surface_stabilisation")) then
+            have_free_stab=.true.
+            call get_option(trim(U%option_path)//"/type::free_surface/surface_stabilisation/scale_factor", free_stab_param)
+
+        end if
 
         if(present(include_pressure_bcs)) then
             l_include_pressure_bcs = include_pressure_bcs
@@ -891,14 +903,17 @@ contains
                     print*, "Optimised DG assembly: Compact DG"
 
                     !$OMP PARALLEL DEFAULT(SHARED) &
-                    !$OMP PRIVATE(clr)
+                    !$OMP PRIVATE(clr, nnid, ele, len)
 
-                    !$OMP DO SCHEDULE(STATIC)
-                    colour_loop_opt: do clr=1, size(colours)
+                    colour_loop: do clr = 1, size(colours)
+                      len = key_count(colours(clr))
+
+                     !$OMP DO SCHEDULE(STATIC)
+                      element_loop: do nnid = 1, len
+                       ele = fetch(colours(clr), nnid)
 
                         call construct_momentum_elements_dg_opt( &
-
-                            coloured_ele_lists(clr)%list, big_m, rhs, &
+                             ele, big_m, rhs, &
                              X, U, advecting_velocity, U_mesh, X_old, X_new, &
                              u_shape, p_shape, q_shape, &
                              Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
@@ -916,56 +931,18 @@ contains
                              eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                              prescribed_filter_width=prescribed_filter_width, &
                              distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
-                             les_filter_width_debug=les_filter_width_debug )
+                             les_filter_width_debug=les_filter_width_debug, &
+                             have_free_stab=have_free_stab, free_stab_param=free_stab_param )
 
-                    end do colour_loop_opt
-                    !$OMP END DO
+                      end do element_loop
+                      !$OMP END DO
 
+                    end do colour_loop
                     !$OMP END PARALLEL
 
                 else
+                    FLExit("Non-optimised DG assembly no longer supported")
 
-                    !    print*, "main here1"
-                    print*, "Non-optimised DG assembly"
-
-                    !$OMP PARALLEL DEFAULT(SHARED) &
-                    !$OMP PRIVATE(clr, nnid, ele, len)
-
-                    !    print*, "before assembly loop"
-
-                    colour_loop: do clr = 1, size(colours)
-                        len = key_count(colours(clr))
-
-                        !$OMP DO SCHEDULE(STATIC)
-                        element_loop: do nnid = 1, len
-                            ele = fetch(colours(clr), nnid)
-                            !       print*, "main here2"
-                            call construct_momentum_element_dg( ele, big_m, rhs, &
-                                & X, U, advecting_velocity, U_mesh, X_old, X_new, &
-                                & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
-                                & swe_bottom_drag, swe_u_nl, &
-                                & P, old_pressure, Rho, surfacetension, q_mesh, &
-                                & velocity_bc, velocity_bc_type, &
-                                & pressure_bc, pressure_bc_type, &
-                                & turbine_conn_mesh, on_sphere, depth, have_wd_abs, &
-                                & alpha_u_field, Abs_wd, vvr_sf, ib_min_grad, nvfrac, &
-                                & inverse_mass=inverse_mass, &
-                                & inverse_masslump=inverse_masslump, &
-                                & mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
-                                have_les=have_les, have_isotropic_les=have_isotropic_les, &
-                                smagorinsky_coefficient=smagorinsky_coefficient, &
-                                eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
-                                prescribed_filter_width=prescribed_filter_width, &
-                                distance_to_wall=distance_to_wall, y_plus_debug=y_plus_debug, &
-                                les_filter_width_debug=les_filter_width_debug )
-
-                        end do element_loop
-                    !      !$OMP END DO
-
-                    end do colour_loop
-                    !    print*, "after assembly loop"
-
-                    !$OMP END PARALLEL
                 end if
 
                 call profiler_toc(u, "element_loop")

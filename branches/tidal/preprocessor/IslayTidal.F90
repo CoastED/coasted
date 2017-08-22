@@ -41,7 +41,8 @@ module islay_tidal
                                simulation_start_time, &
                                simulation_start_cpu_time, &
                                simulation_start_wall_time, &
-                               topology_mesh_name, new_mesh_geometry
+                               topology_mesh_name, &
+                               new_mesh_geometry, new_mesh_connectivity
   use physics_from_options
 
   implicit none
@@ -109,8 +110,7 @@ module islay_tidal
             FLAbort("set_islay_boundary_absorption(): VelocityAbsorption must be on Coordinate mesh")
         end if
 
-        recalcAbs=.false.
-        if(new_mesh_geometry) then
+        if(new_mesh_connectivity) then
             if( .not. allocated(absarray) ) then
                 print*, "*** allocating absarray"
                 allocate(absarray(ncnodes))
@@ -120,7 +120,12 @@ module islay_tidal
                 allocate(absarray(ncnodes))
             end if
 
-            recalcAbs=.true.
+        end if
+
+        if(new_mesh_geometry) then
+           recalcAbs=.true.
+        else
+           recalcAbs=.false.
         end if
 
         if(recalcAbs) then
