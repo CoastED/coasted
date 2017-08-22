@@ -109,6 +109,8 @@ module fluids_module
   use islay_tidal
   use dg_prep
 
+  use zoltan_integration
+
   implicit none
 
   private
@@ -445,6 +447,37 @@ contains
           endif
     end if
     
+
+
+    call initialise_convergence(filename, state)
+    call initialise_steady_state(filename, state)
+    call initialise_advection_convergence(state)
+
+    if(have_option("/io/stat/output_at_start")) call write_diagnostics(state, current_time, dt, timestep, not_to_move_det_yet=.true.)
+
+    not_to_move_det_yet=.false.
+
+    ! Initialise GLS
+    if (have_option("/material_phase[0]/subgridscale_parameterisations/GLS/option")) then
+        call gls_init(state(1))
+    end if
+
+
+   ! Do we need to do a repartition at the start? This will happen if we
+   ! have the Islay model options turned on and are at dump number 0
+   ! DISABLED - BROKEN
+   !
+!   if(have_option("/turn_on_islay_options") .and. dump_no==0) then
+!        ewrite(1,*) "Extruded mesh with Islay model options: repartitioning at first timestep"
+!       call copy_to_stored_values(state,"Old")
+!       if (have_option('/mesh_adaptivity/mesh_movement') .and. .not. have_option('/mesh_adaptivity/mesh_movement/free_surface')) then
+!          call set_vector_field_in_state(state(1), "OldCoordinate", "Coordinate")
+!        end if
+!        call zoltan_drive(state, .true., &
+!            initialise_fields=.true., ignore_extrusion=.false., &
+!            flredecomping=.true., input_procs=getnprocs(), target_procs=getnprocs())
+!   end if
+
     ! Checkpoint at start
      if(do_checkpoint_simulation(dump_no)) &
         call checkpoint_simulation(state, cp_no = dump_no, &
@@ -461,18 +494,6 @@ contains
     end if
 
 
-    call initialise_convergence(filename, state)
-    call initialise_steady_state(filename, state)
-    call initialise_advection_convergence(state)
-
-    if(have_option("/io/stat/output_at_start")) call write_diagnostics(state, current_time, dt, timestep, not_to_move_det_yet=.true.)
-
-    not_to_move_det_yet=.false.
-
-    ! Initialise GLS
-    if (have_option("/material_phase[0]/subgridscale_parameterisations/GLS/option")) then
-        call gls_init(state(1))
-    end if
 
 
     ! ******************************
