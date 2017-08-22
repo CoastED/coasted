@@ -4,7 +4,7 @@
 
 !------------------ Start of template code ------------------------------
 
-subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
+subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
     & u_shape, p_shape, q_shape, &
     & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
@@ -17,14 +17,16 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     have_les, have_isotropic_les, &
     smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
-    y_plus_debug, les_filter_width_debug )
+    y_plus_debug, les_filter_width_debug, &
+    have_free_stab, free_stab_param )
 
     !!< Construct the momentum equation for discontinuous elements in
     !!< acceleration form.
     implicit none
 
     ! type(integer_set), dimension(:), pointer, intent(in) :: colours
-    integer, dimension(:), intent(in) :: colour_ele_list
+    ! integer, dimension(:), intent(in) :: colour_ele_list
+    integer, intent(in) :: ele
 
     !! Main momentum matrix.
     type(petsc_csr_matrix), intent(inout) :: big_m
@@ -224,8 +226,10 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
     real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
+    logical, intent(in) :: have_free_stab
+    real, intent(in) :: free_stab_param
+
     integer :: iloc, jloc, idim, jdim, idim2, jdim2
-    integer :: ele, nele, clr, nnid
     integer :: nmat_d1,nmat_d2
 
 
@@ -328,10 +332,6 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 #endif
 
 
-
-       element_loop_cdg: do nnid = 1, size(colour_ele_list)
-
-          ele = colour_ele_list(nnid)
 
     assemble_element = .not.dg.or.element_neighbour_owned(U, ele).or.element_owned(U, ele)
 
@@ -1907,9 +1907,6 @@ subroutine construct_momentum_elements_dg_opt( colour_ele_list, big_m, rhs, &
 !    end subroutine add_diagonal_to_tensor
 
 
- end do element_loop_cdg
-
-
 contains
 
     subroutine get_normal_mat
@@ -2513,7 +2510,5 @@ contains
         end do
 
     end subroutine local_assembly_cdg_face
-
-
 
 end subroutine construct_momentum_elements_dg_opt
