@@ -9,7 +9,6 @@ module gradation_metric
 !!< "Anisotropic mesh gradation control", Li et. al,
 !!< 13th International Meshing Roundtable, 2004
 
-  use unittest_tools
   use adjacency_lists
   use vtk_interfaces
   use node_boundary
