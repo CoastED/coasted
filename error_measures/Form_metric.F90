@@ -5,7 +5,6 @@ module form_metric_field
 
   use fields
   use vector_tools
-  use unittest_tools
   use merge_tensors
   use metric_tools
   use recovery_estimator
