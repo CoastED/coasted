@@ -128,11 +128,11 @@ module global_parameters
   character(len=FIELD_NAME_LEN) :: empty_name=""
 
   !! Maximum length of an option path
-  integer, parameter :: OPTION_PATH_LEN=8192
+  integer, parameter :: OPTION_PATH_LEN=7197
   character(len=OPTION_PATH_LEN) :: empty_path=""
 
   !! Maximum length of a python string representing a function
-  integer, parameter :: PYTHON_FUNC_LEN=8192
+  integer, parameter :: PYTHON_FUNC_LEN=7197
   character(len=PYTHON_FUNC_LEN) :: empty_python_func=""
   
   !! Name of the topology mesh in state - this mesh is used by adaptivity
