@@ -311,7 +311,7 @@ END SUBROUTINE NODELE
 
           if(ErrMark.eq.4.and.totele/=1 ) then
              ewrite(3,*) '...all sur eles zero..', ele
-             stop 4445
+             stop
           end if
 
        End if
@@ -414,7 +414,7 @@ END SUBROUTINE NODELE
 
        if(iNod.gt.Nonods) then
           ewrite(3,*) 'Node out of range'
-          stop 886
+          stop
        end if
 
 
@@ -437,7 +437,7 @@ END SUBROUTINE NODELE
                 p = p+1
                 if(p.gt.biglgth) then
                    ewrite(3,*) 'p out of bounds',p,biglgth
-                   stop 887
+                   stop
                 end if
                 LocalElements(p) = NEList(ptr)
              End IF
@@ -716,7 +716,7 @@ END SUBROUTINE NODELE
     end if
 
     if(ISSUE) then
-       stop 96788
+       stop
     end if
 
   end subroutine MakeLists_Dynamic

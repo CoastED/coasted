@@ -1,4 +1,4 @@
-			INSTALL for CoastED
+			INSTALL for FLUIDITY
 
 To build and install fluidity you first need to create a Makefile via
 the supplied configure script.

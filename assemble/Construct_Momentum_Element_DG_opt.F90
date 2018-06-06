@@ -74,7 +74,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, dimension(opNloc, opNloc) :: Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat
 
     real, dimension(opDim, opNloc, opNloc) :: ele2grad_mat, Abs_mat
-    real, dimension(opDim, opDim, opNloc, opNloc) :: Abs_mat_sphere
+!FR2    real, dimension(opDim, opDim, opNloc, opNloc) :: Abs_mat_sphere
 
     real, dimension(opDim, opNloc) :: Abs_lump
     real, dimension(opDim, opDim, opNloc) :: Abs_lump_sphere
@@ -82,8 +82,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, dimension(opNloc) :: source_lump
 
     real, dimension(opNloc, opNloc) :: Q_inv
-    real, dimension(opDim, opNloc, opEFloc) :: Grad_u_mat_q, Div_u_mat_q
-    real, dimension(opDim, opDim, opEFloc, opEFloc) :: Viscosity_mat
+!FR2    real, dimension(opDim, opNloc, opEFloc) :: Grad_u_mat_q, Div_u_mat_q
+!FR1    real, dimension(opDim, opDim, opEFloc, opEFloc) :: Viscosity_mat
     real, dimension(opDim) :: node_stress_diag, resid_stress_term
     real :: visc_dot_prod
     real, dimension(opDim, opDim) :: visc_grad_dot_u
@@ -93,7 +93,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
 
     ! \Int_{ele} N_i kappa N_j dV, used for CDG fluxes
-    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
+!FR2    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
 
     ! Local assembly matrices.
     real, dimension(opNloc) :: l_MassLump, l_move_masslump
@@ -117,7 +117,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Transformed gradient function for velocity.
     ! Transformed gradient function for grid velocity.
     ! Transformed gradient function for auxiliary variable.
-    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
+!FR2    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
 
     ! Density at quadrature points.
     ! Coriolis magnitude and sign at quadrature points.
@@ -155,10 +155,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, dimension(opDim, opDim, opEFloc, opEFloc) :: big_m_tensor_addto
     logical, dimension(opDim, opDim) :: diagonal_block_mask, off_diagonal_block_mask
     ! Addto matrices for when subcycling is performed
-    real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
+!FR1    real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
 
     ! dshape_tensor stuff (partial_stress)
-    real, dimension(opDim, opDim, opNloc, opNloc) :: sh_tensout, sh_outtens
+!FR2    real, dimension(opDim, opDim, opNloc, opNloc) :: sh_tensout, sh_outtens
     real, dimension(opDim, opNloc) :: sh_to_temp
     real, dimension(opNloc, opDim) :: sh_ot_temp
     real, dimension(opNloc, opNloc) :: sh_dt_temp
@@ -188,7 +188,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real, intent(in) :: ib_min_grad
     real, dimension(opDim, opDim, opNgi) :: ib_abs
     real, dimension(opDim, opNgi) :: ib_abs_diag
-    real, dimension(opNloc, opNgi, opDim) :: dt_rho
+!FR2    real, dimension(opNloc, opNgi, opDim) :: dt_rho
     real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
     real, dimension(opDim, opNloc) :: ele_grav_val
     real, dimension(opNgi) :: drho_dz
@@ -309,6 +309,59 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     real :: dt_theta
 
     ! ========== END OF INTERFACE VARIABLES ==========
+
+!FR1 add tests to ensure that all the arrays we need have actually been allocated
+!    if(.not. allocated(Viscosity_mat)) then
+!       write(*,*) 'ERROR: Array, Viscosity_mat has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(subcycle_m_tensor_addto)) then
+!       write(*,*) 'ERROR: Array, subcycle_m_tensor_addto has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!!FR1 end of extra block
+!!FR2 add tests to ensure that all the arrays we need have actually been allocated
+!    if(.not. allocated(Abs_mat_sphere)) then
+!       write(*,*) 'ERROR: Array, Abs_mat_sphere has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(Grad_u_mat_q)) then
+!       write(*,*) 'ERROR: Array, Grad_u_mat_q has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(Div_u_mat_q)) then
+!       write(*,*) 'ERROR: Array, Div_u_mat_q has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(kappa_mat)) then
+!       write(*,*) 'ERROR: Array, kappa_mat has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(du_t)) then
+!       write(*,*) 'ERROR: Array, du_t has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(dug_t)) then
+!       write(*,*) 'ERROR: Array, dug_t has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(dq_t)) then
+!       write(*,*) 'ERROR: Array, dq_t has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(sh_tensout)) then
+!       write(*,*) 'ERROR: Array, sh_tensout has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(sh_outtens)) then
+!       write(*,*) 'ERROR: Array, sh_outtens has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!    if(.not. allocated(dt_rho)) then
+!       write(*,*) 'ERROR: Array, dt_rho has not been allocated: STOPPING execution now'
+!       stop
+!    end if
+!FR2 end of extra block
 
     dg=.true.
     p0=.false.

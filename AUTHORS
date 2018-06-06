@@ -1,17 +1,3 @@
-CoastED is a fork of the Fluidity software from Imperial College. It has been 
-contributed to by:
-
-- Angus Creech <a.creech@ed.ac.uk>
-- Adrian Jackson <a.jackson@epcc.ed.ac.uk>
-- James Maddison <j.r.maddison@ed.ac.uk>
-
-
-
--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=-
-
-The notes below are on the original Fluidity code.
---------------------------------------------------
-
 
 Fluidity was originally written by Prof. Chris Pain. It has
 subsequently been contributed to by the following:
@@ -38,7 +24,7 @@ Adam Candy 	<adam.candy@imperial.ac.uk>
 Gareth Clay
 Gareth Collins
 Colin Cotter 	<colin.cotter@imperial.ac.uk>
-Angus Creech	<a.creech@imperial.ac.uk>
+Angus Creech	<a.creech@ed.ac.uk>
 Rhodri Davies           <rhodri.davies@imperial.ac.uk>
 Jason Dunstall
 Juan Du
@@ -70,6 +56,7 @@ Ralph Perpeet
 Matthew Piggott <m.d.piggott@imperial.ac.uk>
 Hubert Plociniczak
 Philip Power
+Fiona Reid	<f.reid@epcc.ed.ac.uk>
 Mariano Sallito
 Jon Saunders
 Sabu Shahdatullah 
