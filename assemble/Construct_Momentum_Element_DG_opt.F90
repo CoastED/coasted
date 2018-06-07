@@ -238,29 +238,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     logical :: CDG_switch_in
 
-    ! Matrix for assembling primal fluxes
-    ! Note that this assumes same order polys in each element
-    ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
-    real, dimension(opFloc, opFloc) :: face_shape_shape_work
-
-    ! Matrix for assembling penalty fluxes
-    ! Note that this assumes same order polys in each element
-    ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
-
-    ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
-    !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
-    !    & normal_mat
-    ! I think the above is wrong, and the dimensions below are correct.
-    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
-
-    ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
-    ! Note that this assumes same order polys in each element
-    ! Code will need reorganising for p-refinement
-    !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
-    !        & kappa_normal_mat
-    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
 
     ! Face objects and numberings.
     ! type(element_type), intent(in), pointer :: u_shape, u_shape_2, p_shape, q_shape

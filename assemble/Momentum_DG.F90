@@ -163,8 +163,40 @@ module momentum_DG
     real, dimension(:,:,:), allocatable :: du_t, dug_t, dq_t
     real, dimension(:,:,:,:), allocatable :: sh_tensout, sh_outtens
     real, dimension(:,:,:), allocatable :: dt_rho
+
+    ! Matrix for assembling primal fluxes
+    ! Note that this assumes same order polys in each element
+    ! Code will need reorganising for p-refinement
+!    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
+!    real, dimension(opFloc, opFloc) :: face_shape_shape_work
+
+!    ! Matrix for assembling penalty fluxes
+!    ! Note that this assumes same order polys in each element
+!    ! Code will need reorganising for p-refinement
+!    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
+!
+!    ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
+!    !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
+!    !    & normal_mat
+!    ! I think the above is wrong, and the dimensions below are correct.
+!    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
+!
+!    ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
+!    ! Note that this assumes same order polys in each element
+!    ! Code will need reorganising for p-refinement
+!    !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
+!    !        & kappa_normal_mat
+!    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
+
+    real, dimension(:, :, :), allocatable :: face_primal_fluxes_mat, face_penalty_fluxes_mat, &
+        face_normal_mat, face_kappa_normal_mat
+    real, dimension(:, :), allocatable :: face_shape_shape_work
+
 !$OMP THREADPRIVATE (Abs_mat_sphere, Grad_u_mat_q, Div_u_mat_q, kappa_mat)
 !$OMP THREADPRIVATE (du_t, dug_t, dq_t, sh_tensout, sh_outtens, dt_rho)
+!$OMP THREADPRIVATE(face_primal_fluxes_mat, face_penalty_fluxes_mat)
+!$OMP THREADPRIVATE(face_normal_mat, face_kappa_normal_mat)
+!$OMP THREADPRIVATE(face_shape_shape_work)
 
 contains
 
@@ -937,6 +969,13 @@ contains
                     allocate(sh_tensout(opDim, opDim, opNloc, opNloc))
                     allocate(sh_outtens(opDim, opDim, opNloc, opNloc))
                     allocate(dt_rho(opNloc, opNgi, opDim))
+
+                    allocate(face_primal_fluxes_mat(2, opFloc, opNloc))
+                    allocate(face_shape_shape_work(opFloc, opFloc))
+                    allocate(face_penalty_fluxes_mat(2, opFloc, opFloc))
+                    allocate(face_normal_mat(opDim, opFloc, opFloc))
+                    allocate(face_kappa_normal_mat(opDim, opFloc, opFloc))
+
                     
                     colour_loop: do clr = 1, size(colours)
                       len = key_count(colours(clr))
@@ -986,6 +1025,14 @@ contains
                     deallocate(sh_tensout)
                     deallocate(sh_outtens)
                     deallocate(dt_rho)
+
+                    deallocate(face_primal_fluxes_mat)
+                    deallocate(face_shape_shape_work)
+                    deallocate(face_penalty_fluxes_mat)
+                    deallocate(face_normal_mat)
+                    deallocate(face_kappa_normal_mat)
+
+
                     !$OMP END PARALLEL
                     
                     inner_t1 = mpi_wtime()

@@ -67,7 +67,8 @@ contains
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: u_grad, mviscosity
+        type(tensor_field) :: u_grad
+        type(tensor_field), pointer :: mviscosity
 
         integer :: e, num_elements, n, num_nodes, ln
         integer :: u_cg_ele(ele_loc(u,1))
