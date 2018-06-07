@@ -240,9 +240,13 @@ contains
                     "single", stat)
 
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", stat)
+#ifdef LES_USES_DG_VEL
+                call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+                    "VelocityMesh", stat)
+#else
                 call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
                     "CoordinateMesh", stat)
-
+#endif
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/output", stat)
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/stat", stat)
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/convergence", stat)

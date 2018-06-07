@@ -67,6 +67,7 @@ contains
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
+        type(vector_field), pointer :: u_dg
         type(tensor_field) :: u_grad
         type(tensor_field), pointer :: mviscosity
 
@@ -97,7 +98,11 @@ contains
         t1=mpi_wtime()
 
         ! Velocity projected to continuous Galerkin
+#ifdef LES_USES_DG_VEL
+        u_cg=>extract_vector_field(state, "Velocity", stat=state_flag)
+#else
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+#endif
 
         ! Allocate gradient field
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
