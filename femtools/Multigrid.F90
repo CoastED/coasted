@@ -484,7 +484,7 @@ logical, optional, intent(in) :: has_null_space
         emax(ri)=eigval
         
         myPETSC_NULL_OBJECT=PETSC_NULL_OBJECT
-        call MatCreateVecs(prolongators(ri-1), PETSC_NULL_OBJECT, Px, ierr)
+        call MatGetVecs(prolongators(ri-1), PETSC_NULL_OBJECT, Px, ierr)
         if (myPETSC_NULL_OBJECT/=PETSC_NULL_OBJECT) then
            FLAbort("PETSC_NULL_OBJECT has changed please report to skramer")
         end if
@@ -565,7 +565,7 @@ logical, optional, intent(in) :: has_null_space
     do i=0, nolevels-2
       ri=nolevels-i
       ! using PETSC_NULL_OBJECT for rvec leaks a reference
-      call MatCreateVecs(matrices(ri), lvec, rvec, ierr)
+      call MatGetVecs(matrices(ri), lvec, rvec, ierr)
       call PCMGSetRHS(prec, i, lvec, ierr)
       ! Again, this does not yet destroy rhs immediately:
       call VecDestroy(lvec, ierr)
@@ -573,7 +573,7 @@ logical, optional, intent(in) :: has_null_space
     end do
       
     ! residual needs to be set if PCMG is used with KSPRICHARDSON
-    call MatCreateVecs(matrices(1), lvec, rvec, ierr)
+    call MatGetVecs(matrices(1), lvec, rvec, ierr)
     call PCMGSetR(prec, nolevels-1, lvec, ierr)
     call VecDestroy(lvec, ierr)
     call VecDestroy(rvec, ierr)
@@ -763,7 +763,7 @@ integer, optional, dimension(:), intent(out):: cluster
   allocate(findN(1:nrows+1), N(1:nentries), R(1:nrows))
      
   ! rescale the matrix: a_ij -> a_ij/sqrt(aii*ajj)
-  call MatCreateVecs(A, diag, sqrt_diag, ierr)
+  call MatGetVecs(A, diag, sqrt_diag, ierr)
   call MatGetDiagonal(A, diag, ierr)
   call VecMin(diag, diagminloc, diagmin, ierr)
   if (diagmin<=0.0) then
@@ -903,7 +903,7 @@ subroutine create_prolongator(P, nrows, ncols, findN, N, R, A, base, omega)
   end if
   
   myPETSC_NULL_OBJECT=PETSC_NULL_OBJECT
-  call MatCreateVecs(A, rowsum_vec, PETSC_NULL_OBJECT, ierr)
+  call MatGetVecs(A, rowsum_vec, PETSC_NULL_OBJECT, ierr)
   if (myPETSC_NULL_OBJECT/=PETSC_NULL_OBJECT) then
     FLAbort("PETSC_NULL_OBJECT has changed please report to skramer")
   end if
@@ -1110,7 +1110,7 @@ Vec, intent(out):: eigvec
   PetscRandom:: pr
   PetscObject:: myPETSC_NULL_OBJECT  
   
-  call MatCreateVecs(matrix, x_kp1, x_k, ierr)
+  call MatGetVecs(matrix, x_kp1, x_k, ierr)
   
   ! initial guess
   call PetscRandomCreate(PETSC_COMM_WORLD, pr, ierr)

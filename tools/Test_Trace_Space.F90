@@ -44,7 +44,7 @@
     use mangle_options_tree
     implicit none
 #ifdef HAVE_PETSC
-#include "petsc/finclude/petsc.h"
+#include "finclude/petsc.h"
 #endif
 
     ! Interface blocks for the initialisation routines we need to call

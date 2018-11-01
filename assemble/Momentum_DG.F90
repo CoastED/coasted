@@ -151,54 +151,8 @@ module momentum_DG
     ! Are we running a multi-phase flow simulation?
     logical :: multiphase
 
-    ! Arrays from construct_momentum_elements_dg_opt to creating them locally
-!FR Iteration 1
-    real, dimension(:,:,:,:), allocatable :: Viscosity_mat
-    real, dimension(:,:,:,:), allocatable :: subcycle_m_tensor_addto
-!$OMP THREADPRIVATE (Viscosity_mat, subcycle_m_tensor_addto)
-!FR Iteration 2
-    real, dimension(:,:,:,:), allocatable :: Abs_mat_sphere
-    real, dimension(:,:,:), allocatable :: Grad_u_mat_q, Div_u_mat_q
-    real, dimension(:,:,:,:), allocatable :: kappa_mat
-    real, dimension(:,:,:), allocatable :: du_t, dug_t, dq_t
-    real, dimension(:,:,:,:), allocatable :: sh_tensout, sh_outtens
-    real, dimension(:,:,:), allocatable :: dt_rho
-
-    ! Matrix for assembling primal fluxes
-    ! Note that this assumes same order polys in each element
-    ! Code will need reorganising for p-refinement
-!    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
-!    real, dimension(opFloc, opFloc) :: face_shape_shape_work
-
-!    ! Matrix for assembling penalty fluxes
-!    ! Note that this assumes same order polys in each element
-!    ! Code will need reorganising for p-refinement
-!    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
-!
-!    ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
-!    !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
-!    !    & normal_mat
-!    ! I think the above is wrong, and the dimensions below are correct.
-!    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
-!
-!    ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
-!    ! Note that this assumes same order polys in each element
-!    ! Code will need reorganising for p-refinement
-!    !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
-!    !        & kappa_normal_mat
-!    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
-
-    real, dimension(:, :, :), allocatable :: face_primal_fluxes_mat, face_penalty_fluxes_mat, &
-        face_normal_mat, face_kappa_normal_mat
-    real, dimension(:, :), allocatable :: face_shape_shape_work
-
-!$OMP THREADPRIVATE (Abs_mat_sphere, Grad_u_mat_q, Div_u_mat_q, kappa_mat)
-!$OMP THREADPRIVATE (du_t, dug_t, dq_t, sh_tensout, sh_outtens, dt_rho)
-!$OMP THREADPRIVATE(face_primal_fluxes_mat, face_penalty_fluxes_mat)
-!$OMP THREADPRIVATE(face_normal_mat, face_kappa_normal_mat)
-!$OMP THREADPRIVATE(face_shape_shape_work)
-
 contains
+
 
     ! Conditionally including the optimised CDG assembly code.
 
@@ -954,29 +908,6 @@ contains
                     !$OMP PARALLEL DEFAULT(SHARED) &
                     !$OMP PRIVATE(clr, nnid, ele, len)
 
-!FR Allocate the arrays we've moved up to module level - every thread needs a copy 
-!FR thus we allocate inside the parallel region but before the loops
-                    allocate(Viscosity_mat(opDim, opDim, opEFloc, opEFloc))
-                    allocate(subcycle_m_tensor_addto(opDim, opDim, opEFloc, opEFloc))
-
-                    allocate(Abs_mat_sphere(opDim, opDim, opNloc, opNloc))
-                    allocate(Grad_u_mat_q(opDim, opNloc, opEFloc))
-                    allocate(Div_u_mat_q(opDim, opNloc, opEFloc))
-                    allocate(kappa_mat(opDim, opDim, opNloc, opNloc))
-                    allocate(du_t(opNloc, opNgi, opDim))
-                    allocate(dug_t(opNloc, opNgi, opDim))
-                    allocate(dq_t(opNloc, opNgi, opDim))
-                    allocate(sh_tensout(opDim, opDim, opNloc, opNloc))
-                    allocate(sh_outtens(opDim, opDim, opNloc, opNloc))
-                    allocate(dt_rho(opNloc, opNgi, opDim))
-
-                    allocate(face_primal_fluxes_mat(2, opFloc, opNloc))
-                    allocate(face_shape_shape_work(opFloc, opFloc))
-                    allocate(face_penalty_fluxes_mat(2, opFloc, opFloc))
-                    allocate(face_normal_mat(opDim, opFloc, opFloc))
-                    allocate(face_kappa_normal_mat(opDim, opFloc, opFloc))
-
-                    
                     colour_loop: do clr = 1, size(colours)
                       len = key_count(colours(clr))
 
@@ -1010,29 +941,6 @@ contains
                       !$OMP END DO
 
                     end do colour_loop
-!FR Now deallocate the arrays we moved up to module level, again all threads need to do this so 
-!FR we need to do it inside the parallel region
-                    deallocate(Viscosity_mat)
-                    deallocate(subcycle_m_tensor_addto)
-
-		    deallocate(Abs_mat_sphere)
-                    deallocate(Grad_u_mat_q)
-                    deallocate(Div_u_mat_q)
-                    deallocate(kappa_mat)
-                    deallocate(du_t)
-                    deallocate(dug_t)
-                    deallocate(dq_t)
-                    deallocate(sh_tensout)
-                    deallocate(sh_outtens)
-                    deallocate(dt_rho)
-
-                    deallocate(face_primal_fluxes_mat)
-                    deallocate(face_shape_shape_work)
-                    deallocate(face_penalty_fluxes_mat)
-                    deallocate(face_normal_mat)
-                    deallocate(face_kappa_normal_mat)
-
-
                     !$OMP END PARALLEL
                     
                     inner_t1 = mpi_wtime()
@@ -1736,5 +1644,7 @@ subroutine momentum_DG_check_options
     end do state_loop
 
 end subroutine momentum_DG_check_options
+
+
 
 end module momentum_DG

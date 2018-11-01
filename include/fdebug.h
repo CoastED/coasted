@@ -25,10 +25,6 @@
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
 
-! This is for speed tests.
-
-! #define LES_USES_DG_VEL
-
 #ifndef DEBUG_H
 #define DEBUG_H
 #include "confdefs.h"

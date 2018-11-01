@@ -1222,10 +1222,7 @@ logical, optional, intent(in):: nomatrixdump
   ewrite(1, *) 'Entering solver.'
 
   ! if a null space is defined for the petsc matrix, make sure it's projected out of the rhs
-!FR commented out to make code compile until we work out what to replace this with! 
-!FR try using MatGetNullSpace with matrix b...
-!FR  call KSPGetNullSpace(ksp, nullsp, ierr)
-!FR SEG FAULTS with this call MatGetNullSpace(b, nullsp, ierr)
+  call KSPGetNullSpace(ksp, nullsp, ierr)
   if (ierr==0  .and. nullsp/=PETSC_NULL_OBJECT) then
     call MatNullSpaceRemove(nullsp, b, PETSC_NULL_OBJECT, ierr)
   end if
@@ -1684,8 +1681,7 @@ subroutine SetupKSP(ksp, mat, pmat, solver_option_path, parallel, &
          null_space = create_null_space_from_options(mat, trim(solver_option_path)//"/remove_null_space", &
             petsc_numbering, positions=positions, rotation_matrix=rotation_matrix)
        end if
-!FR       call KSPSetNullSpace(ksp, null_space, ierr)
-       call MatSetNullSpace(mat, null_space, ierr)
+       call KSPSetNullSpace(ksp, null_space, ierr)
        call MatNullSpaceDestroy(null_space, ierr)
     end if
 
