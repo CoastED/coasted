@@ -67,7 +67,8 @@ contains
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: u_grad, mviscosity
+        type(tensor_field) :: u_grad
+        type(tensor_field), pointer :: mviscosity
 
         integer :: e, num_elements, n, num_nodes, ln
         integer :: u_cg_ele(ele_loc(u,1))
@@ -185,7 +186,7 @@ contains
 
             ele_vol = element_volume(x, e)
 
-            length=2.*(ele_vol**0.333333333333333333333)
+            length=(ele_vol**0.333333333333333333333)
             ! Factor of two included in length_scale_scalar
             Cs_length_sq = (Cs* length)**2.0
 
@@ -194,7 +195,7 @@ contains
             do ln=1, NLOC
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
-                visc_turb = Cs_length_sq * norm2(2.0 * rate_of_strain)
+                visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
                 sgs_ele_av = sgs_ele_av + visc_turb/NLOC
                 node_sum(gnode) = node_sum(gnode) + visc_turb
@@ -215,8 +216,11 @@ contains
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node+transpose(u_grad_node)) * rho) * dist_to_wall%val(n)
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = 1.0 - exp(-y_plus/A_plus)
+
+!                call set(sgs_visc, n, &
+!                    vd_damping * rho*node_sum(n) / node_visits(n) )
 
                 call set(sgs_visc, n, &
                     vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
@@ -225,6 +229,8 @@ contains
             end do
         else
             do n=1, num_nodes
+!                call set(sgs_visc, n, rho*node_sum(n) / node_visits(n) )
+
                 call set(sgs_visc, n, &
                     rho*0.5*(node_sum(n) / node_visits(n) &
                     + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
@@ -413,8 +419,8 @@ contains
                                                 + 4.0* rate_of_strain(3,2)**2.0 )
 
                 ! Note, this is without density. That comes later.
-                sgs_horz = Cs_length_horz_sq * mag_strain_horz
-                sgs_vert = Cs_length_vert_sq * mag_strain_vert
+                sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
+                sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
 
                 ! As per Roman et al, 2010.
                 visc_turb(1:2, 1:2) = sgs_horz
@@ -440,7 +446,7 @@ contains
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node) * rho * mu) * dist_to_wall%val(n) 
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
 
                 call set(sgs_visc, n, &
