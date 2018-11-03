@@ -52,8 +52,10 @@
     implicit none
     ! Module to provide solvers, preconditioners etc... for full_projection Solver.
     ! Not this is currently tested for Full CMC solves and Stokes flow:
+
+    ! Only using recent PETSc (> 3.6) now.
 #ifdef HAVE_PETSC_MODULES
-#include "finclude/petscdef.h"
+#include "petsc/finclude/petscdef.h"
 #else
 #include "finclude/petsc.h"
 #endif
