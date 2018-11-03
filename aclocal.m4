@@ -485,9 +485,9 @@ program test_petsc
 #endif
 implicit none
 #ifdef HAVE_PETSC_MODULES
-#include "petsc/finclude/petscdef.h
+#include "finclude/petscdef.h"
 #else
-#include "petsc/finclude/petsc.h"
+#include "finclude/petsc.h"
 #endif
       double precision  norm
       PetscInt  i,j,II,JJ,m,n,its
@@ -588,8 +588,8 @@ AC_COMPUTE_INT(PETSC_VERSION_MINOR, "PETSC_VERSION_MINOR", [#include "petscversi
   [AC_MSG_ERROR([Unknown petsc minor version])])
 AC_MSG_NOTICE([Detected PETSc version "$PETSC_VERSION_MAJOR"."$PETSC_VERSION_MINOR"])
 # if major<3 or minor<1
-if test "0$PETSC_VERSION_MAJOR" -lt 3 -o "0$PETSC_VERSION_MINOR" -lt 6; then
-  AC_MSG_ERROR([Fluidity needs PETSc version >=3.6])
+if test "0$PETSC_VERSION_MAJOR" -lt 3 -o "0$PETSC_VERSION_MINOR" -lt 1; then
+  AC_MSG_ERROR([Fluidity needs PETSc version >=3.1])
 fi
 
 AC_DEFINE(HAVE_PETSC,1,[Define if you have the PETSc library.])

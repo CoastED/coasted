@@ -24,7 +24,7 @@ program test_laplacian
 
   implicit none
 #ifdef HAVE_PETSC
-#include "petsc/finclude/petsc.h"
+#include "finclude/petsc.h"
 #endif
   
   character, parameter:: NEWLINE_CHAR=achar(10)

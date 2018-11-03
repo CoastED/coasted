@@ -52,15 +52,15 @@ module solvers
 
   ! stuff used in the PETSc monitor (see petsc_solve_callback_setup() below)
   integer :: petsc_monitor_iteration = 0
-  Vec :: petsc_monitor_x
+  type(Vec) :: petsc_monitor_x
   !
   ! if .true. the code will compare with the provided exact answer, and
   ! give the error convergence each iteration:
   logical, save:: petsc_monitor_has_exact=.false.
   ! this requires the following:
-  Vec :: petsc_monitor_exact
+  type(Vec) :: petsc_monitor_exact
   real, dimension(:), pointer :: petsc_monitor_error => null()
-  PetscLogDouble, dimension(:), pointer :: petsc_monitor_flops => null()
+  type(PetscLogDouble), dimension(:), pointer :: petsc_monitor_flops => null()
   type(scalar_field), save:: petsc_monitor_exact_sfield
   type(vector_field), save:: petsc_monitor_exact_vfield
   character(len=FIELD_NAME_LEN), save:: petsc_monitor_error_filename=""
@@ -1222,10 +1222,7 @@ logical, optional, intent(in):: nomatrixdump
   ewrite(1, *) 'Entering solver.'
 
   ! if a null space is defined for the petsc matrix, make sure it's projected out of the rhs
-!FR commented out to make code compile until we work out what to replace this with! 
-!FR try using MatGetNullSpace with matrix b...
-!FR  call KSPGetNullSpace(ksp, nullsp, ierr)
-!FR SEG FAULTS with this call MatGetNullSpace(b, nullsp, ierr)
+  call KSPGetNullSpace(ksp, nullsp, ierr)
   if (ierr==0  .and. nullsp/=PETSC_NULL_OBJECT) then
     call MatNullSpaceRemove(nullsp, b, PETSC_NULL_OBJECT, ierr)
   end if
@@ -1684,8 +1681,7 @@ subroutine SetupKSP(ksp, mat, pmat, solver_option_path, parallel, &
          null_space = create_null_space_from_options(mat, trim(solver_option_path)//"/remove_null_space", &
             petsc_numbering, positions=positions, rotation_matrix=rotation_matrix)
        end if
-!FR       call KSPSetNullSpace(ksp, null_space, ierr)
-       call MatSetNullSpace(mat, null_space, ierr)
+       call KSPSetNullSpace(ksp, null_space, ierr)
        call MatNullSpaceDestroy(null_space, ierr)
     end if
 
