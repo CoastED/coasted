@@ -1299,14 +1299,14 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         end if
 
         ! If constant viscosity, just do this once 
-        if(Viscosity%field_TYPE==FIELD_TYPE_CONSTANT) then
+        if(Viscosity%field_TYPE==FIELD_TYPE_CONSTANT .and. .not. have_les) then
+            ! Constant viscosity field
            do concurrent (iloc=1:opFloc)
               face_visc_val(:,:,iloc) = Viscosity%val(:,:,1)
            end do
            face_kappa_gi = tensormul( face_visc_val, &
                 face_u_shape%n )
         end if
-
         
         neighbourloop: do ni=1, opFaces
 
@@ -1422,48 +1422,14 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             !        face_nvfrac_gi = face_val_at_quad(nvfrac, face)
             !    end if
 
-            ! allocate( face_kappa_gi(Viscosity%dim(1), Viscosity%dim(2), &
-            !    face_ngi(Viscosity,face)) )
 
 ! Only for Primal schemes (CDG, IP, etc.). Not needed for Bassi-Rebay
 ! (Am I sure about this?)
 #ifndef SCHEME_BASSI
-            ! If viscosity varies, calculate matrix at every iteration
-            if(Viscosity%field_TYPE==FIELD_TYPE_NORMAL .or. have_les) then
-               face_kappa_gi = tensormul( Viscosity%val(:,:,u_face_glno_1), &
-                    face_u_shape%n )
+            ! Calculate for each face due to spatially varying viscosity
+            if(Viscosity%field_TYPE==FIELD_TYPE_NORMAL  .or. have_les) then
+                face_kappa_gi = face_val_at_quad(Viscosity, face)
             end if
-
-            ! For Large-Eddy Simulation
-
-!            if(associated(tensor_eddy_visc)) then
-!                face_kappa_gi = face_kappa_gi + &
-!                     tensormul( tensor_eddy_visc%val(:,:,u_face_glno_1), &
-!                     face_u_shape%n )
-!            end if
-
-            if(have_les) then
-                if(have_isotropic_les) then
-                    tmp_face_tensor=0.
-                    do concurrent(face_d1=1:opDim)
-                        tmp_face_tensor(face_d1, face_d1,:) = eddy_visc%val(x_face_glno_1)
-                    end do
-                    face_kappa_gi = face_kappa_gi + &
-                         tensormul( tmp_face_tensor, &
-                         face_u_shape%n )
-                else
-!                    face_kappa_gi = face_kappa_gi + &
-!                         tensormul( tensor_eddy_visc%val(:,:,x_face_glno_1), &
-!                         face_u_shape%n )
-
-                    ! Anisotropic LES / viscosity
-                    tmp_face_tensor(:, :, :) = tensor_eddy_visc%val(:,:, x_face_glno_1)
-
-                    face_kappa_gi = face_kappa_gi + &
-                         tensormul( tmp_face_tensor, face_u_shape%n )
-
-                end if
-             end if
 #endif
 
 !            if(multiphase) then

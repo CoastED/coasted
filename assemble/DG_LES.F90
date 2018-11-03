@@ -75,7 +75,7 @@ contains
 
         real :: Cs, length, ele_vol, Cs_length_sq
         real, dimension(u%dim, u%dim) :: rate_of_strain, u_grad_node
-        real :: sgs_ele_av, visc_turb, mu
+        real :: sgs_ele_av, visc_turb, mu, node_visc
         real :: rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
@@ -219,21 +219,18 @@ contains
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = 1.0 - exp(-y_plus/A_plus)
 
-!                call set(sgs_visc, n, &
-!                    vd_damping * rho*node_sum(n) / node_visits(n) )
+                node_visc =  vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
+                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
 
-                call set(sgs_visc, n, &
-                    vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
-
+                call set(sgs_visc, n, node_visc)
             end do
         else
             do n=1, num_nodes
-!                call set(sgs_visc, n, rho*node_sum(n) / node_visits(n) )
 
-                call set(sgs_visc, n, &
-                    rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
+                node_visc = rho*0.5*(node_sum(n) / node_visits(n) &
+                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
+
+                call set(sgs_visc, n, node_visc )
             end do
         end if
 
