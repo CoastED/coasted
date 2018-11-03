@@ -71,20 +71,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! Bilinear forms.
 
-    real, dimension(opNloc, opNloc) :: Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat
-
-    real, dimension(opDim, opNloc, opNloc) :: ele2grad_mat, Abs_mat
-    real, dimension(opDim, opDim, opNloc, opNloc) :: Abs_mat_sphere
-
-    real, dimension(opDim, opNloc) :: Abs_lump
-    real, dimension(opDim, opDim, opNloc) :: Abs_lump_sphere
-
-    real, dimension(opNloc) :: source_lump
-
-    real, dimension(opNloc, opNloc) :: Q_inv
-    real, dimension(opDim, opNloc, opEFloc) :: Grad_u_mat_q, Div_u_mat_q
-    real, dimension(opDim, opDim, opEFloc, opEFloc) :: Viscosity_mat
-    real, dimension(opDim) :: node_stress_diag, resid_stress_term
     real :: visc_dot_prod
     real, dimension(opDim, opDim) :: visc_grad_dot_u
     real, dimension(opDim, opDim, opNloc) :: Viscosity_ele

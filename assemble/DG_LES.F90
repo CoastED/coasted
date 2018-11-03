@@ -25,9 +25,8 @@
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
 #include "fdebug.h"
+#include "compile_opt_defs.h"
 
-#define NDIM 3
-#define NLOC 4
 
 module dg_les
   !!< This module contains several subroutines and functions used to implement LES models
@@ -192,18 +191,18 @@ contains
 
             ! This is the contribution to nu_sgs from each co-occupying node
             sgs_ele_av=0.0
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
                 visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
-                sgs_ele_av = sgs_ele_av + visc_turb/NLOC
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
                 node_sum(gnode) = node_sum(gnode) + visc_turb
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             ! This is the weighted contribution from each element
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_vol_weighted_sum(gnode) = node_vol_weighted_sum(gnode) + ele_vol*sgs_ele_av
@@ -403,7 +402,7 @@ contains
 
             ! This is the contribution to nu_sgs from each co-occupying node
             sgs_ele_av=0.0
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
 
@@ -424,13 +423,13 @@ contains
                 visc_turb(3, :) = sgs_vert
                 visc_turb(:, 3) = sgs_vert
 
-                sgs_ele_av = sgs_ele_av + visc_turb/NLOC
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
                 node_sum(:,:, gnode) = node_sum(:,:, gnode) + visc_turb
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             ! This is the weighted contribution from each element
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
@@ -479,15 +478,15 @@ contains
         integer :: ele
 
         real :: horzSq, vertSq
-        real, dimension(NDIM, NLOC) :: X_val
-        real, dimension(NDIM) :: dx
+        real, dimension(opDim, opNloc) :: X_val
+        real, dimension(opDim) :: dx
 
         integer :: i
 
         X_val=ele_val(positions, ele)
 
         ! Calculate largest dx, dy, dz for element nodes
-        do i=1, NDIM
+        do i=1, opDim
             dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
         end do
 
