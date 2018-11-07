@@ -86,7 +86,7 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density
+        logical :: have_van_driest, have_reference_density, use_dg_velocity
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.6, pow_m=2.0
@@ -95,21 +95,35 @@ contains
 
         t1=mpi_wtime()
 
-        ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
-        call grad(u_cg, x, u_grad)
-
 
         ! Van Driest wall damping
         have_van_driest = have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
+
+        ! Using DG velocity field for LES calculations.
+        ! This is SLOW! Only use for performance tests.
+        use_dg_velocity = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/use_dg_velocity")
+
+        ! Can either use projected CG or DG velocity field in LES calculations
+        ! CG is preferred as it is much, much faster.
+        if( .not. use_dg_velocity ) then
+            ! Velocity projected to continuous Galerkin
+            u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        else
+            ! Using DG Velocity instead. For debugging only!
+            u_cg=>extract_vector_field(state, "Velocity", stat=state_flag)
+        end if
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
 
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)

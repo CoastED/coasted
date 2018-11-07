@@ -1161,6 +1161,14 @@ creation of a prescribed scalar field DistanceToWall.</a:documentation>
                 </element>
               </optional>
               <optional>
+                <element name="use_dg_velocity">
+                  <a:documentation>For performance tests only. Uses DG velocity field for LES
+calculations.
+*DO NOT* use for production runs -- it is slow!!</a:documentation>
+                  <empty/>
+                </element>
+              </optional>
+              <optional>
                 <!--
                                    ## If distance to wall is enabled a Van Driest damping function will be applied based upon the wall distances set in this field.
                                    element scalar_field {
