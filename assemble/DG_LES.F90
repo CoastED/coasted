@@ -111,19 +111,19 @@ contains
 
         ! Can either use projected CG or DG velocity field in LES calculations
         ! CG is preferred as it is much, much faster.
-        if( .not. use_dg_velocity ) then
-            ! Velocity projected to continuous Galerkin
-            u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-        else
-            ! Using DG Velocity instead. For debugging only!
+        ! Velocity projected to continuous Galerkin
+
+        if(use_dg_velocity) then
             u_cg=>extract_vector_field(state, "Velocity", stat=state_flag)
+        else
+            u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
         end if
 
         ! Allocate gradient field
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
         call grad(u_cg, x, u_grad)
+
 
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)
