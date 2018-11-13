@@ -697,17 +697,11 @@ contains
                     "/discontinuous_galerkin/les_model"//&
                     "/isotropic")
 
-
-!                ! Nullify here until have_les code works
-!                nullify(eddy_visc)
-!                nullify(tensor_eddy_visc)
-!                nullify(distance_to_wall)
-!                nullify(y_plus_debug)
-!                nullify(les_filter_width_debug)
-
-                ! Commented out until it works...
                 if(have_les) then
-
+                   if(.not. partial_stress) then
+                      FLAbort("Need to enable partial_stress viscosity scheme for DG LES")
+                   end if
+                   
                     ! Are we using the isotropic (scalar) SGS eddy viscosity,
                     ! - As opposed to anisotropic model (eg. Roman et al)
                     have_isotropic_les = &
@@ -721,6 +715,7 @@ contains
 
                     ! Extract scalar or vector eddy field
                     if(have_isotropic_les) then
+                      
                         ewrite(1,*) "*** Scalar-based DG LES (experimental)"
                         ! les eddy visc field - needs to be nullified if non-existent
                         nullify(tensor_eddy_visc)
@@ -767,7 +762,7 @@ contains
                     if(have_van_driest) then
                         distance_to_wall=> extract_scalar_field(state, "DistanceToWall", stat=stat)
                         if (stat/=0) then
-                            FLAbort("Van Driest damping requested, but no distance_to_wall scalar field exists")
+                            FLAbort("Van Driest damping requested, but no DistanceToWall scalar field exists")
                         end if
                     else
                         nullify(distance_to_wall)
@@ -1083,12 +1078,12 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     ! Benchmarking
     t0=mpi_wtime()
 
-#ifdef USE_CTO
-    ! Only works for 3D
-    run_optimal=(u%dim==opDim)
-#else
+!#ifdef USE_CTO
+!    ! Only works for 3D
+!    run_optimal=(u%dim==opDim)
+!#else
     run_optimal=.false.
-#endif
+!#endif
 
     ewrite(1,*) 'Inside subcycle_momentum_dg'
 
@@ -1132,26 +1127,24 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
         call find_linear_parent_mesh(state, u_sub%mesh, vertex_mesh)
         call allocate(T_max, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMax")
         call allocate(T_min, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMin")
+    else
+        print*, "subcycle_momentum_dg: unoptimised method"
     end if
 
 
     do i=1, subcycles
         if (limit_slope) then
 
-#ifdef USE_CTO
             if(run_optimal) then
                 ! filter wiggles from u
                 call limit_vb_opt(u_sub)
             else
-#endif
-                ! filter wiggles from u
+               ! filter wiggles from u
                 do d =1, u%dim
                     u_cpt = extract_scalar_field_from_vector_field(u_sub,d)
                     call limit_vb(state, u_cpt)
                 end do
-#ifdef USE_CTO
             end if
-#endif
 
         end if
 
