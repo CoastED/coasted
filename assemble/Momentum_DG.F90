@@ -920,9 +920,9 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-                if(U%dim==3 .and. P%mesh%shape%degree==2 &
+                if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
-                    .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
+                    .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
                     print*, "Optimised DG assembly: Compact DG"
 
                     inner_t0 = mpi_wtime()
@@ -972,7 +972,11 @@ contains
                     
                     inner_t1 = mpi_wtime()
 
-                else
+                 else
+                    print*, "udim, opdim:", U%dim, opDim
+                    print*, "ele_loc, opnNloc",  ele_loc(U,1), opNloc
+                    print*, "ele_ngi, opNgi",  ele_ngi(U,1), opNgi
+                    
                     FLExit("Non-optimised DG assembly no longer supported")
 
                 end if
