@@ -1,4 +1,4 @@
-CC=cc
+CC=mpicc
 CFLAGS = -O2 $(COPTIONS) $(OPTFLAGS) -I. $(INCDIR)
 
 

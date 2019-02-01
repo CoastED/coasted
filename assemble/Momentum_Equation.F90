@@ -1335,8 +1335,24 @@
             &"/prognostic/spatial_discretisation/continuous_galerkin"//&
             &"/stress_terms/partial_stress_form")
 
+        ! Check DG as well.
+        if( .not. partial_stress_form) then
+             partial_stress_form = have_option(trim(u%option_path)//&
+                &"/prognostic/spatial_discretisation/discontinuous_galerkin"//&
+                &"/viscosity_scheme/partial_stress_form")
+        end if
+        print*, "Momentum_Equation:  partial_stress_form=", partial_stress_form
+
          have_les = have_option(trim(u%option_path)//"/prognostic/spatial_discretisation/"//&
             &"/continuous_galerkin/les_model")
+
+        ! Check DG as well.
+        if( .not. have_les) then
+             have_les = have_option(trim(u%option_path)//&
+                &"/prognostic/spatial_discretisation/discontinuous_galerkin"//&
+                &"/les_model")
+        end if
+        print*, "Momentum_Equation: les_model=", have_les
 
          have_coriolis = have_option("/physical_parameters/coriolis")
 

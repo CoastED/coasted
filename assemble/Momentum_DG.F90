@@ -151,6 +151,33 @@ module momentum_DG
     ! Are we running a multi-phase flow simulation?
     logical :: multiphase
 
+    ! Declaring assembly arrays at module level
+    real, allocatable, dimension(:, :) :: Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat
+    real, allocatable, dimension(:, :, :) :: ele2grad_mat, Abs_mat
+    real, allocatable, dimension(:, :, :, :) :: Abs_mat_sphere
+    real, allocatable, dimension(:, :) :: Abs_lump
+    real, allocatable, dimension(:, :, :) :: Abs_lump_sphere
+    real, allocatable, dimension(:) :: source_lump
+    real, allocatable, dimension(:, :) :: Q_inv
+    real, allocatable, dimension(:, :, :) :: Grad_u_mat_q, Div_u_mat_q
+    real, allocatable, dimension(:, :, :, :) :: Viscosity_mat
+    real, allocatable, dimension(:) :: node_stress_diag, resid_stress_term
+
+    ! =======================================================================
+    ! Make assembly arrays private to each OpenMP thread
+    ! =======================================================================
+    !$OMP THREADPRIVATE(Coriolis_mat, rho_mat, rho_move_mat, mass_mat, inverse_mass_mat, Advection_mat, Source_mat)
+    !$OMP THREADPRIVATE(ele2grad_mat, Abs_mat)
+    !$OMP THREADPRIVATE(Abs_mat_sphere)
+    !$OMP THREADPRIVATE(Abs_lump)
+    !$OMP THREADPRIVATE(Abs_lump_sphere)
+    !$OMP THREADPRIVATE(source_lump)
+    !$OMP THREADPRIVATE(Q_inv)
+    !$OMP THREADPRIVATE(Grad_u_mat_q, Div_u_mat_q)
+    !$OMP THREADPRIVATE(Viscosity_mat)
+    !$OMP THREADPRIVATE(node_stress_diag, resid_stress_term)
+
+
 contains
 
 
@@ -670,17 +697,11 @@ contains
                     "/discontinuous_galerkin/les_model"//&
                     "/isotropic")
 
-
-!                ! Nullify here until have_les code works
-!                nullify(eddy_visc)
-!                nullify(tensor_eddy_visc)
-!                nullify(distance_to_wall)
-!                nullify(y_plus_debug)
-!                nullify(les_filter_width_debug)
-
-                ! Commented out until it works...
                 if(have_les) then
-
+                   if(.not. partial_stress) then
+                      FLAbort("Need to enable partial_stress viscosity scheme for DG LES")
+                   end if
+                   
                     ! Are we using the isotropic (scalar) SGS eddy viscosity,
                     ! - As opposed to anisotropic model (eg. Roman et al)
                     have_isotropic_les = &
@@ -694,6 +715,7 @@ contains
 
                     ! Extract scalar or vector eddy field
                     if(have_isotropic_les) then
+                      
                         ewrite(1,*) "*** Scalar-based DG LES (experimental)"
                         ! les eddy visc field - needs to be nullified if non-existent
                         nullify(tensor_eddy_visc)
@@ -740,7 +762,7 @@ contains
                     if(have_van_driest) then
                         distance_to_wall=> extract_scalar_field(state, "DistanceToWall", stat=stat)
                         if (stat/=0) then
-                            FLAbort("Van Driest damping requested, but no distance_to_wall scalar field exists")
+                            FLAbort("Van Driest damping requested, but no DistanceToWall scalar field exists")
                         end if
                     else
                         nullify(distance_to_wall)
@@ -898,15 +920,17 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-                if(U%dim==3 .and. P%mesh%shape%degree==2 &
+                if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
-                    .and. ele_loc(U,1)==4 .and. ele_ngi(U,1)==11 ) then
+                    .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
                     print*, "Optimised DG assembly: Compact DG"
 
                     inner_t0 = mpi_wtime()
 
                     !$OMP PARALLEL DEFAULT(SHARED) &
                     !$OMP PRIVATE(clr, nnid, ele, len)
+
+                    call allocateDGAssemblyArrays()
 
                     colour_loop: do clr = 1, size(colours)
                       len = key_count(colours(clr))
@@ -941,11 +965,18 @@ contains
                       !$OMP END DO
 
                     end do colour_loop
+
+                    call deallocateDGAssemblyArrays()
+
                     !$OMP END PARALLEL
                     
                     inner_t1 = mpi_wtime()
 
-                else
+                 else
+                    print*, "udim, opdim:", U%dim, opDim
+                    print*, "ele_loc, opnNloc",  ele_loc(U,1), opNloc
+                    print*, "ele_ngi, opNgi",  ele_ngi(U,1), opNgi
+                    
                     FLExit("Non-optimised DG assembly no longer supported")
 
                 end if
@@ -1051,12 +1082,12 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     ! Benchmarking
     t0=mpi_wtime()
 
-#ifdef USE_CTO
-    ! Only works for 3D
-    run_optimal=(u%dim==opDim)
-#else
+!#ifdef USE_CTO
+!    ! Only works for 3D
+!    run_optimal=(u%dim==opDim)
+!#else
     run_optimal=.false.
-#endif
+!#endif
 
     ewrite(1,*) 'Inside subcycle_momentum_dg'
 
@@ -1100,26 +1131,24 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
         call find_linear_parent_mesh(state, u_sub%mesh, vertex_mesh)
         call allocate(T_max, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMax")
         call allocate(T_min, u%dim, vertex_mesh, trim(u_sub%name)//"LimitMin")
+    else
+        print*, "subcycle_momentum_dg: unoptimised method"
     end if
 
 
     do i=1, subcycles
         if (limit_slope) then
 
-#ifdef USE_CTO
             if(run_optimal) then
                 ! filter wiggles from u
                 call limit_vb_opt(u_sub)
             else
-#endif
-                ! filter wiggles from u
+               ! filter wiggles from u
                 do d =1, u%dim
                     u_cpt = extract_scalar_field_from_vector_field(u_sub,d)
                     call limit_vb(state, u_cpt)
                 end do
-#ifdef USE_CTO
             end if
-#endif
 
         end if
 
@@ -1645,6 +1674,51 @@ subroutine momentum_DG_check_options
 
 end subroutine momentum_DG_check_options
 
+! Generated by script
+subroutine allocateDGAssemblyArrays()
+    allocate( Coriolis_mat(opNloc, opNloc) )
+    allocate( rho_mat(opNloc, opNloc) )
+    allocate( rho_move_mat(opNloc, opNloc) )
+    allocate( mass_mat(opNloc, opNloc) )
+    allocate( inverse_mass_mat(opNloc, opNloc) )
+    allocate( Advection_mat(opNloc, opNloc) )
+    allocate( Source_mat(opNloc, opNloc) )
+    allocate( ele2grad_mat(opDim, opNloc, opNloc) )
+    allocate( Abs_mat(opDim, opNloc, opNloc) )
+    allocate( Abs_mat_sphere(opDim, opDim, opNloc, opNloc) )
+    allocate( Abs_lump(opDim, opNloc) )
+    allocate( Abs_lump_sphere(opDim, opDim, opNloc) )
+    allocate( source_lump(opNloc) )
+    allocate( Q_inv(opNloc, opNloc) )
+    allocate( Grad_u_mat_q(opDim, opNloc, opEFloc) )
+    allocate( Div_u_mat_q(opDim, opNloc, opEFloc) )
+    allocate( Viscosity_mat(opDim, opDim, opEFloc, opEFloc) )
+    allocate( node_stress_diag(opDim) )
+    allocate( resid_stress_term(opDim) )
+end subroutine allocateDGAssemblyArrays
+
+! Generated by script
+subroutine deallocateDGAssemblyArrays()
+    deallocate( Coriolis_mat )
+    deallocate( rho_mat )
+    deallocate( rho_move_mat )
+    deallocate( mass_mat )
+    deallocate( inverse_mass_mat )
+    deallocate( Advection_mat )
+    deallocate( Source_mat )
+    deallocate( ele2grad_mat )
+    deallocate( Abs_mat )
+    deallocate( Abs_mat_sphere )
+    deallocate( Abs_lump )
+    deallocate( Abs_lump_sphere )
+    deallocate( source_lump )
+    deallocate( Q_inv )
+    deallocate( Grad_u_mat_q )
+    deallocate( Div_u_mat_q )
+    deallocate( Viscosity_mat )
+    deallocate( node_stress_diag )
+    deallocate( resid_stress_term )
+end subroutine deallocateDGAssemblyArrays
 
 
 end module momentum_DG

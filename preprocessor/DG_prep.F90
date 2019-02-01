@@ -207,6 +207,8 @@ contains
             tensor_eddy_visc_path, scalar_eddy_visc_path
 
         logical :: have_les_option, have_les_visc_field, have_isotropic_les, have_partial_stress
+        logical :: use_dg_velocity
+
         integer :: stat
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
@@ -218,6 +220,9 @@ contains
         have_les_option = have_option(trim(dg_path)//"les_model")
         have_les_visc_field = (have_option(trim(scalar_eddy_visc_path)) &
             .or. have_option(trim(tensor_eddy_visc_path)))
+
+        ! This is slow! Used for performance tests only. Will revert later.
+       use_dg_velocity= have_option(trim(dg_path)//"les_model/use_dg_velocity")
 
         ! Partial stress needs to be on for any kind of turbulence modelling.
 !        if(.not. have_partial_stress) then
@@ -240,8 +245,16 @@ contains
                     "single", stat)
 
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", stat)
-                call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
-                    "CoordinateMesh", stat)
+
+                ! Normally use CG velocity field for LES calculations.
+                ! DG velocity field can be used BUT IS SLOW. Only for performance tests.
+                if(.not. use_dg_velocity) then
+                    call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+                        "CoordinateMesh", stat)
+                else
+                    call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+                        "VelocityMesh", stat)
+                end if
 
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/output", stat)
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/stat", stat)

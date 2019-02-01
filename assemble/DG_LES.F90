@@ -25,9 +25,8 @@
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
 #include "fdebug.h"
+#include "compile_opt_defs.h"
 
-#define NDIM 3
-#define NLOC 4
 
 module dg_les
   !!< This module contains several subroutines and functions used to implement LES models
@@ -67,14 +66,15 @@ contains
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: u_grad, mviscosity
+        type(tensor_field) :: u_grad
+        type(tensor_field), pointer :: mviscosity
 
         integer :: e, num_elements, n, num_nodes, ln
         integer :: u_cg_ele(ele_loc(u,1))
 
         real :: Cs, length, ele_vol, Cs_length_sq
         real, dimension(u%dim, u%dim) :: rate_of_strain, u_grad_node
-        real :: sgs_ele_av, visc_turb, mu
+        real :: sgs_ele_av, visc_turb, mu, node_visc
         real :: rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
@@ -86,7 +86,7 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density
+        logical :: have_van_driest, have_reference_density, use_dg_velocity
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.6, pow_m=2.0
@@ -95,21 +95,35 @@ contains
 
         t1=mpi_wtime()
 
-        ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
-        call grad(u_cg, x, u_grad)
-
 
         ! Van Driest wall damping
         have_van_driest = have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
+
+        ! Using DG velocity field for LES calculations.
+        ! This is SLOW! Only use for performance tests.
+        use_dg_velocity = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/use_dg_velocity")
+
+        ! Can either use projected CG or DG velocity field in LES calculations
+        ! CG is preferred as it is much, much faster.
+        ! Velocity projected to continuous Galerkin
+
+        if(use_dg_velocity) then
+            u_cg=>extract_vector_field(state, "Velocity", stat=state_flag)
+        else
+            u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        end if
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
 
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)
@@ -185,24 +199,24 @@ contains
 
             ele_vol = element_volume(x, e)
 
-            length=2.*(ele_vol**0.333333333333333333333)
+            length=(ele_vol**0.333333333333333333333)
             ! Factor of two included in length_scale_scalar
             Cs_length_sq = (Cs* length)**2.0
 
             ! This is the contribution to nu_sgs from each co-occupying node
             sgs_ele_av=0.0
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
-                visc_turb = Cs_length_sq * norm2(2.0 * rate_of_strain)
+                visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
-                sgs_ele_av = sgs_ele_av + visc_turb/NLOC
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
                 node_sum(gnode) = node_sum(gnode) + visc_turb
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             ! This is the weighted contribution from each element
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_vol_weighted_sum(gnode) = node_vol_weighted_sum(gnode) + ele_vol*sgs_ele_av
@@ -215,19 +229,21 @@ contains
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node+transpose(u_grad_node)) * rho) * dist_to_wall%val(n)
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = 1.0 - exp(-y_plus/A_plus)
 
-                call set(sgs_visc, n, &
-                    vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
+                node_visc =  vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
+                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
 
+                call set(sgs_visc, n, node_visc)
             end do
         else
             do n=1, num_nodes
-                call set(sgs_visc, n, &
-                    rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n)) )
+
+                node_visc = rho*0.5*(node_sum(n) / node_visits(n) &
+                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
+
+                call set(sgs_visc, n, node_visc )
             end do
         end if
 
@@ -400,7 +416,7 @@ contains
 
             ! This is the contribution to nu_sgs from each co-occupying node
             sgs_ele_av=0.0
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
 
@@ -413,21 +429,21 @@ contains
                                                 + 4.0* rate_of_strain(3,2)**2.0 )
 
                 ! Note, this is without density. That comes later.
-                sgs_horz = Cs_length_horz_sq * mag_strain_horz
-                sgs_vert = Cs_length_vert_sq * mag_strain_vert
+                sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
+                sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
 
                 ! As per Roman et al, 2010.
                 visc_turb(1:2, 1:2) = sgs_horz
                 visc_turb(3, :) = sgs_vert
                 visc_turb(:, 3) = sgs_vert
 
-                sgs_ele_av = sgs_ele_av + visc_turb/NLOC
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
                 node_sum(:,:, gnode) = node_sum(:,:, gnode) + visc_turb
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             ! This is the weighted contribution from each element
-            do ln=1, NLOC
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
@@ -440,7 +456,7 @@ contains
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node) * rho * mu) * dist_to_wall%val(n) 
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
 
                 call set(sgs_visc, n, &
@@ -476,15 +492,15 @@ contains
         integer :: ele
 
         real :: horzSq, vertSq
-        real, dimension(NDIM, NLOC) :: X_val
-        real, dimension(NDIM) :: dx
+        real, dimension(opDim, opNloc) :: X_val
+        real, dimension(opDim) :: dx
 
         integer :: i
 
         X_val=ele_val(positions, ele)
 
         ! Calculate largest dx, dy, dz for element nodes
-        do i=1, NDIM
+        do i=1, opDim
             dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
         end do
 

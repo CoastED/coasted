@@ -20,7 +20,7 @@
     implicit none
 
 #include "petscversion.h"
-#include "finclude/petsc.h"
+#include "petsc/finclude/petsc.h"
     type(state_type) :: state
     type(vector_field), target:: positions, vertical_normal
     type(scalar_field) :: psi, DistanceToTop, exact
@@ -305,7 +305,7 @@
     logical, intent(out) :: vl_as, vl, no_vl, sor, vl_as_wsor
     real, intent(out) :: eps0
 
-#include "finclude/petsc.h"
+#include "petsc/finclude/petsc.h"
 
 #if PETSC_VERSION_MINOR>=2
     PetscBool:: flag
