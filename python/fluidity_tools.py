@@ -331,7 +331,7 @@ for example:
       while 1:
         line=statfile.readline()
         if line=="":
-          raise Exception("Unable to read .stat file header")
+          raise Exception("Unable to read .stat file header for "+filename)
         xml=xml+line
         if re.search(header_re, line):
           break

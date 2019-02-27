@@ -123,6 +123,10 @@ lib/libjudy.a:
 	@echo '    MKDIR lib'; mkdir -p lib
 	echo '    MAKE libjudy'; $(MAKE) -C libjudy > make.log && $(MAKE) -C libjudy install >> make.log
 
+lib/libparmetis.a:
+	@echo '    MKDIR lib'; mkdir -p lib
+	echo '    MAKE libparmetis3'; $(MAKE) -C libparmetis3
+
 lib/libmba2d.a:
 	@echo '    MKDIR lib'; mkdir -p lib
 	echo '    MAKE libmba2d'; $(MAKE) -C libmba2d
