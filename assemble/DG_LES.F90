@@ -79,8 +79,7 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:), &
-             node_neigh_total_vol(:)
+        real, allocatable, save :: node_sum(:)
         integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
@@ -173,15 +172,11 @@ contains
         if(new_mesh_connectivity) then
             if(allocated(node_sum)) then
                 deallocate(node_sum)
-                deallocate(node_vol_weighted_sum)
                 deallocate(node_visits)
-                deallocate(node_neigh_total_vol)
             end if
 
             allocate(node_sum(num_nodes))
-            allocate(node_vol_weighted_sum(num_nodes))
             allocate(node_visits(num_nodes))
-            allocate(node_neigh_total_vol(num_nodes))
         end if
 
         node_sum(:)=0.0
@@ -215,13 +210,6 @@ contains
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
-            ! This is the weighted contribution from each element
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-
-                node_vol_weighted_sum(gnode) = node_vol_weighted_sum(gnode) + ele_vol*sgs_ele_av
-                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
-            end do
         end do
 
         ! Set final values. Two options here: one with Van Driest damping, 
@@ -232,16 +220,14 @@ contains
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = 1.0 - exp(-y_plus/A_plus)
 
-                node_visc =  vd_damping * rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
+                node_visc =  vd_damping * rho*node_sum(n) / node_visits(n)
 
                 call set(sgs_visc, n, node_visc)
             end do
         else
             do n=1, num_nodes
 
-                node_visc = rho*0.5*(node_sum(n) / node_visits(n) &
-                    + node_vol_weighted_sum(n) / node_neigh_total_vol(n))
+                node_visc = rho * node_sum(n) / node_visits(n)
 
                 call set(sgs_visc, n, node_visc )
             end do
@@ -291,8 +277,7 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable,save:: node_sum(:, :,:), node_vol_weighted_sum(:,:,:),&
-             node_neigh_total_vol(:)
+        real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
@@ -384,21 +369,15 @@ contains
         if(new_mesh_connectivity) then
             if(allocated(node_sum)) then
                 deallocate(node_sum)
-                deallocate(node_vol_weighted_sum)
                 deallocate(node_visits)
-                deallocate(node_neigh_total_vol)
             end if
 
             allocate(node_sum(u%dim, u%dim, num_nodes))
-            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
-            allocate(node_neigh_total_vol(num_nodes))
         end if
 
         node_sum(:,:,:)=0.0
         node_visits(:)=0
-        node_vol_weighted_sum(:,:,:)=0.0
-        node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
@@ -442,13 +421,7 @@ contains
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
 
-            ! This is the weighted contribution from each element
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
 
-                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
-                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
-            end do
         end do
 
         ! Set final values. Two options here: one with Van Driest damping, one without.
@@ -460,14 +433,12 @@ contains
                 vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
 
                 call set(sgs_visc, n, &
-                    vd_damping * rho*0.5*(node_sum(:,:,n) / node_visits(n) &
-                    + node_vol_weighted_sum(:,:,n) / node_neigh_total_vol(n)) )
+                    vd_damping * rho*node_sum(:,:,n) / node_visits(n)
             end do
         else
             do n=1, num_nodes
                 call set(sgs_visc, n, &
-                    rho*0.5*(node_sum(:,:,n) / node_visits(n) &
-                    + node_vol_weighted_sum(:,:, n) / node_neigh_total_vol(n)) )
+                    rho*node_sum(:,:,n) / node_visits(n)
             end do
         end if
 
