@@ -181,9 +181,6 @@ contains
 
         node_sum(:)=0.0
         node_visits(:)=0
-        node_vol_weighted_sum(:)=0.0
-        node_neigh_total_vol(:)=0.0
-
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
@@ -433,12 +430,12 @@ contains
                 vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
 
                 call set(sgs_visc, n, &
-                    vd_damping * rho*node_sum(:,:,n) / node_visits(n)
+                    vd_damping * rho*node_sum(:,:,n) / node_visits(n) )
             end do
         else
             do n=1, num_nodes
                 call set(sgs_visc, n, &
-                    rho*node_sum(:,:,n) / node_visits(n)
+                    rho*node_sum(:,:,n) / node_visits(n) )
             end do
         end if
 
