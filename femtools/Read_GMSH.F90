@@ -258,8 +258,6 @@ contains
                sndgln = sndglno(1:numFaces*sloc), &
                boundary_ids = boundaryIDs(1:numFaces) )
        end if
-
-
     else
        ewrite(2,*) "WARNING: no boundaries in GMSH file "//trim(lfilename)
        call add_faces( field%mesh, sndgln = sndglno(1:numFaces*sloc) )
