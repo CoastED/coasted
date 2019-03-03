@@ -203,13 +203,13 @@ contains
                 visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-                node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
             end do
 
         end do
@@ -419,12 +419,13 @@ contains
                 visc_turb(:, 3) = sgs_vert
 
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-                node_visits(gnode) = node_visits(gnode) + 1
             end do
 
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
+
                 node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
             end do
 
 
