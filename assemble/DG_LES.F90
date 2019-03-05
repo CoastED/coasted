@@ -79,8 +79,8 @@ contains
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_sum(:), node_vol_weighted_sum(:), &
-                          node_neigh_total_vol(:)
+        real, allocatable, save :: node_vol_weighted_sum(:), &
+             node_neigh_total_vol(:)
         
         real, allocatable, save :: node_sum(:)
         integer, allocatable, save :: node_visits(:)
@@ -238,7 +238,7 @@ contains
                 vd_damping = 1.0 - exp(-y_plus/A_plus)
 
                 node_visc =  vd_damping * rho * node_vol_weighted_sum(n) &
-                     / node_neigh_total_vol(n))
+                     / node_neigh_total_vol(n)
 
                 call set(sgs_visc, n, node_visc)
             end do
@@ -246,7 +246,7 @@ contains
             do n=1, num_nodes
 
                node_visc =  rho * node_vol_weighted_sum(n) &
-                    / node_neigh_total_vol(n))
+                    / node_neigh_total_vol(n)
 
                 call set(sgs_visc, n, node_visc )
             end do
@@ -469,13 +469,13 @@ contains
 
                 call set(sgs_visc, n, &
                      vd_damping * rho * node_vol_weighted_sum(:,:,n) &
-                     / node_neigh_total_vol(n)))
+                     / node_neigh_total_vol(n))
             end do
         else
             do n=1, num_nodes
                 call set(sgs_visc, n, &
                      rho * node_vol_weighted_sum(:,:,n) &
-                     / node_neigh_total_vol(n)))
+                     / node_neigh_total_vol(n))
             end do
         end if
 
