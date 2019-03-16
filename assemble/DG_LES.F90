@@ -41,6 +41,7 @@ module dg_les
   use solvers
   use global_parameters
   use spud
+  use halos
 
   implicit none
 
@@ -223,8 +224,8 @@ contains
                 node_sum(gnode) = node_sum(gnode) + sgs_ele_av
                 node_visits(gnode) = node_visits(gnode) + 1
             end do
-
         end do
+
 
         ! Set final values. Two options here: one with Van Driest damping, 
         ! one without.
@@ -245,6 +246,9 @@ contains
                call set(sgs_visc, n, node_visc )
             end do
         end if
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
 
         call deallocate(u_grad)
 
@@ -404,6 +408,7 @@ contains
 
 
         do e=1, num_elements
+
             u_cg_ele=ele_nodes(u_cg, e)
 
             ele_vol = element_volume(x, e)
@@ -477,6 +482,9 @@ contains
                      rho * node_sum(:,:,n) / node_visits(n))
             end do
         end if
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
 
         call deallocate(u_grad)
 
