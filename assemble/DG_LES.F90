@@ -199,32 +199,34 @@ contains
 
 
         do e=1, num_elements
-            u_cg_ele=ele_nodes(u_cg, e)
+            if(element_owned(u_cg, e) then
+                u_cg_ele=ele_nodes(u_cg, e)
 
-            ele_vol = element_volume(x, e)
+                ele_vol = element_volume(x, e)
 
-            length=(ele_vol**0.333333333333333333333)
-            ! Factor of two included in length_scale_scalar
-            Cs_length_sq = (Cs* length)**2.0
+                length=(ele_vol**0.333333333333333333333)
+                ! Factor of two included in length_scale_scalar
+                Cs_length_sq = (Cs* length)**2.0
 
-            ! This is the contribution to nu_sgs from each co-occupying node
-            sgs_ele_av=0.0
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
-                visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
+                ! This is the contribution to nu_sgs from each co-occupying node
+                sgs_ele_av=0.0
+                do ln=1, opNloc
+                    gnode = u_cg_ele(ln)
+                    rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
+                    visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
-                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-            end do
+                    sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+                end do
 
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
+                do ln=1, opNloc
+                    gnode = u_cg_ele(ln)
 
-                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1
-            end do
-
+                    node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                    node_visits(gnode) = node_visits(gnode) + 1
+                end do
+            end if
         end do
+
 
         ! Set final values. Two options here: one with Van Driest damping, 
         ! one without.
@@ -245,6 +247,8 @@ contains
                call set(sgs_visc, n, node_visc )
             end do
         end if
+
+        call update_halo(sgs_visc)
 
         call deallocate(u_grad)
 
