@@ -542,7 +542,7 @@ contains
         if(present(rhs)) then
            call addto(rhs, nodes, &
                 -(matmul(mass_ele, top_pressures) &
-                -matmul(mass_ele_old, old_top_pressures))*alpha/rho0)
+                -matmul(mass_ele_old, old_top_pressures))*alpha)
         end if
         if (have_wd .and. present(rhs)) then
            call addto(rhs, nodes, &
