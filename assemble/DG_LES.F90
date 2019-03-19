@@ -92,7 +92,7 @@ contains
         logical :: have_van_driest, have_reference_density, use_dg_velocity
 
         ! Constants for Van Driest damping equation
-        real, parameter :: A_plus=25.6, pow_m=2.0
+        real, parameter :: A_plus=25.0, pow_m=3.0
 
         print*, "calc_dg_sgs_scalar_viscosity"
 
@@ -233,7 +233,7 @@ contains
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = 1.0 - exp(-y_plus/A_plus)
+                vd_damping = 1.0 - exp((-y_plus/A_plus)**pow_m)
 
                 node_visc =  vd_damping * rho*node_sum(n) / node_visits(n)
 
@@ -304,7 +304,7 @@ contains
         logical :: have_van_driest, have_reference_density
 
         ! Constants for Van Driest damping equation
-        real, parameter :: A_plus=25.0, pow_m=2.0
+        real, parameter :: A_plus=25.0, pow_m=3.0
 
         print*, "In calc_dg_sgs_tensor_viscosity()"
 
@@ -464,7 +464,7 @@ contains
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping =(( 1- exp(-y_plus/A_plus))**pow_m)*van_scale+(1-van_scale)
+                vd_damping = 1-exp((-y_plus/A_plus)**pow_m)
 
 !                call set(sgs_visc, n, &
 !                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
