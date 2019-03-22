@@ -23,7 +23,7 @@ opt_compile="yes"
 # Pull out some parameters from the FLML file.
 
 opt_dimension=`grep -A 2 dimension\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+opt_quad_degree=`grep -A 3 quadrature\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'|head -1`
 opt_surface_degree=`grep -A 2 surface_degree\> "$opt_flml_file" | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 viscosity_scheme=`grep -A 1 \<viscosity_scheme\> "$opt_flml_file" | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | sed 's/[<>]//g' | awk '{print $1}'`
 
