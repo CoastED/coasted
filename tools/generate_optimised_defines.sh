@@ -58,7 +58,7 @@ fi
 # Pull out element degrees for velocity and pressure
 
 vel_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 VelocityMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
-pres_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+pres_ele_degree=`grep -A 60 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 
 
 # Viscosity schemes
