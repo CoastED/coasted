@@ -3515,10 +3515,14 @@ contains
           FLExit("For ocean problems you should use the projection method under scheme for pressure")
        end if
        call get_option(trim(pressure_path)//"/scheme/poisson_pressure_solution", tmpstring)
-       select case (tmpstring)
-       case ("never", "every timestep")
-          ewrite(0,*) ("WARNING: For ocean problems you should use the Poisson pressure solution at the first timestep only.")
-       end select
+       
+! Disabling largely irrelevant and annoying warning message.
+       
+!       select case (tmpstring)
+!       case ("never", "every timestep")
+!          ewrite(0,*) ("WARNING: For ocean problems you should use the Poisson pressure solution at the first timestep only.")
+!       end select
+       
     end if
 
     ! Warning about salinity options
