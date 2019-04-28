@@ -1134,6 +1134,12 @@ suggested value 0.1</a:documentation>
                 </element>
               </choice>
               <optional>
+                <element name="zero_subgrid_stress_boundaries">
+                  <a:documentation>The boundaries that must satisfy the nu_sgs=0 condition (eg. no-slip)</a:documentation>
+                  <ref name="integer_vector"/>
+                </element>
+              </optional>
+              <optional>
                 <element name="smagorinsky_coefficient_vertical">
                   <a:documentation>Vertical Cs. Only used in anisotropic cases - experimental</a:documentation>
                   <ref name="real"/>

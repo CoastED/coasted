@@ -932,6 +932,12 @@ prognostic_velocity_field =
                      element anisotropic { empty }
                   ),
 
+                  ## The boundaries that must satisfy the nu_sgs=0 condition (eg. no-slip)
+                  element zero_subgrid_stress_boundaries {
+                     integer_vector
+                  }?,
+
+
                   ## Vertical Cs. Only used in anisotropic cases - experimental
                   element smagorinsky_coefficient_vertical {
                      real
