@@ -35,7 +35,6 @@ module dg_les
   use fields
   use field_options
   use field_derivatives
-  use boundary_conditions
   use smoothing_module
   use vector_tools
   use state_fields_module
@@ -86,8 +85,6 @@ contains
         
         real, allocatable, save :: node_sum(:)
         integer, allocatable, save :: node_visits(:)
-
-        real, allocatable, save :: wall_damp_factor(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -183,8 +180,6 @@ contains
                 
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-                if(have_van_driest) deallocate(wall_damp_factor)
-
             end if
 
             allocate(node_sum(num_nodes))
@@ -192,12 +187,7 @@ contains
 
             allocate(node_vol_weighted_sum(num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-
-           if(have_van_driest) then
-                allocate(wall_damp_factor(num_nodes))
-                call calc_sgs_wall_damp_factor(u_cg, u, &
-                    wall_damp_factor)
-           end if
+            
         end if
 
         node_sum(:)=0.0
@@ -308,9 +298,6 @@ contains
         real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
 
-        real, allocatable, save :: wall_damp_factor(:)
-
-
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
@@ -403,22 +390,12 @@ contains
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-
-                if(have_van_driest) deallocate(wall_damp_factor)
-
             end if
 
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-
-           if(have_van_driest) then
-                allocate(wall_damp_factor(num_nodes))
-                call calc_sgs_wall_damp_factor(u_cg, u, &
-                    wall_damp_factor)
-           end if
-
         end if
 
         node_sum(:,:,:)=0.0
@@ -547,70 +524,4 @@ contains
         vertSq = dx(3)**2
 
     end subroutine les_length_scales_squared_mk2
-
-
-
-    ! ========================================================================
-    ! Used for wall damping. 0 at wall, 1 everywhere else.
-    ! ========================================================================
-
-    subroutine calc_sgs_wall_damp_factor(u_cg, u, wdf)
-        type(vector_field), intent(in) :: u_cg, u
-        real, allocatable :: wdf(:)
-
-        character(len=OPTION_PATH_LEN) :: bc_path
-        integer :: nbcs_opt(2), nbcs
-
-        integer :: num_snodes
-        integer, pointer :: snode_list(:), neigh(:)
-        integer, allocatable :: bc_ids(:), globnodes(:)
-
-        integer :: ele, ele2, ni, face, ct, tot, gi
-
-        print*, "*** calc_sgs_wall_damp_factor"
-
-        bc_path = trim(u%option_path)//&
-            "/prognostic/spatial_discretisation/discontinuous_galerkin"// &
-            "/les_model/zero_subgrid_stress_boundaries"
-        nbcs_opt=option_shape(trim(bc_path))
-        nbcs=nbcs_opt(1)
-
-        print*, "bc_path:", trim(bc_path)
-        print*, "have_option:", have_option(trim(bc_path))
-        print*, "nbcs:", nbcs
-
-
-        wdf=1.0
-
-        if(nbcs>0) then
-            allocate(bc_ids(nbcs))
-            allocate(globnodes(opFloc))
-            call get_option(trim(bc_path), bc_ids)
-
-            ct =0.
-            tot =0.
-            do ele=1, ele_count(u_cg)
-                neigh => ele_neigh(u_cg, ele)
-                do ni=1, opFaces
-                    tot=tot+1
-                    ele2 = neigh(ni)
-                    face = ele_face(u_cg, ele, ele2)
-
-                    ! This is a face with an external boundary
-                    if(ele2 < 0) then
-                        globnodes=face_global_nodes(u_cg, face)
-
-                        do gi=1, opFloc
-                            wdf(gi) = 0.0
-                        end do
-                        ct=ct+1
-                    end if
-                end do
-            end do
-
-            print*, "ct:", ct, "    tot:", tot
-            deallocate(bc_ids, globnodes)
-        end if
-    end subroutine calc_sgs_wall_damp_factor
-
 end module dg_les
