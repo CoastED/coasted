@@ -3501,11 +3501,11 @@ contains
        end if
        
        ! check we have the right equation type for velocity
-       if (.not. have_option(trim(velocity_path)//'/equation::Boussinesq')) then
-          ewrite(0,*) "For ocean problems you need to set the equation type"
-          ewrite(0,*) "for velocity to Boussinesq."
-          FLExit("Wrong Velocity equation type")
-       end if          
+!       if (.not. have_option(trim(velocity_path)//'/equation::Boussinesq')) then
+!          ewrite(0,*) "For ocean problems you need to set the equation type"
+!          ewrite(0,*) "for velocity to Boussinesq."
+!          FLExit("Wrong Velocity equation type")
+!       end if          
 
     end if
 
