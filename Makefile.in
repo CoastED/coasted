@@ -65,7 +65,7 @@ LINKER  = @LINKER@ @LDFLAGS@ $(CXXFLAGS)
 FLLINKER = @FLLINKER@ @LDFLAGS@ $(FCFLAGS)
 
 EXTLIBS  = @LIB_FEMDEM@ ./lib/libadaptivity.a \
-           ./lib/libvtkfortran.a ./lib/libspatialindex.a ./lib/libspud.a ./lib/libjudy.a  \
+           ./lib/libvtkfortran.a ./lib/libspatialindex.a ./lib/libspud.a ./lib/libjudy.a ./lib/libparmetis.a ./lib/libparmetis.a \
            @LIBS@ @BLAS_LIBS@
 LIBS    = -L./lib -l$(FLUIDITY) $(EXTLIBS)
 
@@ -117,6 +117,7 @@ default: bin/$(FLUIDITY)
 
 sub_system: $(LIBMBA2D) $(LIBMBA3D) @LIB_FEMDEM@ \
 	lib/libadaptivity.a lib/libvtkfortran.a lib/libspatialindex.a \
+	lib/libparmetis.a \
 	lib/libspud.a lib/libjudy.a include/version.h
 
 lib/libjudy.a:
