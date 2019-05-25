@@ -19,7 +19,7 @@ OBJS = coarsen.o fm.o initpart.o match.o ccgraph.o \
 .c.o:
 	$(CC) $(CFLAGS) -c $*.c
 
-../../lib/libmetis.a: $(OBJS)
+../libmetis.a: $(OBJS)
 	$(AR) $@ $(OBJS)
 	$(RANLIB) $@
 

@@ -22,7 +22,7 @@ OBJS = comm.o util.o debug.o setup.o grsetup.o timer.o \
 	$(CC) $(CFLAGS) -c $*.c
 
 
-../../lib/libparmetis.a: $(OBJS)
+../libparmetis.a: $(OBJS)
 	$(AR) $@ $(OBJS)
 	$(RANLIB) $@
 
