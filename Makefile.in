@@ -126,6 +126,7 @@ lib/libjudy.a:
 
 lib/libparmetis.a:
 	@echo '    MKDIR lib'; mkdir -p lib
+	@cp -f libparmetis3/Makefile.recover libparmetis3/Makefile
 	echo '    MAKE libparmetis3'; $(MAKE) -C libparmetis3
 
 lib/libmba2d.a:

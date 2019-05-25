@@ -22,7 +22,7 @@ OBJS = comm.o util.o debug.o setup.o grsetup.o timer.o \
 	$(CC) $(CFLAGS) -c $*.c
 
 
-../libparmetis.a: $(OBJS)
+../../lib/libparmetis.a: $(OBJS)
 	$(AR) $@ $(OBJS)
 	$(RANLIB) $@
 
@@ -30,7 +30,7 @@ clean:
 	rm -f *.o 
 
 realclean:
-	rm -f *.o ; rm -f ../libparmetis.a
+	rm -f *.o ; rm -f ../../lib/libparmetis.a
 
 
 checkin:

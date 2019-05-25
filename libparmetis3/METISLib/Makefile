@@ -19,7 +19,7 @@ OBJS = coarsen.o fm.o initpart.o match.o ccgraph.o \
 .c.o:
 	$(CC) $(CFLAGS) -c $*.c
 
-../libmetis.a: $(OBJS)
+../../lib/libmetis.a: $(OBJS)
 	$(AR) $@ $(OBJS)
 	$(RANLIB) $@
 
@@ -27,7 +27,7 @@ clean:
 	rm -f *.o 
 
 realclean:
-	rm -f *.o ; rm -f ../libmetis.a
+	rm -f *.o ; rm -f ../../lib/libmetis.a
 
 
 checkin:
