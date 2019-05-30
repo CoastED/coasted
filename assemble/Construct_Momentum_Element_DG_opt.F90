@@ -136,18 +136,18 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! What we will be adding to the matrix and RHS - assemble these as we
     ! go, so that we only do the calculations we really need
-    real, dimension(opDim, opEFloc) :: big_m_diag_addto, rhs_addto
+    ! real, dimension(opDim, opEFloc) :: big_m_diag_addto, rhs_addto
 
-    real, dimension(opDim, opDim, opEFloc, opEFloc) :: big_m_tensor_addto
-    logical, dimension(opDim, opDim) :: diagonal_block_mask, off_diagonal_block_mask
-    ! Addto matrices for when subcycling is performed
-    real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
+    ! real, dimension(opDim, opDim, opEFloc, opEFloc) :: big_m_tensor_addto
+    ! logical, dimension(opDim, opDim) :: diagonal_block_mask, off_diagonal_block_mask
+    ! ! Addto matrices for when subcycling is performed
+    ! real, dimension(opDim, opDim, opEFloc, opEFloc) :: subcycle_m_tensor_addto
 
-    ! dshape_tensor stuff (partial_stress)
-    real, dimension(opDim, opDim, opNloc, opNloc) :: sh_tensout, sh_outtens
-    real, dimension(opDim, opNloc) :: sh_to_temp
-    real, dimension(opNloc, opDim) :: sh_ot_temp
-    real, dimension(opNloc, opNloc) :: sh_dt_temp
+    ! ! dshape_tensor stuff (partial_stress)
+    ! real, dimension(opDim, opDim, opNloc, opNloc) :: sh_tensout, sh_outtens
+    ! real, dimension(opDim, opNloc) :: sh_to_temp
+    ! real, dimension(opNloc, opDim) :: sh_ot_temp
+    ! real, dimension(opNloc, opNloc) :: sh_dt_temp
 
     !Switch to select if we are assembling the primal or dual form
     logical :: primal
