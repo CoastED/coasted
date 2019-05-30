@@ -115,8 +115,8 @@ if test $acx_blas_ok = no; then
 fi
 if test $acx_blas_ok = no; then
 	AC_CHECK_LIB(mkl_ipf, $sgemm, 
-	[acx_blas_ok=yes; acx_blas_libs="-lmkl_ipf -lguide -lm"],
-	[],[-lguide -lm])
+	[acx_blas_ok=yes; acx_blas_libs="-lmkl_ipf -lm"],
+	[],[ -lm])
 fi
 # check for older mkl
 if test $acx_blas_ok = no; then
