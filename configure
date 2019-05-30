@@ -6901,6 +6901,7 @@ rm -f core conftest.err conftest.$ac_objext \
 $as_echo "$acx_blas_ok" >&6; }
 fi
 
+
 # Intel mkl BLAS. Unfortunately some of Intel's blas routines are
 # in their lapack library...
 if test $acx_blas_ok = no; then
@@ -6971,7 +6972,7 @@ if eval \${$as_ac_Lib+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lmkl_ipf -lguide -lm $LIBS"
+LIBS="-lmkl_ipf -lm $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -7019,7 +7020,7 @@ eval ac_res=\$$as_ac_Lib
 	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
 $as_echo "$ac_res" >&6; }
 if eval test \"x\$"$as_ac_Lib"\" = x"yes"; then :
-  acx_blas_ok=yes; acx_blas_libs="-lmkl_ipf -lguide -lm"
+  acx_blas_ok=yes; acx_blas_libs="-L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl -lm"
 fi
 
 fi
@@ -7031,7 +7032,7 @@ if eval \${$as_ac_Lib+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lmkl_em64t -lguide -liomp5 $LIBS"
+LIBS="-lmkl_em64t  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -7079,7 +7080,7 @@ eval ac_res=\$$as_ac_Lib
 	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
 $as_echo "$ac_res" >&6; }
 if eval test \"x\$"$as_ac_Lib"\" = x"yes"; then :
-  acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -lguide -liomp5"
+  acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl"
 fi
 
 fi
@@ -8533,6 +8534,7 @@ rm -f core conftest.err conftest.$ac_objext \
 $as_echo "$acx_blas_ok" >&6; }
 fi
 
+
 # Intel mkl BLAS. Unfortunately some of Intel's blas routines are
 # in their lapack library...
 if test $acx_blas_ok = no; then
@@ -8574,7 +8576,7 @@ if eval \${$as_ac_Lib+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lmkl_ipf -lguide -lm $LIBS"
+LIBS="-lmkl_ipf -lm $LIBS"
 cat > conftest.$ac_ext <<_ACEOF
       program main
       call $sgemm
@@ -8593,7 +8595,7 @@ eval ac_res=\$$as_ac_Lib
 	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
 $as_echo "$ac_res" >&6; }
 if eval test \"x\$"$as_ac_Lib"\" = x"yes"; then :
-  acx_blas_ok=yes; acx_blas_libs="-lmkl_ipf -lguide -lm"
+  acx_blas_ok=yes; acx_blas_libs="-L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl -lm"
 fi
 
 fi
@@ -8605,7 +8607,7 @@ if eval \${$as_ac_Lib+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lmkl_em64t -lguide -liomp5 $LIBS"
+LIBS="-lmkl_em64t  $LIBS"
 cat > conftest.$ac_ext <<_ACEOF
       program main
       call $sgemm
@@ -8624,7 +8626,7 @@ eval ac_res=\$$as_ac_Lib
 	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
 $as_echo "$ac_res" >&6; }
 if eval test \"x\$"$as_ac_Lib"\" = x"yes"; then :
-  acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -lguide -liomp5"
+  acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl"
 fi
 
 fi
@@ -9402,7 +9404,7 @@ eval ac_res=\$$as_ac_Lib
 	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
 $as_echo "$ac_res" >&6; }
 if eval test \"x\$"$as_ac_Lib"\" = x"yes"; then :
-  acx_lapack_ok=yes; acx_lapack_libs="-lmkl_lapack -lguide"
+  acx_lapack_ok=yes; acx_lapack_libs="-lmkl_lapack"
 fi
 
 fi

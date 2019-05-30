@@ -106,6 +106,7 @@ if test $acx_blas_ok = no; then
 	AC_MSG_RESULT($acx_blas_ok)
 fi
 
+
 # Intel mkl BLAS. Unfortunately some of Intel's blas routines are
 # in their lapack library...
 if test $acx_blas_ok = no; then
@@ -115,13 +116,13 @@ if test $acx_blas_ok = no; then
 fi
 if test $acx_blas_ok = no; then
 	AC_CHECK_LIB(mkl_ipf, $sgemm, 
-	[acx_blas_ok=yes; acx_blas_libs="-lmkl_ipf -lguide -lm"],
-	[],[-lguide -lm])
+	[acx_blas_ok=yes; acx_blas_libs="-L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl -lm"],
+	[],[-lm])
 fi
 if test $acx_blas_ok = no; then
         AC_CHECK_LIB(mkl_em64t, $sgemm,
-        [acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -lguide -liomp5"],
-        [],[-lguide -liomp5])
+        [acx_blas_ok=yes; acx_blas_libs="-lmkl_em64t -L$MKLROOT/lib/intel64 -Wl,--no-as-needed -lmkl_lapack -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl"],
+        [],[])
 fi
 # check for older mkl
 if test $acx_blas_ok = no; then
@@ -357,7 +358,7 @@ fi
 # Intel MKL LAPACK?
 if test $acx_lapack_ok = no; then
 	AC_CHECK_LIB(mkl_lapack, $dsyev, 
-	[acx_lapack_ok=yes; acx_lapack_libs="-lmkl_lapack -lguide"],
+	[acx_lapack_ok=yes; acx_lapack_libs="-lmkl_lapack"],
 	[],[])
 fi
 
