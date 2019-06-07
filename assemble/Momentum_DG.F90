@@ -1100,12 +1100,16 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
     ! Benchmarking
     t0=mpi_wtime()
 
-!#ifdef USE_CTO
-!    ! Only works for 3D
-!    run_optimal=(u%dim==opDim)
-!#else
+#ifdef USE_CTO
+    ! Only works for 3D
+    run_optimal=(u%dim==opDim)
+#else
     run_optimal=.false.
-!#endif
+#endif
+
+    ! Thought for today -- can I make this second order?
+    ! Kuzmin, J. Comp. Appl. Math., 2010 seem to think so.
+    ! - Angus, 4th June 2019.
 
     ewrite(1,*) 'Inside subcycle_momentum_dg'
 
@@ -1153,6 +1157,7 @@ subroutine subcycle_momentum_dg(u, mom_rhs, subcycle_m, inverse_mass, state)
         print*, "subcycle_momentum_dg: unoptimised method"
     end if
 
+    if(subcycles > 5) subcycles=5
 
     do i=1, subcycles
         if (limit_slope) then

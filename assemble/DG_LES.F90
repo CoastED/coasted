@@ -287,8 +287,8 @@ contains
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mag_strain_horz, mag_strain_vert
-        real :: sgs_horz, sgs_vert
+        real :: mag_strain_horz, mag_strain_vert, mag_strain_r
+        real :: sgs_horz, sgs_vert, sgs_r
         real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb
         real :: mu, rho, y_plus, vd_damping
 
@@ -429,17 +429,22 @@ contains
                                                 + 4.0* rate_of_strain(1,2)**2.0 )
 
                 mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-                                                + 2.0* rate_of_strain(3,3)**2.0 &
                                                 + 4.0* rate_of_strain(3,2)**2.0 )
+
+                mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
 
                 ! Note, this is without density. That comes later.
                 sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
                 sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
+                sgs_r = rho * Cs_length_vert_sq * mag_strain_r
 
                 ! As per Roman et al, 2010.
                 visc_turb(1:2, 1:2) = sgs_horz
-                visc_turb(3, :) = sgs_vert
-                visc_turb(:, 3) = sgs_vert
+                visc_turb(1, 3) = sgs_vert
+                visc_turb(3, 1) = sgs_vert
+                visc_turb(2, 3) = sgs_horz - 2.*sgs_vert + 2.*sgs_r
+                visc_turb(3, 2) = visc_turb(2, 3)
+                visc_turb(3, 3) = sgs_r
 
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
             end do
