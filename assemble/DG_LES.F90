@@ -425,11 +425,12 @@ contains
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
 
                 mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
-                                                + 2.0* rate_of_strain(2,2)**2.0 &
-                                                + 4.0* rate_of_strain(1,2)**2.0 )
+                                     + 2.0* rate_of_strain(2,2)**2.0 &
+                                     + 4.0* rate_of_strain(1,2)**2.0 )
 
                 mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-                                                + 4.0* rate_of_strain(3,2)**2.0 )
+                     		     + 2.0* rate_of_strain(3,3)**2.0 &
+                     		     + 4.0* rate_of_strain(3,2)**2.0 )
 
                 mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
 
@@ -442,9 +443,10 @@ contains
                 visc_turb(1:2, 1:2) = sgs_horz
                 visc_turb(1, 3) = sgs_vert
                 visc_turb(3, 1) = sgs_vert
-                visc_turb(2, 3) = sgs_horz - 2.*sgs_vert + 2.*sgs_r
-                visc_turb(3, 2) = visc_turb(2, 3)
-                visc_turb(3, 3) = sgs_r
+                visc_turb(2, 3) = sgs_vert
+                visc_turb(3, 2) = sgs_vert
+                visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r
+
 
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
             end do
