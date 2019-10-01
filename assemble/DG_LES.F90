@@ -275,6 +275,7 @@ contains
         type(vector_field), intent(in) :: u, x
         type(scalar_field), pointer :: dist_to_wall
         type(tensor_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: sgs_visc_mag
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -289,7 +290,7 @@ contains
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
         real :: mag_strain_horz, mag_strain_vert, mag_strain_r
         real :: sgs_horz, sgs_vert, sgs_r
-        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb
+        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
         real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
@@ -305,6 +306,10 @@ contains
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.0, pow_m=3.0
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val
+        integer :: i
 
         print*, "In calc_dg_sgs_tensor_viscosity()"
 
@@ -322,6 +327,11 @@ contains
         sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
         call grad(u_cg, x, u_grad)
 
+        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
+         end if
 
         ! Van Driest wall damping
         have_van_driest = have_option(trim(u%option_path)//&
@@ -475,18 +485,39 @@ contains
 
 !                call set(sgs_visc, n, &
 !                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
+
+                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
+                     / node_visits(n)
 !                     / node_neigh_total_vol(n))
-                call set(sgs_visc, n, &
-                     vd_damping * rho * node_sum(:,:,n) &
-                     / node_visits(n))
+
+                ! L2 Norm of tensor (tensor magnitude)
+                sgs_visc_val=0.0
+                do i=1, opDim
+                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                end do
+                sgs_visc_val = sqrt(sgs_visc_val)
+
+                call set(sgs_visc, n,  tmp_tensor)
+                call set(sgs_visc_mag, n, sgs_visc_val )
             end do
         else
             do n=1, num_nodes
 !                call set(sgs_visc, n, &
 !                     rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
-                call set(sgs_visc, n, &
-                     rho * node_sum(:,:,n) / node_visits(n))
+
+                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+
+                ! L2 Norm of tensor (tensor magnitude)
+                sgs_visc_val=0.0
+                do i=1, opDim
+                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                end do
+                sgs_visc_val = sqrt(sgs_visc_val)
+
+                call set(sgs_visc, n, tmp_tensor )
+                call set(sgs_visc_mag, n, sgs_visc_val )
+
             end do
         end if
 

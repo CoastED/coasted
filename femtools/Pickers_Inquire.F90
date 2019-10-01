@@ -338,7 +338,9 @@ contains
     real, dimension(:, :), allocatable :: local_coords, local_l_coords
     real, dimension(:, :), allocatable :: global_coords, global_l_coords
     integer, dimension(:), allocatable :: local_ele, global_ele
-       
+
+    print *, "search_for_detectors()"
+
     call initialise_picker(positions)
     assert(ele_numbering_family(positions, 1) == FAMILY_SIMPLEX)
 

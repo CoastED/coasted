@@ -174,6 +174,14 @@ contains
     !! Mesh for projeced velocity.
     type(mesh_type), pointer :: pmesh
 
+    ! Benchmarking stuff
+    real (kind=8) :: t0, t1, solve_adv_diff_dt, total_dt, percent_solve
+    real (kind=8), save :: lastt
+    real (kind=8), external :: mpi_wtime
+
+    t0 = mpi_wtime()
+
+
     ewrite(1,*) "In solve_advection_diffusion_dg"
     ewrite(1,*) "Solving advection-diffusion equation for field " // &
          trim(field_name) // " in state " // trim(state%name)
@@ -380,6 +388,21 @@ contains
     else
        call solve_advection_diffusion_dg_theta(field_name, state, lvelocity_name)
     end if
+
+    t1 = mpi_wtime()
+
+    solve_adv_diff_dt = t1-t0
+
+    if (lastt > 1e-10) then
+        total_dt = t1 - lastt
+        percent_solve =  (solve_adv_diff_dt/total_dt)*100.0
+    else
+        percent_solve = 0.0
+    end if
+    lastt = t1
+
+    print*, "**** % DG_solve_adv_dt:", solve_adv_diff_dt
+    print*, "**** % DG_solve_adv_diff:", percent_solve
 
   end subroutine solve_advection_diffusion_dg
 

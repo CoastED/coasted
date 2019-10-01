@@ -204,7 +204,7 @@ contains
     ! ========================================================================
     subroutine create_dg_les_field_options(phase_path, dg_path)
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
-            tensor_eddy_visc_path, scalar_eddy_visc_path
+            tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path
 
         logical :: have_les_option, have_les_visc_field, have_isotropic_les, have_partial_stress
         logical :: use_dg_velocity
@@ -213,6 +213,7 @@ contains
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
+        mag_tensor_eddy_visc_path= trim(phase_path)//"scalar_field::TensorEddyViscosityMagnitude/"
 
         have_isotropic_les = have_option(trim(dg_path)//"les_model/isotropic")
         have_partial_stress = have_option(trim(dg_path)//"viscosity_scheme/partial_stress_form")
@@ -286,6 +287,32 @@ contains
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat", stat)
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat/include_in_stat", stat)
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
+
+                ! Add magnitude of tensor Eddy Viscosity
+
+                ewrite(1,*) "Creating TensorEddyViscosityMagnitude field"
+                call add_option(trim(mag_tensor_eddy_visc_path), stat)
+                call set_option_attribute(trim(mag_tensor_eddy_visc_path)//"rank", "0", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic", stat)
+
+                call set_option_attribute(trim(mag_tensor_eddy_visc_path)//"diagnostic/algorithm/name", &
+                    "Internal", stat)
+                call set_option_attribute(trim(mag_tensor_eddy_visc_path)//"diagnostic/algorithm/material_phase_support", &
+                    "single", stat)
+
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/mesh/name", stat)
+                call set_option_attribute(trim(mag_tensor_eddy_visc_path)//"diagnostic/mesh/name", &
+                        "CoordinateMesh", stat)
+
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/output", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/stat", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/convergence", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/detectors", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/detectors/include_in_detectors", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/steady_state", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
             end if
         end if
 

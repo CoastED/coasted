@@ -271,6 +271,13 @@
          ! Do we have fluid-particle drag between phases?
          logical :: have_fp_drag
 
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+        real (kind=8), save :: lastt
+
+
+        t1=mpi_wtime()
+
          ewrite(1,*) 'Entering solve_momentum'
 
 
@@ -1282,6 +1289,16 @@
          deallocate(subcycle)
          deallocate(lump_mass)
          deallocate(sphere_absorption)
+
+         t2=mpi_wtime()
+
+        print*, "**** solve_momentum exec_time:", (t2-t1)
+         if(abs(lastt) > 10e-10) then
+            print*, "**** % in solve_momentum:", ((t2-t1)/(t2-lastt))*100.0
+         else
+            print*, "**** % in solve_momentum: 0.0"
+         end if
+         lastt=t2
 
       end subroutine solve_momentum
 
