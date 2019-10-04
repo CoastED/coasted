@@ -3,6 +3,7 @@
 
 module zoltan_callbacks
 
+#define HAVE_ZOLTAN
 #ifdef HAVE_ZOLTAN
 
   use zoltan
@@ -44,6 +45,7 @@ module zoltan_callbacks
   ! Needed for zoltan_cb_unpack_fields
   use halos_derivation, only: ele_owner
 
+
   implicit none
   
   public
@@ -71,10 +73,12 @@ contains
     integer(zoltan_int), intent(out), dimension(*) :: local_ids 
     integer(zoltan_int), intent(in) :: wgt_dim 
     real(zoltan_float), intent(out), dimension(*) :: obj_wgts 
-    integer(zoltan_int), intent(out) :: ierr
+    integer :: ierr
     
     integer :: count, i
-    real(zoltan_float) :: max_obj_wgt, min_obj_wgt
+!    real(zoltan_float) :: this_obj_wgt, max_obj_wgt, min_obj_wgt
+    real :: this_obj_wgt, max_obj_wgt, min_obj_wgt
+    real :: global_max_rows
     
     ewrite(1,*) "In zoltan_cb_get_owned_nodes"
     
@@ -99,19 +103,22 @@ contains
        min_obj_wgt = 0.0
        max_obj_wgt = 1.0
        do i = 1, count
-          obj_wgts(i) = float(row_length(zoltan_global_columns_sparsity, i))
-          min_obj_wgt = min(min_obj_wgt, obj_wgts(i))
-          max_obj_wgt = max(max_obj_wgt, obj_wgts(i))
+          this_obj_wgt = float(row_length(zoltan_global_columns_sparsity, i))
+          min_obj_wgt = min(min_obj_wgt, this_obj_wgt)
+          max_obj_wgt = max(max_obj_wgt, this_obj_wgt)
        end do
 
-       ! This code below is commented out for now
-       ! If we scale between 0...1 (as before) the load balancing is terrible.
-       ! If we simply use the # vertical cols as the weight as defined above,
-       ! the load balance is pretty much spot on.
-!       ! normalise according to the most nodes in a column
-!       do i = 1, count
-!            obj_wgts(i) =obj_wgts(i)/max_obj_wgt
-!       end do
+
+       print *, "Finding global maximum rows..."
+       call mpi_allreduce(max_obj_wgt, global_max_rows, 1, mpi_double_precision, mpi_max, mpi_comm_world, ierr)
+
+       print *, "Scaling obj_wgts between 0 and 1..."
+       do i = 1, count
+       ! Optimal formulation for power-weighted
+            obj_wgts(i) = ((float(row_length(zoltan_global_columns_sparsity, i))) / global_max_rows)**1.15
+       end do
+
+
 
 
     else

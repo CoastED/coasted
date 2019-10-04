@@ -3,6 +3,8 @@
 
 module zoltan_integration
 
+#define HAVE_ZOLTAN
+
 #ifdef HAVE_ZOLTAN
 ! these 5 need to be on top and in this order, so as not to confuse silly old intel compiler 
   use quadrature
@@ -494,9 +496,11 @@ module zoltan_integration
 
   function get_load_imbalance_tolerance(final_adapt_iteration) result(load_imbalance_tolerance)
     logical, intent(in) :: final_adapt_iteration    
- 
-    real, parameter :: default_load_imbalance_tolerance = 1.5  
-    real, parameter :: final_iteration_load_imbalance_tolerance = 1.075
+
+!    real, parameter :: default_load_imbalance_tolerance = 1.5
+!    real, parameter :: final_iteration_load_imbalance_tolerance = 1.075
+    real, parameter :: default_load_imbalance_tolerance = 1.0001
+    real, parameter :: final_iteration_load_imbalance_tolerance = 1.0001
     real :: load_imbalance_tolerance
 
     if (.NOT. final_adapt_iteration) then
@@ -595,8 +599,9 @@ module zoltan_integration
        else
           ! Use the Zoltan graph partitioner by default
           ierr = Zoltan_Set_Param(zz, "LB_METHOD", "GRAPH"); assert(ierr == ZOLTAN_OK)
-          ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "PHG"); assert(ierr == ZOLTAN_OK)
-          ewrite(3,*) "No partitioner option set, defaulting to using Zoltan-Graph."
+!          ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "PHG"); assert(ierr == ZOLTAN_OK)
+             ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "SCOTCH"); assert(ierr == ZOLTAN_OK)
+          ewrite(3,*) "No partitioner option set, defaulting to using Zoltan-SCOTCH"
        end if
 
     else
@@ -646,10 +651,12 @@ module zoltan_integration
           end if
           
        else
-          ! Use ParMETIS by default on the final adapt iteration
-          ierr = Zoltan_Set_Param(zz, "LB_METHOD", "GRAPH"); assert(ierr == ZOLTAN_OK)
-          ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "PARMETIS"); assert(ierr == ZOLTAN_OK)
-          ewrite(3,*) "No final partitioner option set, defaulting to using ParMETIS."
+          ! Use SCOTCH (no longer ParMETIS) by default on the final adapt iteration
+!          ierr = Zoltan_Set_Param(zz, "LB_METHOD", "GRAPH"); assert(ierr == ZOLTAN_OK)
+!          ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "SCOTCH"); assert(ierr == ZOLTAN_OK)
+                ierr = Zoltan_Set_Param(zz, "LB_METHOD", "GRAPH"); assert(ierr == ZOLTAN_OK)
+                ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "PHG"); assert(ierr == ZOLTAN_OK)
+          ewrite(3,*) "No final partitioner option set, defaulting to using SCOTCH."
        end if
 
     end if
@@ -666,6 +673,9 @@ module zoltan_integration
           ierr = Zoltan_Set_Param(zz, "PARMETIS_METHOD", "PartKway"); assert(ierr == ZOLTAN_OK)
           ewrite(3,*) "Setting ParMETIS method to PartKway."
        end if
+          ierr = Zoltan_Set_Param(zz, "LB_METHOD", "GRAPH"); assert(ierr == ZOLTAN_OK)
+          ierr = Zoltan_Set_Param(zz, "GRAPH_PACKAGE", "SCOTCH"); assert(ierr == ZOLTAN_OK)
+
     else
        ierr = Zoltan_Set_Param(zz, "LB_APPROACH", "REPARTITION"); assert(ierr == ZOLTAN_OK)
        ewrite(3,*) "Setting partitioning approach to REPARTITION."
