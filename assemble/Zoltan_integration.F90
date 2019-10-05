@@ -3,8 +3,6 @@
 
 module zoltan_integration
 
-#define HAVE_ZOLTAN
-
 #ifdef HAVE_ZOLTAN
 ! these 5 need to be on top and in this order, so as not to confuse silly old intel compiler 
   use quadrature

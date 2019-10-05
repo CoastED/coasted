@@ -3,7 +3,6 @@
 
 module zoltan_callbacks
 
-#define HAVE_ZOLTAN
 #ifdef HAVE_ZOLTAN
 
   use zoltan
@@ -114,12 +113,8 @@ contains
 
        print *, "Scaling obj_wgts between 0 and 1..."
        do i = 1, count
-       ! Optimal formulation for power-weighted
-            obj_wgts(i) = ((float(row_length(zoltan_global_columns_sparsity, i))) / global_max_rows)**1.15
+            obj_wgts(i) = ((float(row_length(zoltan_global_columns_sparsity, i))) / global_max_rows)
        end do
-
-
-
 
     else
        do i = 1, count
