@@ -455,7 +455,7 @@ contains
                 visc_turb(3, 1) = sgs_vert
                 visc_turb(2, 3) = sgs_vert
                 visc_turb(3, 2) = sgs_vert
-                visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r
+                visc_turb(3, 3) = abs(sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
 
 
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
