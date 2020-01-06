@@ -14,7 +14,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &turbine_conn_mesh, on_sphere, depth, have_wd_abs, alpha_u_field, Abs_wd, &
     &vvr_sf, ib_min_grad, nvfrac, &
     &inverse_mass, inverse_masslump, mass, subcycle_m, partial_stress, &
-    have_les, have_isotropic_les, &
+    have_les, have_isotropic_les, have_scotti_les, &
     smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
     y_plus_debug, les_filter_width_debug, &
@@ -204,7 +204,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     logical, intent(in) :: partial_stress
 
     ! LES - sp911
-    logical, intent(inout) :: have_les, have_isotropic_les
+    logical, intent(inout) :: have_les, have_isotropic_les, have_scotti_les
     real, intent(in) :: smagorinsky_coefficient
     type(scalar_field), pointer, intent(inout) :: eddy_visc, y_plus_debug, &
         & les_filter_width_debug
@@ -421,7 +421,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     if (assemble_element) then
         ! Isotropic / scalar LES
         if(have_les) then
-            if(have_isotropic_les) then
+            if(have_isotropic_les .or. have_scotti_les) then
                 do concurrent(dim1=1:opDim)
                     Viscosity_ele(dim1, dim1, :) = &
                         Viscosity_ele(dim1, dim1, :)+eddy_visc%val(x_ele)

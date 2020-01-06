@@ -336,6 +336,7 @@ contains
 
         ! LES - sp911
         logical :: have_les = .false., have_isotropic_les=.false.
+        logical :: have_scotti_les = .false.
         logical :: have_van_driest = .false., have_vel_cg=.false.
         real :: smagorinsky_coefficient
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
@@ -709,30 +710,31 @@ contains
                     "/prognostic/spatial_discretisation"//&
                     "/discontinuous_galerkin/les_model")
 
-                have_isotropic_les = &
-                    have_option(trim(u%option_path)//&
-                    "/prognostic/spatial_discretisation"//&
-                    "/discontinuous_galerkin/les_model"//&
-                    "/isotropic")
-
                 if(have_les) then
                    if(.not. partial_stress) then
                       FLAbort("Need to enable partial_stress viscosity scheme for DG LES")
                    end if
                    
-                    ! Are we using the isotropic (scalar) SGS eddy viscosity,
-                    ! - As opposed to anisotropic model (eg. Roman et al)
+                   ! Are we using the isotropic grid SGS eddy viscosity,
+                   ! or Scotti et al (anisotropic grids)?
+
                     have_isotropic_les = &
                         have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
                         &"/isotropic")
 
+                    have_scotti_les = &
+                        have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/scotti")
+
 ! Will eventually use partial_stress as an indicator
 !                    if(partial_stress) then
 
                     ! Extract scalar or vector eddy field
-                    if(have_isotropic_les) then
+                    if(have_isotropic_les .or. have_scotti_les ) then
                       
                         ewrite(1,*) "*** Scalar-based DG LES (experimental)"
                         ! les eddy visc field - needs to be nullified if non-existent
@@ -895,9 +897,9 @@ contains
                 ! Do necessary LES calculations
                 if(have_les) then
                     if(have_isotropic_les) then
-                        call calc_dg_sgs_scalar_viscosity(state, x, u)
-                    else
-                        call calc_dg_sgs_tensor_viscosity(state, x, u)
+                       call calc_dg_sgs_scalar_viscosity(state, x, u)
+                    elseif (have_scotti_les) then
+                       call calc_dg_sgs_scotti_viscosity(state, x, u)
                     end if
                 end if
 
@@ -971,7 +973,7 @@ contains
                              inverse_mass=inverse_mass, &
                              inverse_masslump=inverse_masslump, &
                              mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
-                             have_les=have_les, have_isotropic_les=have_isotropic_les, &
+                             have_les=have_les, have_isotropic_les=have_isotropic_les, have_scotti_les=have_scotti_les, &
                              smagorinsky_coefficient=smagorinsky_coefficient, &
                              eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                              prescribed_filter_width=prescribed_filter_width, &

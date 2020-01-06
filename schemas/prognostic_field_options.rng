@@ -1132,6 +1132,10 @@ suggested value 0.1</a:documentation>
                 <element name="anisotropic">
                   <empty/>
                 </element>
+                <element name="scotti">
+                  <a:documentation>Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.</a:documentation>
+                  <empty/>
+                </element>
               </choice>
               <optional>
                 <element name="zero_subgrid_stress_boundaries">
@@ -1161,9 +1165,32 @@ suggested value 0.1</a:documentation>
               </optional>
               <optional>
                 <element name="van_driest_damping">
-                  <a:documentation>Turn on Van Driest damping near walls. This requires
-creation of a prescribed scalar field DistanceToWall.</a:documentation>
+                  <a:documentation>Turn on Van Driest damping near walls. This will, at some point, require
+the creation of a prescribed scalar field DistanceToWall.</a:documentation>
                   <empty/>
+                </element>
+              </optional>
+              <optional>
+                <element name="roman_eddy_visc_bottom">
+                  <a:documentation>Eddy viscosity-like boundary (see Roman 2009, Phys of Fluids)
+calculated from wall shear stress, to be used with log-law-of-wall.
+Requires prescribed scalar field 'RoughnessHeight'.
+**** Don't use with van Driest ****</a:documentation>
+                  <group>
+                    <element name="roughness_length">
+                      <a:documentation>In length units. Will migrated to field at later date.</a:documentation>
+                      <ref name="real"/>
+                    </element>
+                    <element name="intensification_coefficient">
+                      <a:documentation>This is usually set to 1.3 (See C_w, Roman et al 2009).</a:documentation>
+                      <ref name="real"/>
+                    </element>
+                  </group>
+                  <!--
+                                       ## Default is rough wall: select for smooth wall.
+                                       element smooth_wall
+                                       { empty }?
+                  -->
                 </element>
               </optional>
               <optional>

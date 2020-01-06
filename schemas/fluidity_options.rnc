@@ -3975,6 +3975,19 @@ scalar_field_choice =
          }|
          element scalar_field {
             attribute rank { "0" },
+            attribute name { "RoughnessHeight" },
+            (
+               element prescribed {
+                  coordinate_mesh_choice,
+                  prescribed_scalar_field
+               }|
+               element aliased {
+                  generic_aliased_field
+               }
+            )
+         }|
+         element scalar_field {
+            attribute rank { "0" },
             attribute name { "DistanceToSideBoundaries" },
             (
                element prescribed {
