@@ -218,14 +218,18 @@ contains
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
                 visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
+!                sgs_ele_av = visc_turb
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
             end do
 
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
-
                 node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1
+                node_visits(gnode) = node_visits(gnode) + 1                
+
+!                node_sum(gnode) = sgs_ele_av
+!                node_visits(gnode) = 1                
+                
             end do
         end do
 
@@ -305,7 +309,8 @@ contains
         real, parameter :: A_plus=25.0, pow_m=3.0
 
         ! Scotti variables
-        real :: del_max, del_horz, del_vert, del_eq, a1, a2, f
+        real :: del_max, del_horz, del_vert, del_eq, a1, a2
+        real, allocatable, save :: f(:)
 
         print*, "calc_dg_sgs_scotti_viscosity"
 
@@ -394,6 +399,7 @@ contains
 
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
+                deallocate(f)
             end if
 
             allocate(node_sum(num_nodes))
@@ -401,6 +407,7 @@ contains
 
             allocate(node_vol_weighted_sum(num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
+            allocate(f(num_elements))
 
         end if
 
@@ -422,33 +429,36 @@ contains
             call les_length_scales_squared_mk3(x, e, del_horz, del_vert, del_max)
 
             del_eq = (ele_vol**0.333333333333333333333)
-            a1 = del_horz/del_max
-            a2 = del_vert/del_max
-            f = cosh( (4./27.) * ( log(a1)**2. - log(a1)*log(a2) + log(a2)**2.) )
+            if (new_mesh_connectivity) then
+                a1 = del_horz/del_max
+                a2 = del_vert/del_max
+                f(e) = 1 + (2./27.) * ( log(a1)**2. - log(a1)*log(a2) + log(a2)**2.)
+            end if
+
             ! Factor of two included in length_scale_scalar
             ! Cs_length_sq = (Cs* length)**2.0
 
-            ! NOTE: Switching off contributions-based filter
+!            ! NOTE: Switching off contributions-based filter
             ! This is the contribution to nu_sgs from each co-occupying node
-            ! sgs_ele_av=0.0
+            sgs_ele_av=0.0
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
                 ! visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
                 ! Scotti ****
-                visc_turb = 2 * ((Cs*del_eq*f)**2.) * rho * norm2(2.0 * rate_of_strain)
+                visc_turb = 2 * ((Cs*del_eq*f(e))**2.) * rho * norm2(2.0 * rate_of_strain)
 
-                ! sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-                sgs_ele_av = visc_turb
-!            end do
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+!                sgs_ele_av = visc_turb
+            end do
 
-!            do ln=1, opNloc
+            do ln=1, opNloc
                 gnode = u_cg_ele(ln)
-!                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-!                node_visits(gnode) = node_visits(gnode) + 1
+                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
                 ! Disabled that smoothing filter stuff
-                node_sum(gnode) = sgs_ele_av
-                node_visits(gnode) = 1
+!                node_sum(gnode) = sgs_ele_av
+!                node_visits(gnode) = 1
             end do
         end do
 
