@@ -3117,12 +3117,13 @@ contains
         ewrite(-1,*) "With standard free_surface boundary condition"
         FLExit("only a continuous_galerkin spatial_discretisation works for Pressure.")
       end if
-      
-      if (have_standard_free_surface .and. have_option(trim(pressure_path)// &
-        '/spatial_discretisation/continuous_galerkin/test_continuity_with_cv_dual')) then
-        ewrite(-1,*) "With standard free_surface boundary condition"
-        FLExit("you cannot use test_continuity_with_cv_dual under Pressure.")
-      end if
+
+!   I think we can with an implicit free surface....
+!      if (have_standard_free_surface .and. have_option(trim(pressure_path)// &
+!        '/spatial_discretisation/continuous_galerkin/test_continuity_with_cv_dual')) then
+!        ewrite(-1,*) "With standard free_surface boundary condition"
+!        FLExit("you cannot use test_continuity_with_cv_dual under Pressure.")
+!      end if
       
       if (have_free_surface .and. .not. have_option(trim(pressure_path)// &
         '/spatial_discretisation/continuous_galerkin/integrate_continuity_by_parts')) then
