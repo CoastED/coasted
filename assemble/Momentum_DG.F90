@@ -28,6 +28,8 @@
 #include "fdebug.h"
 #include "compile_opt_defs.h"
 
+! #define CGONLY
+
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum
     ! equation.
@@ -940,6 +942,9 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
+#ifdef CGONLY
+                FLExit("**** CoastED-Fluidity has been compiled with #define CGONLY ****")
+#else
                 if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
                     .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
@@ -1000,6 +1005,7 @@ contains
                     FLExit("Non-optimised DG assembly no longer supported")
 
                 end if
+#endif
 
                 call profiler_toc(u, "element_loop")
 

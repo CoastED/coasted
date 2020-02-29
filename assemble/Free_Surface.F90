@@ -3112,8 +3112,12 @@ contains
          FLExit("You need a prognostic pressure")
       end if
 
-      if (have_standard_free_surface .and. .not. have_option(trim(pressure_path)// &
-        '/spatial_discretisation/continuous_galerkin')) then
+      if (have_standard_free_surface .and. .not. &
+           ( have_option(trim(pressure_path)// &
+           '/spatial_discretisation/continuous_galerkin') .or. &
+           have_option(trim(pressure_path)// &
+           '/spatial_discretisation/control_volumes') ) &
+           ) then
         ewrite(-1,*) "With standard free_surface boundary condition"
         FLExit("only a continuous_galerkin spatial_discretisation works for Pressure.")
       end if

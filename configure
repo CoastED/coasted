@@ -750,7 +750,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_debugging
-enable_python
+enable_python2_7
 enable_cgal
 with_blas
 with_blas_dir
@@ -3651,11 +3651,11 @@ if $FC -v 2>&1 | grep 'gcc version'; then
   USING_GFORTRAN="yes"
   GFORTRAN_VERSION=$($FC -v 2>&1 | grep 'gcc version' | awk '{print $3}')
   # test really is so retarded that it can't lexicographically compare strings
-  if test "$(python -c "print \"$GFORTRAN_VERSION\" >= \"4.5\"")" = "True"; then
+  if test "$(python2.7 -c "print \"$GFORTRAN_VERSION\" >= \"4.5\"")" = "True"; then
     GFORTRAN_4_5_OR_NEWER="yes"
 
   fi
-  if test "$(python -c "print \"$GFORTRAN_VERSION\" >= \"4.8\"")" = "True"; then
+  if test "$(python2.7 -c "print \"$GFORTRAN_VERSION\" >= \"4.8\"")" = "True"; then
     GFORTRAN_4_8_OR_NEWER="yes"
   fi
 else
@@ -5775,9 +5775,9 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 # Find python to link against.
-# Check whether --enable-python was given.
-if test "${enable_python+set}" = set; then :
-  enableval=$enable_python;
+# Check whether --enable-python2.7 was given.
+if test "${enable_python2_7+set}" = set; then :
+  enableval=$enable_python2_7;
 fi
 
 
@@ -6213,7 +6213,7 @@ See \`config.log' for more details" "$LINENO" 5; }
     fi
 
     # Additionally check for numpy
-    NUMPY=$(python -c 'import numpy; print numpy.get_include()' 2>/dev/null)
+    NUMPY=$(python2.7 -c 'import numpy; print numpy.get_include()' 2>/dev/null)
     if ! test -z "$NUMPY"; then
 	echo "Numpy is " $NUMPY
 	CXXFLAGS="$CXXFLAGS -DHAVE_NUMPY -I$NUMPY"
