@@ -1064,7 +1064,7 @@ contains
 
        end if
 
-! CURRENTLY DOES NOT WORK.
+!! CURRENTLY DOES NOT WORK.
 !   if(have_option("/rebalance_after_first_timestep")) then
 !        ewrite(1,*) "On first timestep: rebalancing partitions"
 !#ifdef HAVE_ZOLTAN
@@ -1078,7 +1078,6 @@ contains
 !#endif
 !   endif
 
-!   end if
 
     end do timestep_loop
 
