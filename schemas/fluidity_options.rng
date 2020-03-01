@@ -22,8 +22,10 @@
     <element name="fluidity_options">
       <a:documentation>The root node of the options dictionary.</a:documentation>
       <optional>
-        <element name="turn_on_islay_options">
-          <a:documentation>This turns on the Islay-specific codes in ocean_forcing/AngusIslayTidal.F90</a:documentation>
+        <element name="rebalance_after_first_timestep">
+          <a:documentation>Enable this to rebalance partitions after first timestep when run.
+Needed for extruded meshes with variable numbers of layers.
+Option will be disabled in checkpoints after. </a:documentation>
           <empty/>
         </element>
       </optional>

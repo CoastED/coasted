@@ -1064,6 +1064,22 @@ contains
 
        end if
 
+! CURRENTLY DOES NOT WORK.
+!   if(have_option("/rebalance_after_first_timestep")) then
+!        ewrite(1,*) "On first timestep: rebalancing partitions"
+!#ifdef HAVE_ZOLTAN
+!        ewrite(1,*) "Rebalancing partitions after first timestep."
+!        call zoltan_drive(state, .true., &
+!            initialise_fields=.false., ignore_extrusion=.false., &
+!            flredecomping=.true., input_procs=getnprocs(), target_procs=getnprocs())
+!        call delete_option("/rebalance_after_first_timestep")
+!#else
+!        FLExit("**** Option rebalence_after_first_timestep only works with Zoltan support.")
+!#endif
+!   endif
+
+!   end if
+
     end do timestep_loop
 
     ! ****************************

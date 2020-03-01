@@ -22,10 +22,12 @@ start =
    (
       ## The root node of the options dictionary.
       element fluidity_options {
-         ## This turns on the Islay-specific codes in ocean_forcing/AngusIslayTidal.F90
-         element turn_on_islay_options {
-            empty
-         }?,
+	 ## Enable this to rebalance partitions after first timestep when run.
+	 ## Needed for extruded meshes with variable numbers of layers.
+	 ## Option will be disabled in checkpoints after. 
+	 element rebalance_after_first_timestep {
+ 	   empty
+	 }?,
          comment,
          ## Model output files are named according to the simulation
          ## name, e.g. [simulation_name]_0.vtu. Non-standard
