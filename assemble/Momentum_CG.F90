@@ -295,7 +295,15 @@
 #endif
 
 
+        ! Benchmarking stuff
+        real (kind=8) :: t0, t1, assemble_dt, total_dt, percent_cg
+        real (kind=8) :: inner_t0, inner_t1, inner_assemble_dt, inner_percent_cg
+        real (kind=8), save :: lastt
+        real (kind=8), external :: mpi_wtime
+
       type(element_type), dimension(:), allocatable :: supg_element
+
+      t0 = mpi_wtime()
 
       ewrite(1,*) 'Entering construct_momentum_cg'
     
@@ -917,6 +925,26 @@
          end do
       end if
       deallocate(supg_element)
+
+        t1 = mpi_wtime()
+
+        assemble_dt = t1-t0
+        inner_assemble_dt = inner_t1-inner_t0
+        if (lastt > 1e-10) then
+            total_dt = t1 - lastt
+            percent_cg =  (assemble_dt/total_dt)*100.0
+            inner_percent_cg =  (inner_assemble_dt/total_dt)*100.0
+        else
+            percent_cg = 0.0
+            inner_percent_cg = 0.0
+        end if
+        lastt = t1
+
+        print*, "**** CG_time_spent_in_assemble:", assemble_dt
+        print*, "**** CG_%_in_assemble:", percent_cg
+        print*, "**** CG_inner_loop_time_spent_in_assemble:", inner_assemble_dt
+        print*, "**** CG_inner_loop_%_in_assemble:", inner_percent_cg
+        print*, "**** CG_time_since_last_call:", total_dt
 
       contains 
 
