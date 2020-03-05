@@ -1020,35 +1020,35 @@
       ! local
       integer :: dim, dim2, i
 
-      integer, dimension(face_loc(u, sele)) :: u_nodes_bdy
-      integer, dimension(face_loc(ct_rhs, sele)) :: p_nodes_bdy
-      type(element_type), pointer :: u_shape, p_shape
+      integer, dimension(face_loc(u, sele)) :: face_u_nodes_bdy
+      integer, dimension(face_loc(ct_rhs, sele)) :: face_p_nodes_bdy
+      type(element_type), pointer :: face_u_shape, face_p_shape
 
-      real, dimension(face_ngi(u, sele)) :: detwei_bdy
-      real, dimension(u%dim, face_ngi(u, sele)) :: normal_bdy, upwards_gi
-      real, dimension(u%dim, face_loc(ct_rhs, sele), face_loc(u, sele)) :: ct_mat_bdy
-      real, dimension(u%dim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab
-      real, dimension(u%dim, u%dim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab_sphere
-      real, dimension(u%dim, u%dim, face_ngi(u, sele)) :: fs_stab_gi_sphere
-      real, dimension(u%dim, face_loc(u, sele)) :: lumped_fs_surfacestab
-      real, dimension(face_loc(u, sele), face_loc(u, sele)) :: adv_mat_bdy
+      real, dimension(face_ngi(u, sele)) :: face_detwei_bdy
+      real, dimension(u%dim, face_ngi(u, sele)) :: face_normal_bdy, face_upwards_gi
+      real, dimension(u%dim, face_loc(ct_rhs, sele), face_loc(u, sele)) :: face_ct_mat_bdy
+      real, dimension(u%dim, face_loc(u, sele), face_loc(u, sele)) :: face_fs_surfacestab
+      real, dimension(u%dim, u%dim, face_loc(u, sele), face_loc(u, sele)) :: face_fs_surfacestab_sphere
+      real, dimension(u%dim, u%dim, face_ngi(u, sele)) :: face_fs_stab_gi_sphere
+      real, dimension(u%dim, face_loc(u, sele)) :: face_lumped_fs_surfacestab
+      real, dimension(face_loc(u, sele), face_loc(u, sele)) :: face_adv_mat_bdy
 
-      real, dimension(u%dim, face_ngi(u, sele)) :: relu_gi
-      real, dimension(face_ngi(u, sele)) :: density_gi
+      real, dimension(u%dim, face_ngi(u, sele)) :: face_relu_gi
+      real, dimension(face_ngi(u, sele)) :: face_density_gi
 
-      real, dimension(u%dim, face_loc(u, sele)) :: oldu_val
-      real, dimension(u%dim, face_ngi(u, sele)) :: ndotk_k
+      real, dimension(u%dim, face_loc(u, sele)) :: face_oldu_val
+      real, dimension(u%dim, face_ngi(u, sele)) :: face_ndotk_k
 
-      u_shape=> face_shape(u, sele)
-      p_shape=> face_shape(ct_rhs, sele)
+      face_u_shape=> face_shape(u, sele)
+      face_p_shape=> face_shape(ct_rhs, sele)
 
-      u_nodes_bdy = face_global_nodes(u, sele)
-      p_nodes_bdy = face_global_nodes(ct_rhs, sele)
+      face_u_nodes_bdy = face_global_nodes(u, sele)
+      face_p_nodes_bdy = face_global_nodes(ct_rhs, sele)
 
-      oldu_val = face_val(oldu, sele)
+      face_oldu_val = face_val(oldu, sele)
 
       call transform_facet_to_physical(X, sele, &
-           detwei_f=detwei_bdy, normal=normal_bdy)
+           detwei_f=face_detwei_bdy, normal=face_normal_bdy)
                                      
       ! Note that with SUPG the surface element test function is not modified
             
@@ -1058,18 +1058,18 @@
       if (velocity_bc_type(1,sele)/=BC_TYPE_NO_NORMAL_FLOW) then
          if(integrate_advection_by_parts.and.(.not.exclude_advection)) then
             
-            relu_gi = face_val_at_quad(nu, sele)
+            face_relu_gi = face_val_at_quad(nu, sele)
             if(move_mesh) then
-              relu_gi = relu_gi - face_val_at_quad(ug, sele)
+              face_relu_gi = face_relu_gi - face_val_at_quad(ug, sele)
             end if
             
             if(multiphase) then
-               adv_mat_bdy = shape_shape(u_shape, u_shape, &
-                  detwei_bdy*sum(relu_gi*normal_bdy,1)*&
+               face_adv_mat_bdy = shape_shape(face_u_shape, face_u_shape, &
+                  face_detwei_bdy*sum(face_relu_gi*face_normal_bdy,1)*&
                   face_val_at_quad(density, sele)*face_val_at_quad(nvfrac, sele))
             else
-               adv_mat_bdy = shape_shape(u_shape, u_shape, &
-                  detwei_bdy*sum(relu_gi*normal_bdy,1)*&
+               face_adv_mat_bdy = shape_shape(face_u_shape, face_u_shape, &
+                  face_detwei_bdy*sum(face_relu_gi*face_normal_bdy,1)*&
                   face_val_at_quad(density, sele))
             end if
 
@@ -1077,14 +1077,14 @@
                
                if(velocity_bc_type(dim, sele)==BC_TYPE_WEAKDIRICHLET) then
 
-                  call addto(rhs, dim, u_nodes_bdy, -matmul(adv_mat_bdy, &
+                  call addto(rhs, dim, face_u_nodes_bdy, -matmul(face_adv_mat_bdy, &
                        ele_val(velocity_bc, dim, sele)))
                else
 
-                  call addto(big_m, dim, dim, u_nodes_bdy, u_nodes_bdy, &
-                       dt*theta*adv_mat_bdy)
+                  call addto(big_m, dim, dim, face_u_nodes_bdy, face_u_nodes_bdy, &
+                       dt*theta*face_adv_mat_bdy)
 
-                  call addto(rhs, dim, u_nodes_bdy, -matmul(adv_mat_bdy, face_val(oldu, dim, sele)))
+                  call addto(rhs, dim, face_u_nodes_bdy, -matmul(face_adv_mat_bdy, face_val(oldu, dim, sele)))
 
                end if
             end do
@@ -1097,19 +1097,19 @@
         if (velocity_bc_type(1,sele)/=BC_TYPE_NO_NORMAL_FLOW .and. velocity_bc_type(1,sele)/=BC_TYPE_FREE_SURFACE) then
 
           if(multiphase) then
-            ct_mat_bdy = shape_shape_vector(p_shape, u_shape, detwei_bdy*face_val_at_quad(nvfrac, sele), normal_bdy)
+            face_ct_mat_bdy = shape_shape_vector(face_p_shape, face_u_shape, face_detwei_bdy*face_val_at_quad(nvfrac, sele), face_normal_bdy)
           else
-            ct_mat_bdy = shape_shape_vector(p_shape, u_shape, detwei_bdy, normal_bdy)
+            face_ct_mat_bdy = shape_shape_vector(face_p_shape, face_u_shape, face_detwei_bdy, face_normal_bdy)
           end if
 
           do dim = 1, u%dim
              if(include_pressure_and_continuity_bcs .and. velocity_bc_type(dim, sele)==1 )then
-                call addto(ct_rhs, p_nodes_bdy, &
-                     -matmul(ct_mat_bdy(dim,:,:), ele_val(velocity_bc, dim, sele)))
+                call addto(ct_rhs, face_p_nodes_bdy, &
+                     -matmul(face_ct_mat_bdy(dim,:,:), ele_val(velocity_bc, dim, sele)))
              else if (assemble_ct_matrix_here) then
                 ! for open boundaries add in the boundary integral from integrating by parts - for 
                 ! other bcs leaving this out enforces a dirichlet-type restriction in the normal direction
-                call addto(ct_m, 1, dim, p_nodes_bdy, u_nodes_bdy, ct_mat_bdy(dim,:,:))
+                call addto(ct_m, 1, dim, face_p_nodes_bdy, face_u_nodes_bdy, face_ct_mat_bdy(dim,:,:))
              end if
              if(pressure_bc_type(sele)>0) then
                 ! for both weak and strong pressure dirichlet bcs:
@@ -1119,11 +1119,11 @@
                 if (subtract_out_reference_profile) then
                    ! Here we subtract the hydrostatic component from the pressure boundary condition used in the surface integral when
                    ! assembling ct_m. Hopefully this will be the same as the pressure boundary condition itself.
-                   call addto(rhs, dim, u_nodes_bdy, -matmul(ele_val(pressure_bc, sele)-face_val(hb_pressure, sele), &
-                                                            ct_mat_bdy(dim,:,:) ))
+                   call addto(rhs, dim, face_u_nodes_bdy, -matmul(ele_val(pressure_bc, sele)-face_val(hb_pressure, sele), &
+                                                            face_ct_mat_bdy(dim,:,:) ))
                 else
-                   call addto(rhs, dim, u_nodes_bdy, -matmul( ele_val(pressure_bc, sele), &
-                                                            ct_mat_bdy(dim,:,:) ))
+                   call addto(rhs, dim, face_u_nodes_bdy, -matmul( ele_val(pressure_bc, sele), &
+                                                            face_ct_mat_bdy(dim,:,:) ))
                 end if
              end if
           end do
@@ -1135,60 +1135,60 @@
 
       if (velocity_bc_type(1,sele)==BC_TYPE_FREE_SURFACE .and. have_surface_fs_stabilisation) then
         if (on_sphere) then
-          upwards_gi=-sphere_inward_normal_at_quad_face(x, sele)
+          face_upwards_gi=-sphere_inward_normal_at_quad_face(x, sele)
         else
-          upwards_gi=-face_val_at_quad(gravity, sele)
+          face_upwards_gi=-face_val_at_quad(gravity, sele)
         end if
         
         if (on_sphere) then
-          ndotk_k=0.0
+          face_ndotk_k=0.0
           do i=1,face_ngi(u,sele)
-            ndotk_k(3,i)=fs_sf*dot_product(normal_bdy(:,i),upwards_gi(:,i))
+            face_ndotk_k(3,i)=fs_sf*dot_product(face_normal_bdy(:,i),face_upwards_gi(:,i))
           end do
         else
           do i=1,face_ngi(u,sele)
-            ndotk_k(:,i)=fs_sf*dot_product(normal_bdy(:,i),upwards_gi(:,i))*upwards_gi(:,i)
+            face_ndotk_k(:,i)=fs_sf*dot_product(face_normal_bdy(:,i),face_upwards_gi(:,i))*face_upwards_gi(:,i)
           end do
         end if
 
         ! Rotate if on the sphere
         if (on_sphere) then
-          fs_stab_gi_sphere=dt*gravity_magnitude*rotate_diagonal_to_sphere_face(x, sele, ndotk_k)
+          face_fs_stab_gi_sphere=dt*gravity_magnitude*rotate_diagonal_to_sphere_face(x, sele, face_ndotk_k)
         endif
 
-        density_gi=face_val_at_quad(density, sele)
+        face_density_gi=face_val_at_quad(density, sele)
 
         if (on_sphere) then
-          fs_surfacestab_sphere = shape_shape_tensor(u_shape, u_shape, &
-                           detwei_bdy*density_gi, fs_stab_gi_sphere)
+          face_fs_surfacestab_sphere = shape_shape_tensor(face_u_shape, face_u_shape, &
+                           face_detwei_bdy*face_density_gi, face_fs_stab_gi_sphere)
         else
-          fs_surfacestab = shape_shape_vector(u_shape, u_shape, &
-                           detwei_bdy*density_gi, dt*gravity_magnitude*ndotk_k)
+          face_fs_surfacestab = shape_shape_vector(face_u_shape, face_u_shape, &
+                           face_detwei_bdy*face_density_gi, dt*gravity_magnitude*face_ndotk_k)
         end if
 
         if (on_sphere) then
           do dim = 1, u%dim
             do dim2 = 1, u%dim
-              call addto(big_m, dim, dim2, u_nodes_bdy, u_nodes_bdy, dt*theta*fs_surfacestab_sphere(dim,dim2,:,:))
+              call addto(big_m, dim, dim2, face_u_nodes_bdy, face_u_nodes_bdy, dt*theta*face_fs_surfacestab_sphere(dim,dim2,:,:))
             end do
-            call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab_sphere(dim,dim,:,:), oldu_val(dim,:)))
+            call addto(rhs, dim, face_u_nodes_bdy, -matmul(face_fs_surfacestab_sphere(dim,dim,:,:), face_oldu_val(dim,:)))
             ! off block diagonal absorption terms
             do dim2 = 1, u%dim
               if (dim==dim2) cycle ! The dim=dim2 terms were done above
-              call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab_sphere(dim,dim2,:,:), oldu_val(dim2,:)))
+              call addto(rhs, dim, face_u_nodes_bdy, -matmul(face_fs_surfacestab_sphere(dim,dim2,:,:), face_oldu_val(dim2,:)))
             end do
           end do
         else        
           if (lump_mass) then
-            lumped_fs_surfacestab = sum(fs_surfacestab, 3)
+            face_lumped_fs_surfacestab = sum(face_fs_surfacestab, 3)
             do dim = 1, u%dim
-              call addto_diag(big_m, dim, dim, u_nodes_bdy, dt*theta*lumped_fs_surfacestab(dim,:))
-              call addto(rhs, dim, u_nodes_bdy, -lumped_fs_surfacestab(dim,:)*oldu_val(dim,:))
+              call addto_diag(big_m, dim, dim, face_u_nodes_bdy, dt*theta*face_lumped_fs_surfacestab(dim,:))
+              call addto(rhs, dim, face_u_nodes_bdy, -face_lumped_fs_surfacestab(dim,:)*face_oldu_val(dim,:))
             end do
           else if (.not.pressure_corrected_absorption) then
             do dim = 1, u%dim
-              call addto(big_m, dim, dim, u_nodes_bdy, u_nodes_bdy, dt*theta*fs_surfacestab(dim,:,:))
-              call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab(dim,:,:), oldu_val(dim,:)))
+              call addto(big_m, dim, dim, face_u_nodes_bdy, face_u_nodes_bdy, dt*theta*face_fs_surfacestab(dim,:,:))
+              call addto(rhs, dim, face_u_nodes_bdy, -matmul(face_fs_surfacestab(dim,:,:), face_oldu_val(dim,:)))
             end do
           else
             ewrite(-1,*) "Free surface stabilisation requires that mass is lumped or that"
@@ -1196,7 +1196,7 @@
           end if
           if (pressure_corrected_absorption) then
             if (assemble_inverse_masslump.and.(.not.(abs_lump_on_submesh))) then
-              call addto(masslump, u_nodes_bdy, dt*theta*lumped_fs_surfacestab)
+              call addto(masslump, face_u_nodes_bdy, dt*theta*face_lumped_fs_surfacestab)
             else
               FLAbort("Error?") 
             end if
@@ -1208,7 +1208,7 @@
       if (any(velocity_bc_type(:,sele)==BC_TYPE_FLUX)) then
         do dim = 1, u%dim
           if(velocity_bc_type(dim,sele)==BC_TYPE_FLUX) then
-            call addto(rhs, dim, u_nodes_bdy, shape_rhs(u_shape, ele_val_at_quad(velocity_bc, sele, dim)*detwei_bdy))
+            call addto(rhs, dim, face_u_nodes_bdy, shape_rhs(face_u_shape, ele_val_at_quad(velocity_bc, sele, dim)*face_detwei_bdy))
           end if
         end do
       end if
