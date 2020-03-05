@@ -1562,15 +1562,15 @@
         
         integer :: dim, loc
         
-!        forall(dim = 1:size(big_m_diag_addto, 1), loc = 1:size(big_m_diag_addto, 2))
-!          big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
-!        end forall
+        forall(dim = 1:size(big_m_diag_addto, 1), loc = 1:size(big_m_diag_addto, 2))
+          big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
+        end forall
 
-        do loc = 1, opNloc
-            do dim = 1, opDim
-                big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
-            end do
-        end do
+!        do loc = 1, opNloc
+!            do dim = 1, opDim
+!                big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
+!            end do
+!        end do
 
 
       end subroutine add_diagonal_to_tensor
