@@ -27,6 +27,11 @@
 
 #include "fdebug.h"
 
+#define opNloc 4
+#define opFloc 3
+#define opDim 3
+
+
   module momentum_cg
 
     use fields
@@ -174,6 +179,40 @@
     ! Are we running a multi-phase flow simulation?
     logical :: multiphase
 
+
+    ! Declaring CG assembly arrays at module level
+    real, allocatable, dimension(:, :) :: oldu_val
+    real, allocatable, dimension(:) :: detwei, detwei_old, detwei_new
+    real, allocatable, dimension(:, :, :) :: J_mat, diff_q
+    real, allocatable, dimension(:, :, :) :: du_t
+    real, allocatable, dimension(:, :, :) :: dug_t
+    real, allocatable, dimension(:, :, :) :: dp_t
+    real, allocatable, dimension(:, :) :: relu_gi
+    real, allocatable, dimension(:, :, :) :: grad_p_u_mat
+    real, allocatable, dimension(:, :) :: big_m_diag_addto, rhs_addto
+    real, allocatable, dimension(:, :, :, :) :: big_m_tensor_addto
+    logical, allocatable, dimension(:, :) :: block_mask
+
+
+
+    ! =======================================================================
+    ! Make assembly arrays private to each OpenMP thread
+    ! =======================================================================
+    !$OMP THREADPRIVATE(oldu_val)
+    !$OMP THREADPRIVATE(detwei, detwei_old, detwei_new)
+    !$OMP THREADPRIVATE(J_mat, diff_q)
+    !$OMP THREADPRIVATE(du_t)
+    !$OMP THREADPRIVATE(dug_t)
+    !$OMP THREADPRIVATE(dp_t)
+    !$OMP THREADPRIVATE(relu_gi)
+    !$OMP THREADPRIVATE(grad_p_u_mat)
+    !$OMP THREADPRIVATE(big_m_diag_addto, rhs_addto)
+    !$OMP THREADPRIVATE(big_m_tensor_addto)
+    !$OMP THREADPRIVATE(block_mask)
+
+
+
+
   contains
 
     subroutine construct_momentum_cg(u, p, density, x, &
@@ -279,7 +318,7 @@
       type(vector_field) :: Abs_wd
       type(scalar_field), pointer :: wettingdrying_alpha
       type(scalar_field) :: alpha_u_field
-      real, dimension(u%dim) :: abs_wd_const
+      real, dimension(opDim) :: abs_wd_const
 
       ! Volume fraction fields for multi-phase flow simulation
       type(scalar_field), pointer :: vfrac
@@ -297,8 +336,16 @@
 
       type(element_type), dimension(:), allocatable :: supg_element
 
+      ! Benchmarking stuff
+      real (kind=8) :: t0, t1, assemble_dt, total_dt, percent_cg
+      real (kind=8) :: inner_t0, inner_t1, inner_assemble_dt, inner_percent_cg
+      real (kind=8), save :: lastt
+      real (kind=8), external :: mpi_wtime
+
+      t0 = mpi_wtime()
+
       ewrite(1,*) 'Entering construct_momentum_cg'
-    
+
       assert(continuity(u)>=0)
 
       nu=>extract_vector_field(state, "NonlinearVelocity")
@@ -310,7 +357,7 @@
       dummyscalar%option_path=""
 
       allocate(dummyvector)
-      call allocate(dummyvector, u%dim, u%mesh, "DummyVector", field_type=FIELD_TYPE_CONSTANT)
+      call allocate(dummyvector, opDim, u%mesh, "DummyVector", field_type=FIELD_TYPE_CONSTANT)
       call zero(dummyvector)
       dummyvector%option_path=""
 
@@ -332,7 +379,7 @@
       have_wd_abs=have_option("/mesh_adaptivity/mesh_movement/free_surface/wetting_and_drying/dry_absorption")
       ! Absorption term in dry zones for wetting and drying
       if (have_wd_abs) then
-       call allocate(abs_wd, u%dim, u%mesh, "VelocityAbsorption_WettingDrying", FIELD_TYPE_CONSTANT)
+       call allocate(abs_wd, opDim, u%mesh, "VelocityAbsorption_WettingDrying", FIELD_TYPE_CONSTANT)
        call get_option("/mesh_adaptivity/mesh_movement/free_surface/wetting_and_drying/dry_absorption", abs_wd_const)
        call set(abs_wd, abs_wd_const)
       end if
@@ -475,14 +522,14 @@
              fnu => extract_vector_field(state, "FirstFilteredVelocity")
            else
              allocate(fnu)
-             call allocate(fnu, u%dim, u%mesh, "FirstFilteredVelocity")
+             call allocate(fnu, opDim, u%mesh, "FirstFilteredVelocity")
            end if
            call zero(fnu)
            if(have_option(trim(les_option_path)//"/dynamic_les/vector_field::TestFilteredVelocity")) then
              tnu => extract_vector_field(state, "TestFilteredVelocity")
            else
              allocate(tnu)
-             call allocate(tnu, u%dim, u%mesh, "TestFilteredVelocity")
+             call allocate(tnu, opDim, u%mesh, "TestFilteredVelocity")
            end if
            call zero(tnu)
            allocate(leonard)
@@ -664,14 +711,14 @@
 
       if (assemble_inverse_masslump) then
         ! construct the inverse of the lumped mass matrix
-        call allocate( inverse_masslump, u%dim, u%mesh, "InverseLumpedMass")
+        call allocate( inverse_masslump, opDim, u%mesh, "InverseLumpedMass")
         call zero(inverse_masslump)
       end if
       if (assemble_mass_matrix) then
         ! construct mass matrix instead
         u_sparsity => get_csr_sparsity_firstorder(state, u%mesh, u%mesh)
         
-        call allocate( mass, u_sparsity, (/ u%dim, u%dim /), &
+        call allocate( mass, u_sparsity, (/ opDim, opDim /), &
             diagonal=.true., name="MassMatrix")
             
         call zero( mass )
@@ -718,14 +765,20 @@
     end if
 #endif
 
+
+
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(clr, len, nnid, ele, thread_num)
 #ifdef _OPENMP
     thread_num = omp_get_thread_num()
 #else
     thread_num = 0
 #endif
+    call allocateCGAssemblyArrays(u, ct_rhs)
+
+
     colour_loop: do clr = 1, size(colours)
       len = key_count(colours(clr))
+
       !$OMP DO SCHEDULE(STATIC)
       element_loop: do nnid = 1, len
          ele = fetch(colours(clr), nnid)
@@ -744,6 +797,10 @@
       !$OMP END DO
 
     end do colour_loop
+
+    call deallocateCGAssemblyArrays()
+
+
     !$OMP END PARALLEL
 
       if (have_wd_abs) then
@@ -756,7 +813,7 @@
       
       if((integrate_advection_by_parts.and.(.not.exclude_advection)).or.&
            (integrate_continuity_by_parts)) then
-         allocate(velocity_bc_type(u%dim, surface_element_count(u)))
+         allocate(velocity_bc_type(opDim, surface_element_count(u)))
          call get_entire_boundary_condition(u, &
            & (/ &
              "weakdirichlet ", &
@@ -918,6 +975,28 @@
       end if
       deallocate(supg_element)
 
+
+    t1 = mpi_wtime()
+
+    assemble_dt = t1-t0
+    inner_assemble_dt = inner_t1-inner_t0
+    if (lastt > 1e-10) then
+        total_dt = t1 - lastt
+        percent_cg =  (assemble_dt/total_dt)*100.0
+        inner_percent_cg =  (inner_assemble_dt/total_dt)*100.0
+    else
+        percent_cg = 0.0
+        inner_percent_cg = 0.0
+    end if
+    lastt = t1
+
+    print*, "**** CG_time_spent_in_assemble:", assemble_dt
+    print*, "**** CG_%_in_assemble:", percent_cg
+    print*, "**** CG_inner_loop_time_spent_in_assemble:", inner_assemble_dt
+    print*, "**** CG_inner_loop_%_in_assemble:", inner_percent_cg
+    print*, "**** CG_time_since_last_call:", total_dt
+
+
       contains 
 
         logical function have_fs_stab(u)
@@ -992,24 +1071,25 @@
       ! local
       integer :: dim, dim2, i
 
-      integer, dimension(face_loc(u, sele)) :: u_nodes_bdy
-      integer, dimension(face_loc(ct_rhs, sele)) :: p_nodes_bdy
       type(element_type), pointer :: u_shape, p_shape
 
+      integer, dimension(face_loc(u, sele)) :: u_nodes_bdy
+      integer, dimension(face_loc(ct_rhs, sele)) :: p_nodes_bdy
+
       real, dimension(face_ngi(u, sele)) :: detwei_bdy
-      real, dimension(u%dim, face_ngi(u, sele)) :: normal_bdy, upwards_gi
-      real, dimension(u%dim, face_loc(ct_rhs, sele), face_loc(u, sele)) :: ct_mat_bdy
-      real, dimension(u%dim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab
-      real, dimension(u%dim, u%dim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab_sphere
-      real, dimension(u%dim, u%dim, face_ngi(u, sele)) :: fs_stab_gi_sphere
-      real, dimension(u%dim, face_loc(u, sele)) :: lumped_fs_surfacestab
+      real, dimension(opDim, face_ngi(u, sele)) :: normal_bdy, upwards_gi
+      real, dimension(opDim, face_loc(ct_rhs, sele), face_loc(u, sele)) :: ct_mat_bdy
+      real, dimension(opDim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab
+      real, dimension(opDim, opDim, face_loc(u, sele), face_loc(u, sele)) :: fs_surfacestab_sphere
+      real, dimension(opDim, opDim, face_ngi(u, sele)) :: fs_stab_gi_sphere
+      real, dimension(opDim, face_loc(u, sele)) :: lumped_fs_surfacestab
       real, dimension(face_loc(u, sele), face_loc(u, sele)) :: adv_mat_bdy
 
-      real, dimension(u%dim, face_ngi(u, sele)) :: relu_gi
+      real, dimension(opDim, face_ngi(u, sele)) :: relu_gi
       real, dimension(face_ngi(u, sele)) :: density_gi
 
-      real, dimension(u%dim, face_loc(u, sele)) :: oldu_val
-      real, dimension(u%dim, face_ngi(u, sele)) :: ndotk_k
+      real, dimension(opDim, face_loc(u, sele)) :: oldu_val
+      real, dimension(opDim, face_ngi(u, sele)) :: ndotk_k
 
       u_shape=> face_shape(u, sele)
       p_shape=> face_shape(ct_rhs, sele)
@@ -1045,7 +1125,7 @@
                   face_val_at_quad(density, sele))
             end if
 
-            do dim = 1, u%dim
+            do dim = 1, opDim
                
                if(velocity_bc_type(dim, sele)==BC_TYPE_WEAKDIRICHLET) then
 
@@ -1074,7 +1154,7 @@
             ct_mat_bdy = shape_shape_vector(p_shape, u_shape, detwei_bdy, normal_bdy)
           end if
 
-          do dim = 1, u%dim
+          do dim = 1, opDim
              if(include_pressure_and_continuity_bcs .and. velocity_bc_type(dim, sele)==1 )then
                 call addto(ct_rhs, p_nodes_bdy, &
                      -matmul(ct_mat_bdy(dim,:,:), ele_val(velocity_bc, dim, sele)))
@@ -1139,13 +1219,13 @@
         end if
 
         if (on_sphere) then
-          do dim = 1, u%dim
-            do dim2 = 1, u%dim
+          do dim = 1, opDim
+            do dim2 = 1, opDim
               call addto(big_m, dim, dim2, u_nodes_bdy, u_nodes_bdy, dt*theta*fs_surfacestab_sphere(dim,dim2,:,:))
             end do
             call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab_sphere(dim,dim,:,:), oldu_val(dim,:)))
             ! off block diagonal absorption terms
-            do dim2 = 1, u%dim
+            do dim2 = 1, opDim
               if (dim==dim2) cycle ! The dim=dim2 terms were done above
               call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab_sphere(dim,dim2,:,:), oldu_val(dim2,:)))
             end do
@@ -1153,12 +1233,12 @@
         else        
           if (lump_mass) then
             lumped_fs_surfacestab = sum(fs_surfacestab, 3)
-            do dim = 1, u%dim
+            do dim = 1, opDim
               call addto_diag(big_m, dim, dim, u_nodes_bdy, dt*theta*lumped_fs_surfacestab(dim,:))
               call addto(rhs, dim, u_nodes_bdy, -lumped_fs_surfacestab(dim,:)*oldu_val(dim,:))
             end do
           else if (.not.pressure_corrected_absorption) then
-            do dim = 1, u%dim
+            do dim = 1, opDim
               call addto(big_m, dim, dim, u_nodes_bdy, u_nodes_bdy, dt*theta*fs_surfacestab(dim,:,:))
               call addto(rhs, dim, u_nodes_bdy, -matmul(fs_surfacestab(dim,:,:), oldu_val(dim,:)))
             end do
@@ -1178,7 +1258,7 @@
       end if
 
       if (any(velocity_bc_type(:,sele)==BC_TYPE_FLUX)) then
-        do dim = 1, u%dim
+        do dim = 1, opDim
           if(velocity_bc_type(dim,sele)==BC_TYPE_FLUX) then
             call addto(rhs, dim, u_nodes_bdy, shape_rhs(u_shape, ele_val_at_quad(velocity_bc, sele, dim)*detwei_bdy))
           end if
@@ -1256,22 +1336,25 @@
       type(element_type), intent(inout) :: supg_shape
 
       integer, dimension(:), pointer :: u_ele, p_ele
-      real, dimension(u%dim, ele_loc(u, ele)) :: oldu_val
-      type(element_type), pointer :: u_shape, p_shape
-      real, dimension(ele_ngi(u, ele)) :: detwei, detwei_old, detwei_new
-      real, dimension(u%dim, u%dim, ele_ngi(u,ele)) :: J_mat, diff_q
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim) :: du_t
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim) :: dug_t
-      real, dimension(ele_loc(ct_rhs, ele), ele_ngi(ct_rhs, ele), u%dim) :: dp_t
 
-      real, dimension(u%dim, ele_ngi(u, ele)) :: relu_gi
-      real, dimension(u%dim, ele_loc(ct_rhs, ele), ele_loc(u, ele)) :: grad_p_u_mat
-      
-      ! What we will be adding to the matrix and RHS - assemble these as we
-      ! go, so that we only do the calculations we really need
-      real, dimension(u%dim, ele_loc(u, ele)) :: big_m_diag_addto, rhs_addto
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)) :: big_m_tensor_addto
-      logical, dimension(u%dim, u%dim) :: block_mask ! control whether the off diagonal entries are used
+      type(element_type), pointer :: u_shape, p_shape
+
+!      real, dimension(opDim, opNloc) :: oldu_val
+!      real, dimension(ele_ngi(u, ele)) :: detwei, detwei_old, detwei_new
+!      real, dimension(opDim, opDim, ele_ngi(u,ele)) :: J_mat, diff_q
+!      real, dimension(opNloc, ele_ngi(u, ele), opDim) :: du_t
+!      real, dimension(opNloc, ele_ngi(u, ele), opDim) :: dug_t
+!      real, dimension(ele_loc(ct_rhs, ele), ele_ngi(ct_rhs, ele), opDim) :: dp_t
+!
+!      real, dimension(opDim, ele_ngi(u, ele)) :: relu_gi
+!      real, dimension(opDim, ele_loc(ct_rhs, ele), opNloc) :: grad_p_u_mat
+!
+!      ! What we will be adding to the matrix and RHS - assemble these as we
+!      ! go, so that we only do the calculations we really need
+!      real, dimension(opDim, opNloc) :: big_m_diag_addto, rhs_addto
+!      real, dimension(opDim, opDim, opNloc, opNloc) :: big_m_tensor_addto
+!      logical, dimension(opDim, opDim) :: block_mask ! control whether the off diagonal entries are used
+
       integer :: dim, i, j
       type(element_type) :: test_function
 
@@ -1280,7 +1363,7 @@
         ! above so we better make sure they're true!
         assert(ele_loc(ug, ele)==ele_loc(u,ele))
         assert(ele_ngi(ug, ele)==ele_ngi(u,ele))
-        assert(ug%dim==u%dim)
+        assert(ug%dim==opDim)
       end if
       
       big_m_diag_addto = 0.0
@@ -1292,7 +1375,7 @@
         block_mask = .true.
       else
         block_mask = .false.
-        do dim = 1, u%dim
+        do dim = 1, opDim
           block_mask(dim, dim) = .true.
         end do
       end if
@@ -1335,7 +1418,7 @@
       if(multiphase) then
          ! If the PhaseVolumeFraction is on a different mesh to the Velocity,
          ! then allocate memory to hold the derivative of the nvfrac shape function
-         allocate(dnvfrac_t(ele_loc(nvfrac, ele), ele_ngi(nvfrac, ele), u%dim))
+         allocate(dnvfrac_t(ele_loc(nvfrac, ele), ele_ngi(nvfrac, ele), opDim))
       end if
       
       ! Step 2: Set up test function
@@ -1474,15 +1557,22 @@
     contains
     
       subroutine add_diagonal_to_tensor(big_m_diag_addto, big_m_tensor_addto)
-        real, dimension(u%dim, ele_loc(u, ele)), intent(in) :: big_m_diag_addto
-        real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
+        real, dimension(opDim, opNloc), intent(in) :: big_m_diag_addto
+        real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
         
         integer :: dim, loc
         
-        forall(dim = 1:size(big_m_diag_addto, 1), loc = 1:size(big_m_diag_addto, 2))
-          big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
-        end forall
-        
+!        forall(dim = 1:size(big_m_diag_addto, 1), loc = 1:size(big_m_diag_addto, 2))
+!          big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
+!        end forall
+
+        do loc = 1, opNloc
+            do dim = 1, opDim
+                big_m_tensor_addto(dim, dim, loc, loc) = big_m_tensor_addto(dim, dim, loc, loc) + big_m_diag_addto(dim, loc)
+            end do
+        end do
+
+
       end subroutine add_diagonal_to_tensor
              
     end subroutine construct_momentum_element_cg
@@ -1495,19 +1585,19 @@
       type(scalar_field), intent(in) :: density
       type(scalar_field), intent(in) :: nvfrac
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei, detwei_old, detwei_new
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: big_m_diag_addto
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: big_m_diag_addto
+      real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       type(petsc_csr_matrix), intent(inout) :: mass
       type(vector_field), intent(inout) :: masslump
       
       integer :: dim
       integer, dimension(:), pointer :: u_ele
       logical:: compute_lumped_mass_here
-      real, dimension(ele_loc(u, ele)) :: mass_lump
+      real, dimension(opNloc) :: mass_lump
       real, dimension(ele_ngi(u, ele)) :: density_gi
       real, dimension(ele_ngi(u, ele)) :: nvfrac_gi
-      real, dimension(ele_loc(u, ele), ele_loc(u, ele)) :: mass_mat
+      real, dimension(opNloc, opNloc) :: mass_mat
       type(element_type), pointer :: u_shape
       
       ! In case we have to multiply detwei by various coefficients (e.g. the density values at the Gauss points), 
@@ -1544,12 +1634,12 @@
       if(.not.exclude_mass) then
         if(lump_mass) then
           if (compute_lumped_mass_here) then
-            do dim = 1, u%dim
+            do dim = 1, opDim
               big_m_diag_addto(dim, :) = big_m_diag_addto(dim, :) + mass_lump
             end do
           end if
         else
-          do dim = 1, u%dim
+          do dim = 1, opDim
             big_m_tensor_addto(dim, dim, :, :) = big_m_tensor_addto(dim, dim, :, :) + mass_mat
           end do
         end if
@@ -1557,13 +1647,13 @@
             
       if(assemble_inverse_masslump .and. compute_lumped_mass_here) then
         ! store the lumped mass as field, the same for each component
-        do dim = 1, u%dim
+        do dim = 1, opDim
            call addto(masslump, dim, u_ele, mass_lump)
         end do
       end if
       
       if(assemble_mass_matrix) then
-         do dim=1, u%dim
+         do dim=1, opDim
             call addto(mass, dim, dim, u_ele, u_ele, mass_mat)
          end do
       end if
@@ -1584,12 +1674,12 @@
         if(lump_mass) then
           if(compute_lumped_mass_here) then
             mass_lump = sum(mass_mat, 2)
-            do dim = 1, u%dim
+            do dim = 1, opDim
               rhs_addto(dim,:) = rhs_addto(dim,:) - mass_lump*oldu_val(dim,:)/dt
             end do
           end if
         else
-          do dim = 1, u%dim
+          do dim = 1, opDim
             rhs_addto(dim,:) = rhs_addto(dim,:) - matmul(mass_mat, oldu_val(dim,:))/dt
           end do
         end if
@@ -1607,20 +1697,20 @@
       type(scalar_field), intent(in) :: density
       type(tensor_field), intent(in) :: viscosity
       type(scalar_field), intent(in) :: nvfrac
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim), intent(in) :: du_t
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim), intent(in) :: dug_t
+      real, dimension(opNloc, ele_ngi(u, ele), opDim), intent(in) :: du_t
+      real, dimension(opNloc, ele_ngi(u, ele), opDim), intent(in) :: dug_t
       real, dimension(:, :, :), intent(in) :: dnvfrac_t
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, u%dim, ele_ngi(u,ele)) :: J_mat, diff_q
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opDim, ele_ngi(u,ele)) :: J_mat, diff_q
+      real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
     
       integer :: dim, i, j
       real, dimension(ele_ngi(u, ele)) :: density_gi, div_relu_gi
       real, dimension(ele_ngi(u, ele)) :: nvfrac_gi, relu_dot_grad_nvfrac_gi
-      real, dimension(u%dim, ele_ngi(u, ele)) :: grad_nvfrac_gi
-      real, dimension(ele_loc(u, ele), ele_loc(u, ele)) :: advection_mat
-      real, dimension(u%dim, ele_ngi(u, ele)) :: relu_gi
+      real, dimension(opDim, ele_ngi(u, ele)) :: grad_nvfrac_gi
+      real, dimension(opNloc, opNloc) :: advection_mat
+      real, dimension(opDim, ele_ngi(u, ele)) :: relu_gi
       type(element_type), pointer :: u_shape
       
       ! In case we have to multiply detwei by various coefficients (e.g. the density values at the Gauss points), 
@@ -1705,7 +1795,7 @@
          end if
       end select
       
-      do dim = 1, u%dim
+      do dim = 1, opDim
         big_m_tensor_addto(dim, dim, :, :) = big_m_tensor_addto(dim, dim, :, :) + dt*theta*advection_mat
         rhs_addto(dim, :) = rhs_addto(dim, :) - matmul(advection_mat, oldu_val(dim,:))
       end do
@@ -1719,12 +1809,12 @@
       type(scalar_field), intent(in) :: density
       type(vector_field), intent(in) :: source
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       
       integer :: dim
       real, dimension(ele_ngi(u, ele)) :: density_gi
-      real, dimension(ele_loc(u, ele)) :: source_lump
-      real, dimension(ele_loc(u, ele), ele_loc(source, ele)) :: source_mat
+      real, dimension(opNloc) :: source_lump
+      real, dimension(opNloc, ele_loc(source, ele)) :: source_mat
       
       density_gi=ele_val_at_quad(density, ele)
 
@@ -1734,14 +1824,14 @@
       !  /
       source_mat = shape_shape(test_function, ele_shape(source, ele), detwei*density_gi)
       if(lump_source) then
-        assert(ele_loc(source, ele)==ele_loc(u, ele))
+        assert(ele_loc(source, ele)==opNloc)
         source_lump = sum(source_mat, 2)
-        do dim = 1, u%dim
+        do dim = 1, opDim
           ! lumped source
           rhs_addto(dim, :) = rhs_addto(dim, :) + source_lump*ele_val(source, dim, ele)
         end do
       else
-        do dim = 1, u%dim
+        do dim = 1, opDim
           rhs_addto(dim, :) = rhs_addto(dim, :) + matmul(source_mat, ele_val(source, dim, ele))
         end do
       end if
@@ -1757,7 +1847,7 @@
       type(vector_field), intent(in) :: gravity
       type(scalar_field), intent(in) :: nvfrac
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       
       real, dimension(ele_ngi(u, ele)) :: nvfrac_gi
       real, dimension(ele_ngi(u, ele)) :: coefficient_detwei
@@ -1794,12 +1884,12 @@
       type(element_type), intent(in) :: test_function
       type(vector_field), intent(in) :: u
       type(tensor_field), intent(in) :: surfacetension
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim), intent(in) :: du_t
+      real, dimension(opNloc, ele_ngi(u, ele), opDim), intent(in) :: du_t
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       
-      real, dimension(u%dim, ele_ngi(u, ele)) :: dtensiondj
-      real, dimension(u%dim, u%dim, ele_ngi(u, ele)) :: tension
+      real, dimension(opDim, ele_ngi(u, ele)) :: dtensiondj
+      real, dimension(opDim, opDim, ele_ngi(u, ele)) :: tension
             
       if(integrate_surfacetension_by_parts) then
         tension = ele_val_at_quad(surfacetension, ele)
@@ -1827,9 +1917,9 @@
       type(scalar_field), intent(in) :: density
       type(vector_field), intent(in) :: absorption
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: big_m_diag_addto
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: big_m_diag_addto
+      real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       type(vector_field), intent(inout) :: masslump
       type(petsc_csr_matrix), intent(inout) :: mass
       type(scalar_field), intent(in) :: depth
@@ -1845,24 +1935,24 @@
     
       integer :: dim, dim2, i
       real, dimension(ele_ngi(u, ele)) :: density_gi
-      real, dimension(u%dim, ele_loc(u, ele)) :: absorption_lump
-      real, dimension(u%dim, u%dim, ele_loc(u, ele)) :: absorption_lump_sphere
-      real, dimension(u%dim, ele_ngi(u, ele)) :: absorption_gi
-      real, dimension(u%dim, u%dim, ele_ngi(u, ele)) :: tensor_absorption_gi
-      real, dimension(u%dim, ele_loc(u, ele), ele_loc(u, ele)) :: absorption_mat
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)) :: absorption_mat_sphere
+      real, dimension(opDim, opNloc) :: absorption_lump
+      real, dimension(opDim, opDim, opNloc) :: absorption_lump_sphere
+      real, dimension(opDim, ele_ngi(u, ele)) :: absorption_gi
+      real, dimension(opDim, opDim, ele_ngi(u, ele)) :: tensor_absorption_gi
+      real, dimension(opDim, opNloc, opNloc) :: absorption_mat
+      real, dimension(opDim, opDim, opNloc, opNloc) :: absorption_mat_sphere
 
       ! Add vertical velocity relaxation to the absorption if present
-      real, dimension(u%dim,u%dim,ele_ngi(u,ele)) :: vvr_abs
-      real, dimension(u%dim,ele_ngi(u,ele)) :: vvr_abs_diag
+      real, dimension(opDim,opDim,ele_ngi(u,ele)) :: vvr_abs
+      real, dimension(opDim,ele_ngi(u,ele)) :: vvr_abs_diag
       real, dimension(ele_ngi(u,ele)) :: depth_at_quads
 
       ! Add implicit buoyancy to the absorption if present
-      real, dimension(u%dim,u%dim,ele_ngi(u,ele)) :: ib_abs
-      real, dimension(u%dim,ele_ngi(u,ele)) :: ib_abs_diag
+      real, dimension(opDim,opDim,ele_ngi(u,ele)) :: ib_abs
+      real, dimension(opDim,ele_ngi(u,ele)) :: ib_abs_diag
       real, dimension(ele_loc(u,ele),ele_ngi(u,ele),mesh_dim(u)) :: dt_rho
-      real, dimension(U%dim,ele_ngi(u,ele)) :: grav_at_quads
-      real, dimension(u%dim, ele_ngi(u,ele)) :: grad_rho
+      real, dimension(opDim,ele_ngi(u,ele)) :: grav_at_quads
+      real, dimension(opDim, ele_ngi(u,ele)) :: grad_rho
       real, dimension(ele_ngi(u,ele)) :: drho_dz
 
       real, dimension(ele_ngi(u,ele)) :: alpha_u_quad
@@ -1960,7 +2050,7 @@
         depth_at_quads = ele_val_at_quad(depth, ele) + (itheta*ele_val_at_quad(p, ele) + (1.0-itheta)*ele_val_at_quad(old_pressure, ele))/gravity_magnitude
         ! now reuse depth_at_quads to be the absorption coefficient: C_D*|u|/H
         depth_at_quads = (ele_val_at_quad(swe_bottom_drag, ele)*sqrt(sum(ele_val_at_quad(nu, ele)**2, dim=1)))/depth_at_quads
-        do i=1, u%dim
+        do i=1, opDim
           absorption_gi(i,:) = absorption_gi(i,:) + depth_at_quads
         end do
       
@@ -1982,16 +2072,16 @@
           if(.not.abs_lump_on_submesh) then
             absorption_lump_sphere = sum(absorption_mat_sphere, 4)
             
-              do dim = 1, u%dim
-                do dim2 = 1, u%dim
-                  do i = 1, ele_loc(u, ele)
+              do dim = 1, opDim
+                do dim2 = 1, opDim
+                  do i = 1, opNloc
                     big_m_tensor_addto(dim, dim2, i, i) = big_m_tensor_addto(dim, dim2, i, i) + &
                       & dt*theta*absorption_lump_sphere(dim,dim2,i)
                   end do
                 end do
                 rhs_addto(dim, :) = rhs_addto(dim, :) - absorption_lump_sphere(dim,dim,:)*oldu_val(dim,:)
                 ! off block diagonal absorption terms
-                do dim2 = 1, u%dim
+                do dim2 = 1, opDim
                   if (dim==dim2) cycle ! The dim=dim2 terms were done above
                   rhs_addto(dim, :) = rhs_addto(dim, :) - absorption_lump_sphere(dim,dim2,:)*oldu_val(dim2,:)
                 end do
@@ -2000,14 +2090,14 @@
           end if
 
         else
-          do dim = 1, u%dim
-            do dim2 = 1, u%dim
+          do dim = 1, opDim
+            do dim2 = 1, opDim
               big_m_tensor_addto(dim, dim2, :, :) = big_m_tensor_addto(dim, dim2, :, :) + &
                 & dt*theta*absorption_mat_sphere(dim,dim2,:,:)
             end do
             rhs_addto(dim, :) = rhs_addto(dim, :) - matmul(absorption_mat_sphere(dim,dim,:,:), oldu_val(dim,:))
             ! off block diagonal absorption terms
-            do dim2 = 1, u%dim
+            do dim2 = 1, opDim
               if (dim==dim2) cycle ! The dim=dim2 terms were done above
               rhs_addto(dim, :) = rhs_addto(dim, :) - matmul(absorption_mat_sphere(dim,dim2,:,:), oldu_val(dim2,:))
             end do
@@ -2024,7 +2114,7 @@
             call addto(masslump, ele_nodes(u, ele), dt*theta*absorption_lump)
           end if
           if (assemble_mass_matrix) then
-            do dim = 1, u%dim
+            do dim = 1, opDim
               call addto(mass, dim, dim, ele_nodes(u, ele), ele_nodes(u,ele), &
                  dt*theta*absorption_mat(dim,:,:))
             end do
@@ -2045,13 +2135,13 @@
         if(lump_absorption) then
           if(.not.abs_lump_on_submesh) then
             absorption_lump = sum(absorption_mat, 3)
-            do dim = 1, u%dim
+            do dim = 1, opDim
               big_m_diag_addto(dim, :) = big_m_diag_addto(dim, :) + dt*theta*absorption_lump(dim,:)
               rhs_addto(dim, :) = rhs_addto(dim, :) - absorption_lump(dim,:)*oldu_val(dim,:)
             end do
           end if
         else
-          do dim = 1, u%dim
+          do dim = 1, opDim
             big_m_tensor_addto(dim, dim, :, :) = big_m_tensor_addto(dim, dim, :, :) + &
               & dt*theta*absorption_mat(dim,:,:)
             rhs_addto(dim, :) = rhs_addto(dim, :) - matmul(absorption_mat(dim,:,:), oldu_val(dim,:))
@@ -2063,7 +2153,7 @@
             call addto(masslump, ele_nodes(u, ele), dt*theta*absorption_lump)
           end if
           if (assemble_mass_matrix) then
-            do dim = 1, u%dim
+            do dim = 1, opDim
               call addto(mass, dim, dim, ele_nodes(u, ele), ele_nodes(u,ele), &
                  dt*theta*absorption_mat(dim,:,:))
             end do
@@ -2109,18 +2199,18 @@
       type(scalar_field), intent(in) :: nvfrac
 
       integer                                                                        :: dim, dimj, gi, iloc
-      real, dimension(u%dim, ele_loc(u, ele))                                        :: nu_ele
-      real, dimension(u%dim, u%dim, ele_ngi(u, ele))                                 :: viscosity_gi
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele))                :: viscosity_mat
+      real, dimension(opDim, opNloc)                                        :: nu_ele
+      real, dimension(opDim, opDim, ele_ngi(u, ele))                                 :: viscosity_gi
+      real, dimension(opDim, opDim, opNloc, opNloc)                :: viscosity_mat
       real, dimension(x%dim, x%dim, ele_ngi(u, ele))                                 :: les_tensor_gi
       real, dimension(ele_ngi(u, ele))                                               :: les_scalar_gi
       real, dimension(ele_ngi(u, ele))                                               :: les_coef_gi, wale_coef_gi, density_gi
       real, dimension(x%dim, ele_loc(u,ele), ele_loc(u,ele))                         :: div_les_viscosity
       real, dimension(x%dim, x%dim, ele_loc(u,ele))                                  :: grad_u_nodes
-      real, dimension(ele_loc(u, ele), ele_ngi(u, ele), u%dim), intent(in)           :: du_t
+      real, dimension(opNloc, ele_ngi(u, ele), opDim), intent(in)           :: du_t
       real, dimension(ele_ngi(u, ele)), intent(in)                                   :: detwei
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout)                         :: rhs_addto
+      real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
+      real, dimension(opDim, opNloc), intent(inout)                         :: rhs_addto
 
 
       if (have_viscosity .AND. .not.(have_temperature_dependent_viscosity)) then
@@ -2134,8 +2224,8 @@
       if(have_temperature_dependent_viscosity) then
          viscosity_gi = 0.0
          if(stress_form.or.partial_stress_form) then
-            do dim=1, u%dim
-               do dimj = 1, u%dim
+            do dim=1, opDim
+               do dimj = 1, opDim
                   viscosity_gi(dim,dimj,:) = reference_viscosity * &
                    exp(-activation_energy*(ele_val_at_quad(temperature,ele)))
                end do
@@ -2207,8 +2297,8 @@
             les_coef_gi=les_viscosity_strength(du_t, nu_ele)
             div_les_viscosity=dshape_dot_tensor_shape(du_t, les_tensor_gi, ele_shape(u, ele), detwei)
             grad_u_nodes=ele_val(grad_u, ele)
-            do dim=1, u%dim
-               do iloc=1, ele_loc(u, ele)
+            do dim=1, opDim
+               do iloc=1, opNloc
                   rhs_addto(dim,iloc)=rhs_addto(dim,iloc)+ &
                        sum(div_les_viscosity(:,:,iloc)*grad_u_nodes(:,dim,:))
                end do
@@ -2300,7 +2390,7 @@
         end if
       else
         if(isotropic_viscosity .and. .not. have_les) then
-          assert(u%dim > 0)
+          assert(opDim > 0)
 
           if(multiphase) then
              ! We need to compute \int{grad(N_A) vfrac viscosity grad(N_B)}
@@ -2310,11 +2400,11 @@
              viscosity_mat(1, 1, :, :) = dshape_dot_dshape(du_t, du_t, detwei * viscosity_gi(1, 1, :))
           end if
 
-          do dim = 2, u%dim
+          do dim = 2, opDim
             viscosity_mat(dim, dim, :, :) = viscosity_mat(1, 1, :, :)
           end do
         else if(diagonal_viscosity .and. .not. have_les) then
-          assert(u%dim > 0)
+          assert(opDim > 0)
           
           if(multiphase) then
              viscosity_mat(1, 1, :, :) = dshape_diagtensor_dshape(du_t, viscosity_gi, du_t, detwei*&
@@ -2323,11 +2413,11 @@
              viscosity_mat(1, 1, :, :) = dshape_diagtensor_dshape(du_t, viscosity_gi, du_t, detwei)
           end if
 
-          do dim = 2, u%dim
+          do dim = 2, opDim
             viscosity_mat(dim, dim, :, :) = viscosity_mat(1, 1, :, :)
           end do
         else
-          do dim = 1, u%dim
+          do dim = 1, opDim
             if(multiphase) then
                viscosity_mat(dim, dim, :, :) = dshape_tensor_dshape(du_t, viscosity_gi, du_t, detwei*&
                                                ele_val_at_quad(nvfrac, ele))
@@ -2340,12 +2430,12 @@
       
       big_m_tensor_addto = big_m_tensor_addto + dt*theta*viscosity_mat
       
-      do dim = 1, u%dim
+      do dim = 1, opDim
         rhs_addto(dim, :) = rhs_addto(dim, :) - matmul(viscosity_mat(dim,dim,:,:), oldu_val(dim,:))
       
         ! off block diagonal viscosity terms
         if(stress_form.or.partial_stress_form) then
-          do dimj = 1, u%dim
+          do dimj = 1, opDim
 
             if (dim==dimj) cycle ! already done this
 
@@ -2364,11 +2454,11 @@
       real, dimension(:,:), intent(in) :: oldu_val
       type(scalar_field), intent(in) :: density
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, u%dim, ele_loc(u, ele), ele_loc(u, ele)), intent(inout) :: big_m_tensor_addto
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opDim, opNloc, opNloc), intent(inout) :: big_m_tensor_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
       
       real, dimension(ele_ngi(u, ele)) :: coriolis_gi, density_gi
-      real, dimension(ele_loc(u, ele), ele_loc(u, ele)) :: coriolis_mat
+      real, dimension(opNloc, opNloc) :: coriolis_mat
       
       density_gi = ele_val_at_quad(density, ele)
       
@@ -2397,7 +2487,7 @@
       type(vector_field), intent(in) :: u
       type(scalar_field), intent(in) :: gp
       real, dimension(ele_ngi(u, ele)), intent(in) :: detwei
-      real, dimension(u%dim, ele_loc(u, ele)), intent(inout) :: rhs_addto
+      real, dimension(opDim, opNloc), intent(inout) :: rhs_addto
             
       real, dimension(ele_loc(gp, ele), ele_ngi(gp, ele), mesh_dim(gp)) :: dgp_t
       
@@ -2557,7 +2647,7 @@
 
       call allocate(delta_u, u%mesh, "Delta_U")
 
-      do dim=1,u%dim
+      do dim=1,opDim
         call mult_t(delta_u, block(ct_m,1,dim), delta_p)
         inverse_masslump_component = extract_scalar_field(inverse_masslump, dim)
 
@@ -2587,8 +2677,8 @@
 
       ewrite(1,*) 'correct_velocity_cg'
 
-      call allocate(delta_u1, u%dim, u%mesh, "Delta_U1")
-      call allocate(delta_u2, u%dim, u%mesh, "Delta_U2")
+      call allocate(delta_u1, opDim, u%mesh, "Delta_U1")
+      call allocate(delta_u2, opDim, u%mesh, "Delta_U2")
       delta_u2%option_path = trim(delta_p%option_path)//&
                                   &"/prognostic/scheme/use_projection_method"//&
                                   &"/full_schur_complement/inner_matrix[0]"
@@ -2769,5 +2859,55 @@
       call mult(rhs, kmk, pressure)
       call scale(rhs, dt)
     end subroutine add_kmk_rhs
+
+    ! Generated by script
+    subroutine allocateCGAssemblyArrays(u, ct_rhs)
+        type(vector_field), intent(in) :: u
+        type(scalar_field), intent(in) :: ct_rhs
+        integer, parameter :: ele=1, sele=1
+
+        allocate( oldu_val(opDim, opNloc) )
+        allocate( detwei(ele_ngi(u, ele)) )
+        allocate( detwei_old(ele_ngi(u, ele)) )
+        allocate( detwei_new(ele_ngi(u, ele)) )
+        allocate( J_mat(opDim, opDim, ele_ngi(u, ele)) )
+        allocate( diff_q(opDim, opDim, ele_ngi(u, ele)) )
+        allocate( du_t(opNloc, ele_ngi(u, ele), opDim) )
+        allocate( dug_t(opNloc, ele_ngi(u, ele), opDim) )
+        allocate( dp_t(ele_loc(ct_rhs, ele), ele_ngi(ct_rhs, ele), opDim) )
+        allocate( relu_gi(opDim, ele_ngi(u, ele)) )
+        allocate( grad_p_u_mat(opDim, ele_loc(ct_rhs, ele), opNloc) )
+        allocate( big_m_diag_addto(opDim, opNloc) )
+        allocate( rhs_addto(opDim, opNloc) )
+        allocate( big_m_tensor_addto(opDim, opDim, opNloc, opNloc) )
+        allocate( block_mask(opDim, opDim) )
+
+
+    end subroutine allocateCGAssemblyArrays
+
+
+    ! Generated by script
+    subroutine deallocateCGAssemblyArrays()
+        deallocate( oldu_val )
+        deallocate( detwei )
+        deallocate( detwei_old )
+        deallocate( detwei_new )
+        deallocate( J_mat )
+        deallocate( diff_q )
+        deallocate( du_t )
+        deallocate( dug_t )
+        deallocate( dp_t )
+        deallocate( relu_gi )
+        deallocate( grad_p_u_mat )
+        deallocate( big_m_diag_addto )
+        deallocate( rhs_addto )
+        deallocate( big_m_tensor_addto )
+        deallocate( block_mask )
+
+
+
+    end subroutine deallocateCGAssemblyArrays
+
+
 
   end module momentum_cg
