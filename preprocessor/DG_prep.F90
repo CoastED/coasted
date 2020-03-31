@@ -149,7 +149,7 @@ contains
             call add_option(trim(opt_path)//"diagnostic/detectors/include_in_detectors", stat)
             call add_option(trim(opt_path)//"diagnostic/steady_state", stat)
             call add_option(trim(opt_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-            call add_option(trim(opt_path)//"diagnostic/consistent_interpolation", stat)
+!            call add_option(trim(opt_path)//"diagnostic/consistent_interpolation", stat)
         end if
 
     end subroutine create_velocity_cg_options
@@ -270,7 +270,7 @@ contains
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/detectors/include_in_detectors", stat)
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/steady_state", stat)
                 call add_option(trim(scalar_eddy_visc_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-                call add_option(trim(scalar_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
+!                call add_option(trim(scalar_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
 
             else
                 ! Create tensor Eddy Viscosity field
@@ -291,7 +291,7 @@ contains
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/output", stat)
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat", stat)
                 call add_option(trim(tensor_eddy_visc_path)//"diagnostic/stat/include_in_stat", stat)
-                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
+!                call add_option(trim(tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
 
                 ! Add magnitude of tensor Eddy Viscosity
 
@@ -317,7 +317,7 @@ contains
                 call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/detectors/include_in_detectors", stat)
                 call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/steady_state", stat)
                 call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
+!                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
             end if
         end if
 

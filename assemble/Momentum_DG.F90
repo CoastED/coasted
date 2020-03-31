@@ -900,8 +900,10 @@ contains
                 if(have_les) then
                     if(have_isotropic_les) then
                        call calc_dg_sgs_scalar_viscosity(state, x, u)
-                    elseif (have_scotti_les) then
-                       call calc_dg_sgs_scotti_viscosity(state, x, u)
+                    else
+                       call calc_dg_sgs_tensor_viscosity(state, x, u)
+!                    elseif (have_scotti_les) then
+!                       call calc_dg_sgs_scotti_viscosity(state, x, u)
                     end if
                 end if
 

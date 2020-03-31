@@ -47,8 +47,7 @@ module dg_les
 
   private
 
-  !  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_tensor_viscosity
-  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_scotti_viscosity
+  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_tensor_viscosity
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
@@ -57,14 +56,14 @@ contains
 
 
     ! ========================================================================
-    ! Scalar LES SGS viscosity
+    ! Scalar LES SGS viscosity (dynamic)
     ! ========================================================================
     subroutine calc_dg_sgs_scalar_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
         type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: sgs_visc, dist_to_wall, RoughnessHeight
+        type(scalar_field), pointer :: sgs_visc, dist_to_wall
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -91,7 +90,6 @@ contains
         real (kind=8), external :: mpi_wtime
 
         logical :: have_van_driest, have_reference_density, use_dg_velocity
-        logical :: have_roughness
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.0, pow_m=3.0
@@ -106,7 +104,6 @@ contains
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
-
 
         ! Using DG velocity field for LES calculations.
         ! This is SLOW! Only use for performance tests.
@@ -218,18 +215,17 @@ contains
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
                 visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
-!                sgs_ele_av = visc_turb
-                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-            end do
+                node_sum(gnode) = node_sum(gnode) + visc_turb
+                node_visits(gnode) = 1
 
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1                
-
-!                node_sum(gnode) = sgs_ele_av
-!                node_visits(gnode) = 1                
-                
+!                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+!            end do
+!
+!            do ln=1, opNloc
+!                gnode = u_cg_ele(ln)
+!
+!                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+!                node_visits(gnode) = node_visits(gnode) + 1
             end do
         end do
 
@@ -268,84 +264,83 @@ contains
 
 
 
+
+
+
     ! ========================================================================
-    ! Scalar LES SGS Scotti-formulation viscosity
+    ! Split horizontal/vertical LES SGS viscosity
     ! ========================================================================
-    subroutine calc_dg_sgs_scotti_viscosity(state, x, u)
+
+    subroutine calc_dg_sgs_tensor_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
         type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: sgs_visc, dist_to_wall, RoughnessHeight
+        type(scalar_field), pointer :: dist_to_wall
+        type(tensor_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: sgs_visc_mag
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
-        type(tensor_field) :: u_grad
         type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
 
         integer :: e, num_elements, n, num_nodes, ln
         integer :: u_cg_ele(ele_loc(u,1))
 
-        real :: Cs, ele_vol, Cs_length_sq
-        real, dimension(u%dim, u%dim) :: rate_of_strain, u_grad_node
-        real :: sgs_ele_av, visc_turb, mu, node_visc
-        real :: rho, y_plus, vd_damping
+        real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
+        real :: length_horz_sq, length_vert_sq, ele_vol
+        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
+        real :: mag_strain_horz, mag_strain_vert, mag_strain_r
+        real :: sgs_horz, sgs_vert, sgs_r
+        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
+        real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
 
-        real, allocatable, save :: node_vol_weighted_sum(:), &
-             node_neigh_total_vol(:)
-
-        real, allocatable, save :: node_sum(:)
+        real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
+        real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density, use_dg_velocity
-        logical :: have_roughness
+        logical :: have_van_driest, have_reference_density
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=25.0, pow_m=3.0
 
-        ! Scotti variables
-        real :: del_max, del_horz, del_vert, del_eq, a1, a2
-        real, allocatable, save :: f(:)
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val
+        integer :: i
 
-        print*, "calc_dg_sgs_scotti_viscosity"
+        print*, "In calc_dg_sgs_tensor_viscosity()"
 
         t1=mpi_wtime()
 
+        nullify(dist_to_wall)
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
+        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
+         end if
 
         ! Van Driest wall damping
         have_van_driest = have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
-
-
-        ! Using DG velocity field for LES calculations.
-        ! This is SLOW! Only use for performance tests.
-        use_dg_velocity = have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/use_dg_velocity")
-
-        ! Can either use projected CG or DG velocity field in LES calculations
-        ! CG is preferred as it is much, much faster.
-        ! Velocity projected to continuous Galerkin
-
-        if(use_dg_velocity) then
-            u_cg=>extract_vector_field(state, "Velocity", stat=state_flag)
-        else
-            u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-        end if
-
-        ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
-        call grad(u_cg, x, u_grad)
-
 
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)
@@ -357,7 +352,7 @@ contains
                 .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
                 mu=mviscosity%val(1,1,1)
             else
-                FLAbort("DG_LES: must have constant dynamic viscosity field")
+                FLAbort("DG_LES: must have constant or normal viscosity field")
             end if
 
             dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
@@ -374,8 +369,8 @@ contains
 
         if(have_reference_density) then
             call get_option("/material_phase::"&
-            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
-            rho)
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
         else
             FLAbort("DG_LES: missing reference density option in equation_of_state")
         end if
@@ -383,8 +378,18 @@ contains
 
         call get_option(trim(u%option_path)//"/prognostic/" &
             // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-            // "smagorinsky_coefficient", &
-            Cs)
+            // "smagorinsky_coefficient", Cs_horz)
+
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient_vertical")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                // "smagorinsky_coefficient_vertical", Cs_vert)
+        else
+            FLAbort("DG_LES: you've requested anisotropic LES, but have not specified smagorinsky_coefficient_vertical")
+        end if
 
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
@@ -396,90 +401,131 @@ contains
             if(allocated(node_sum)) then
                 deallocate(node_sum)
                 deallocate(node_visits)
-
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-                deallocate(f)
             end if
 
-            allocate(node_sum(num_nodes))
+            allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
-
-            allocate(node_vol_weighted_sum(num_nodes))
+            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-            allocate(f(num_elements))
-
         end if
 
-        node_sum(:)=0.0
+        node_sum(:,:,:)=0.0
         node_visits(:)=0
-        node_vol_weighted_sum(:)=0.0
+        node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
         
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
+        sgs_visc%val(:,:,:)=0.0
 
 
         do e=1, num_elements
+
             u_cg_ele=ele_nodes(u_cg, e)
 
             ele_vol = element_volume(x, e)
 
-            ! From Scotti et al
-            call les_length_scales_squared_mk3(x, e, del_horz, del_vert, del_max)
+            call les_length_scales_squared_mk2(x, e, length_horz_sq, length_vert_sq)
 
-            del_eq = (ele_vol**0.333333333333333333333)
-            if (new_mesh_connectivity) then
-                a1 = del_horz/del_max
-                a2 = del_vert/del_max
-                f(e) = 1 + (2./27.) * ( log(a1)**2. - log(a1)*log(a2) + log(a2)**2.)
-            end if
+            Cs_length_horz_sq = (Cs_horz**2.0)* length_horz_sq
+            Cs_length_vert_sq = (Cs_vert**2.0) * length_vert_sq
 
-            ! Factor of two included in length_scale_scalar
-            ! Cs_length_sq = (Cs* length)**2.0
-
-!            ! NOTE: Switching off contributions-based filter
             ! This is the contribution to nu_sgs from each co-occupying node
             sgs_ele_av=0.0
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
-                ! visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
-                ! Scotti ****
-                visc_turb = 2 * ((Cs*del_eq*f(e))**2.) * rho * norm2(2.0 * rate_of_strain)
 
-                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-!                sgs_ele_av = visc_turb
+                mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
+                                     + 2.0* rate_of_strain(2,2)**2.0 &
+                                     + 4.0* rate_of_strain(1,2)**2.0 )
+
+                mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
+                     		     + 2.0* rate_of_strain(3,3)**2.0 &
+                     		     + 4.0* rate_of_strain(3,2)**2.0 )
+
+                mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
+
+                ! Note, this is without density. That comes later.
+                sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
+                sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
+                sgs_r = rho * Cs_length_vert_sq * mag_strain_r
+
+                ! As per Roman et al, 2010.
+                visc_turb(1:2, 1:2) = sgs_horz
+                visc_turb(1, 3) = sgs_vert
+                visc_turb(3, 1) = sgs_vert
+                visc_turb(2, 3) = sgs_vert
+                visc_turb(3, 2) = sgs_vert
+                ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
+                ! Otherwise this is potentially negative (!)
+                visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
+
+                node_sum(:,:, gnode) = visc_turb
+                node_visits(gnode) = 1
+
+!                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+
+!            end do
+!
+!            do ln=1, opNloc
+!                gnode = u_cg_ele(ln)
+!
+!                node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
+!                node_visits(gnode) = node_visits(gnode) + 1
+
+!                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
+!
+!                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
             end do
 
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1
-                ! Disabled that smoothing filter stuff
-!                node_sum(gnode) = sgs_ele_av
-!                node_visits(gnode) = 1
-            end do
+
         end do
 
-
-        ! Set final values. Two options here: one with Van Driest damping,
-        ! one without.
+        ! Set final values. Two options here: one with Van Driest damping, one without.
+        ! We multiply by rho here.
         if(have_van_driest) then
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = 1.0 - exp((-y_plus/A_plus)**pow_m)
+                vd_damping = 1-exp((-y_plus/A_plus)**pow_m)
 
-                node_visc =  vd_damping * rho*node_sum(n) / node_visits(n)
+!                call set(sgs_visc, n, &
+!                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 
-                call set(sgs_visc, n, node_visc)
+                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
+                     / node_visits(n)
+!                     / node_neigh_total_vol(n))
+
+                ! L2 Norm of tensor (tensor magnitude)
+                sgs_visc_val=0.0
+                do i=1, opDim
+                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                end do
+                sgs_visc_val = sqrt(sgs_visc_val)
+
+                call set(sgs_visc, n,  tmp_tensor)
+                call set(sgs_visc_mag, n, sgs_visc_val )
             end do
         else
             do n=1, num_nodes
-!               node_visc = rho*node_sum(n) / node_visits(n)
-               node_visc = rho*node_sum(n)
-               call set(sgs_visc, n, node_visc )
+!                call set(sgs_visc, n, &
+!                     rho * node_vol_weighted_sum(:,:,n) &
+!                     / node_neigh_total_vol(n))
+
+                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+
+                ! L2 Norm of tensor (tensor magnitude)
+                sgs_visc_val=0.0
+                do i=1, opDim
+                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                end do
+                sgs_visc_val = sqrt(sgs_visc_val)
+
+                call set(sgs_visc, n, tmp_tensor )
+                call set(sgs_visc_mag, n, sgs_visc_val )
+
             end do
         end if
 
@@ -492,339 +538,9 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-
-    end subroutine calc_dg_sgs_scotti_viscosity
-
+    end subroutine calc_dg_sgs_tensor_viscosity
 
 
-
-
-!
-!
-!    ! ========================================================================
-!    ! Split horizontal/vertical LES SGS viscosity
-!    ! ========================================================================
-!
-!    subroutine calc_dg_sgs_tensor_viscosity(state, x, u)
-!        ! Passed parameters
-!        type(state_type), intent(in) :: state
-!
-!        type(vector_field), intent(in) :: u, x
-!        type(scalar_field), pointer :: dist_to_wall
-!        type(tensor_field), pointer :: sgs_visc
-!        type(scalar_field), pointer :: sgs_visc_mag
-!
-!        ! Velocity (CG) field, pointer to X field, and gradient
-!        type(vector_field), pointer :: u_cg
-!        type(tensor_field), pointer :: mviscosity
-!        type(tensor_field) :: u_grad
-!
-!        integer :: e, num_elements, n, num_nodes, ln
-!        integer :: u_cg_ele(ele_loc(u,1))
-!
-!        real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
-!        real :: length_horz_sq, length_vert_sq, ele_vol
-!        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-!        real :: mag_strain_horz, mag_strain_vert, mag_strain_r
-!        real :: sgs_horz, sgs_vert, sgs_r
-!        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
-!        real :: mu, rho, y_plus, vd_damping
-!
-!        integer :: state_flag, gnode
-!
-!        real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-!        real, allocatable,save:: node_sum(:, :,:)
-!        integer, allocatable, save :: node_visits(:)
-!
-!        real (kind=8) :: t1, t2
-!        real (kind=8), external :: mpi_wtime
-!
-!        logical :: have_van_driest, have_reference_density
-!        logical :: have_roughness, have_roman_eddy_visc
-!
-!        ! Constants for Van Driest damping equation
-!        real, parameter :: A_plus=25.0, pow_m=3.0
-!
-!        ! For scalar tensor eddy visc magnitude field
-!        real :: sgs_visc_val
-!        integer :: i
-!
-!        ! Intensification wall coefficient (For Roman eddy visc, 2009)
-!        real :: c_w
-!        ! Roughness length (constant along bed for now)
-!        real :: rl
-!
-!        print*, "In calc_dg_sgs_tensor_viscosity()"
-!
-!        t1=mpi_wtime()
-!
-!        nullify(dist_to_wall)
-!        nullify(mviscosity)
-!
-!        ! Velocity projected to continuous Galerkin
-!        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-!
-!        ! Allocate gradient field
-!        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-!
-!        sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
-!        call grad(u_cg, x, u_grad)
-!
-!        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
-!
-!        if (state_flag /= 0) then
-!            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
-!         end if
-!
-!        ! Van Driest wall damping
-!        have_van_driest = have_option(trim(u%option_path)//&
-!                        &"/prognostic/spatial_discretisation"//&
-!                        &"/discontinuous_galerkin/les_model"//&
-!                        &"/van_driest_damping")
-!
-!        ! Are we going to try eddy-visc at bottom boundary? (Roman et al 2009)
-!        have_roman_eddy_visc = have_option(trim(u%option_path)//&
-!                        &"/prognostic/spatial_discretisation"//&
-!                        &"/discontinuous_galerkin/les_model"//&
-!                        &"/roman_eddy_visc_bottom")
-!
-!        ! print*, "have_roman_eddy_bottom:", have_roman_eddy_bottom
-!
-!        have_roughness = .false.
-!!        if(have_roman_eddy_visc) then
-!!            have_smooth_bottom = have_option(trim(u%option_path)//&
-!!                        &"/prognostic/spatial_discretisation"//&
-!!                        &"/discontinuous_galerkin/les_model"//&
-!!                        &"/roman_eddy_visc_bottom/smooth_wall")
-!!
-!!            print*, "have_smooth_bottom:", have_smooth_bottom
-!
-!!            ! Roughness height field?
-!!            roughness_height => extract_scalar_field(state, "RoughnessHeight", stat=state_flag)
-!!            print*, "Extracted RoughnessHeight"
-!
-!!            This particular piece of code seems to crash the program. Bizarre.
-!!
-!!            if (state_flag /= 0) then
-!!                have_roughness = .true.
-!!            else
-!!                FLAbort("DG_LES: Want to use Roman et al eddy viscosity bottom, but no RoughnessHeight field.")
-!!            end if
-!!
-!!
-!!            ! Intensification co-efficient
-!!            call get_option(trim(u%option_path) &
-!!                        // "/prognostic/spatial_discretisation" &
-!!                        // "/discontinuous_galerkin/les_model" &
-!!                        // "/roman_eddy_visc_bottom/intensification_coefficient", c_w)
-!!
-!!            print*, "intensification coefficient c_w:", c_w
-!!
-!!            ! Roughness length
-!!            call get_option(trim(u%option_path) &
-!!                        // "/prognostic/spatial_discretisation" &
-!!                        // "/discontinuous_galerkin/les_model" &
-!!                        // "/roman_eddy_visc_bottom/roughness_length", rl)
-!!
-!!            print*, "roughness length rl:", rl
-!!
-!!        end if
-!
-!!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-!!        ! (This will be checked for elsewhere)
-!
-!!        if(have_van_driest .and. have_roman_eddy_visc) then
-!!            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-!!
-!!            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-!!                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-!!                mu=mviscosity%val(1,1,1)
-!!            else
-!!                FLAbort("DG_LES: must have constant or normal viscosity field")
-!!            end if
-!!
-!!            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
-!!            if (state_flag/=0) then
-!!                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
-!!            end if
-!!        end if
-!
-!
-!        ! We only use the reference density. This assumes the variation in density will be
-!        ! low (ie < 10%)
-!        have_reference_density=have_option("/material_phase::"&
-!            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
-!
-!        if(have_reference_density) then
-!            call get_option("/material_phase::"&
-!                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
-!                rho)
-!        else
-!            FLAbort("DG_LES: missing reference density option in equation_of_state")
-!        end if
-!
-!
-!        call get_option(trim(u%option_path)//"/prognostic/" &
-!            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-!            // "smagorinsky_coefficient", Cs_horz)
-!
-!        if(have_option(trim(u%option_path)//"/prognostic/" &
-!            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-!            // "smagorinsky_coefficient_vertical")) then
-!
-!            call get_option(trim(u%option_path)//"/prognostic/" &
-!                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-!                // "smagorinsky_coefficient_vertical", Cs_vert)
-!        else
-!            FLAbort("DG_LES: you've requested anisotropic LES, but have not specified smagorinsky_coefficient_vertical")
-!        end if
-!
-!        num_elements = ele_count(u_cg)
-!        num_nodes = u_cg%mesh%nodes
-!
-!        ! We only allocate if mesh connectivity unchanged from
-!        ! last iteration; reuse saved arrays otherwise
-!
-!        if(new_mesh_connectivity) then
-!            if(allocated(node_sum)) then
-!                deallocate(node_sum)
-!                deallocate(node_visits)
-!                deallocate(node_vol_weighted_sum)
-!                deallocate(node_neigh_total_vol)
-!            end if
-!
-!            allocate(node_sum(u%dim, u%dim, num_nodes))
-!            allocate(node_visits(num_nodes))
-!            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
-!            allocate(node_neigh_total_vol(num_nodes))
-!        end if
-!
-!        node_sum(:,:,:)=0.0
-!        node_visits(:)=0
-!        node_vol_weighted_sum(:,:,:)=0.0
-!        node_neigh_total_vol(:)=0.0
-!
-!        ! Set entire SGS visc field to zero value initially
-!        sgs_visc%val(:,:,:)=0.0
-!
-!
-!        do e=1, num_elements
-!
-!            u_cg_ele=ele_nodes(u_cg, e)
-!
-!            ele_vol = element_volume(x, e)
-!
-!            call les_length_scales_squared_mk2(x, e, length_horz_sq, length_vert_sq)
-!
-!            Cs_length_horz_sq = (Cs_horz**2.0)* length_horz_sq
-!            Cs_length_vert_sq = (Cs_vert**2.0) * length_vert_sq
-!
-!            ! This is the contribution to nu_sgs from each co-occupying node
-!            sgs_ele_av=0.0
-!            do ln=1, opNloc
-!                gnode = u_cg_ele(ln)
-!                rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
-!
-!                mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
-!                                     + 2.0* rate_of_strain(2,2)**2.0 &
-!                                     + 4.0* rate_of_strain(1,2)**2.0 )
-!
-!                mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-!                     		     + 2.0* rate_of_strain(3,3)**2.0 &
-!                     		     + 4.0* rate_of_strain(3,2)**2.0 )
-!
-!                mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
-!
-!                ! Note, this is without density. That comes later.
-!                sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
-!                sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
-!                sgs_r = rho * Cs_length_vert_sq * mag_strain_r
-!
-!                ! As per Roman et al, 2010.
-!                visc_turb(1:2, 1:2) = sgs_horz
-!                visc_turb(1, 3) = sgs_vert
-!                visc_turb(3, 1) = sgs_vert
-!                visc_turb(2, 3) = sgs_vert
-!                visc_turb(3, 2) = sgs_vert
-!                ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
-!                ! Otherwise this is potentially negative (!)
-!                visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
-!
-!                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-!            end do
-!
-!            do ln=1, opNloc
-!                gnode = u_cg_ele(ln)
-!
-!                node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
-!                node_visits(gnode) = node_visits(gnode) + 1
-!
-!!                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
-!!
-!!                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
-!            end do
-!
-!
-!        end do
-!
-!        ! Set final values. Two options here: one with Van Driest damping, one without.
-!        ! We multiply by rho here.
-!        if(have_van_driest) then
-!            do n=1, num_nodes
-!                u_grad_node = u_grad%val(:,:, n)
-!                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-!                vd_damping = 1-exp((-y_plus/A_plus)**pow_m)
-!
-!!                call set(sgs_visc, n, &
-!!                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
-!
-!                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
-!                     / node_visits(n)
-!!                     / node_neigh_total_vol(n))
-!
-!                ! L2 Norm of tensor (tensor magnitude)
-!                sgs_visc_val=0.0
-!                do i=1, opDim
-!                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-!                end do
-!                sgs_visc_val = sqrt(sgs_visc_val)
-!
-!                call set(sgs_visc, n,  tmp_tensor)
-!                call set(sgs_visc_mag, n, sgs_visc_val )
-!            end do
-!        else
-!            do n=1, num_nodes
-!!                call set(sgs_visc, n, &
-!!                     rho * node_vol_weighted_sum(:,:,n) &
-!!                     / node_neigh_total_vol(n))
-!
-!                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
-!
-!                ! L2 Norm of tensor (tensor magnitude)
-!                sgs_visc_val=0.0
-!                do i=1, opDim
-!                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-!                end do
-!                sgs_visc_val = sqrt(sgs_visc_val)
-!
-!                call set(sgs_visc, n, tmp_tensor )
-!                call set(sgs_visc_mag, n, sgs_visc_val )
-!
-!            end do
-!        end if
-!
-!        ! Must be done to avoid discontinuities at halos
-!        call halo_update(sgs_visc)
-!
-!        call deallocate(u_grad)
-!
-!        t2=mpi_wtime()
-!
-!        print*, "**** DG_LES_execution_time:", (t2-t1)
-!
-!    end subroutine calc_dg_sgs_tensor_viscosity
-!
-!
 
 
     ! ========================================================================
@@ -832,11 +548,11 @@ contains
     ! from Roman (2010). Only works for 3D linear tets.
     ! ========================================================================
 
-    subroutine les_length_scales_squared_mk3(positions, ele, horzLen, vertLen, maxLen)
+    subroutine les_length_scales_squared_mk2(positions, ele, horzSq, vertSq)
         type(vector_field), intent(in) :: positions
         integer :: ele
 
-        real :: horzLen, vertLen, maxLen
+        real :: horzSq, vertSq
         real, dimension(opDim, opNloc) :: X_val
         real, dimension(opDim) :: dx
 
@@ -850,15 +566,8 @@ contains
         end do
 
         ! Why squares? Used in LES visc calcs, no need for expensive square roots
-        horzLen = sqrt(dx(1)**2 + dx(2)**2)
-        vertLen = dx(3)
+        horzSq = dx(1)**2 + dx(2)**2
+        vertSq = dx(3)**2
 
-        if(horzLen > vertLen) then
-           maxLen=horzLen
-        else
-           maxLen=vertLen
-        end if
-        
-        
-    end subroutine les_length_scales_squared_mk3
+    end subroutine les_length_scales_squared_mk2
 end module dg_les
