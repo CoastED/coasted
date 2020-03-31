@@ -236,7 +236,7 @@ contains
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = (1-exp((-y_plus/A_plus))**pow_m
+                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
                 node_visc =  vd_damping * rho*node_sum(n) / node_visits(n)
 
@@ -489,7 +489,7 @@ contains
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = (1-exp((-y_plus/A_plus))**pow_m
+                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
 !                call set(sgs_visc, n, &
 !                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
