@@ -25,6 +25,8 @@
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
 #include "fdebug.h"
+#include "compile_opt_defs.h"
+
 module fields_manipulation
 use elements
 use element_set
@@ -307,9 +309,13 @@ implicit none
 
     integer :: j
 
-    assert(field%field_type==FIELD_TYPE_NORMAL)
+!    assert(field%field_type==FIELD_TYPE_NORMAL)
     
-    do j=1,field%dim
+!    do j=1,field%dim
+!       field%val(j,node_number)=field%val(j,node_number)+val(j)
+!    end do
+
+    do j=1,opDim
        field%val(j,node_number)=field%val(j,node_number)+val(j)
     end do
 
