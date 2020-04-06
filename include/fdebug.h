@@ -72,4 +72,8 @@
 #define METRIC_DEBUG
 #endif
 
+
+! Shoving in here for convenience
+#define AGGRESSIVE_CACHEING 1
+
 #endif

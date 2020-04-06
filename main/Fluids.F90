@@ -94,7 +94,7 @@ module fluids_module
                                simulation_start_cpu_time, &
                                simulation_start_wall_time, &
                                topology_mesh_name, &
-                               new_mesh_geometry, new_mesh_connectivity
+                               new_mesh_geometry, new_mesh_connectivity, reallocate_fields_flag
   use eventcounter
   use reduced_model_runtime
   use implicit_solids
@@ -208,6 +208,7 @@ contains
     ! Set global parameters for mesh
     new_mesh_geometry = .true.
     new_mesh_connectivity = .true.
+    reallocate_fields_flag = .true.
 
 #ifdef HAVE_MEMORY_STATS
     ! this is to make sure the option /io/log_output/memory_diagnostics is read
@@ -921,11 +922,13 @@ contains
              ewrite(2,*) 'out of solid_data_update'
           end if
 
-          ! If we t have a moving mesh, then set new_mesh_geometry to true, else false
+          ! If we have a moving mesh, then set new_mesh_geometry to true, else false
           if (have_option('/mesh_adaptivity/mesh_movement')) then
             new_mesh_geometry = .true.
+            reallocate_fields_flag = .true.
           else
             new_mesh_geometry = .false.
+            reallocate_fields_flag = .false.
           end if
           ! This is valid, as adaptivity happens outside nonlinear loop
           new_mesh_connectivity = .false.
@@ -1038,6 +1041,7 @@ contains
              ! them.
              new_mesh_connectivity = .true.
              new_mesh_geometry = .true.
+             reallocate_fields_flag = .true.
  
           end if
        else if(have_option("/mesh_adaptivity/prescribed_adaptivity")) then
@@ -1057,6 +1061,7 @@ contains
              ! Set global parameters for mesh status - see above
              new_mesh_connectivity = .true.
              new_mesh_geometry = .true.
+             reallocate_fields_flag = .true.
 
           end if
 

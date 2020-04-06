@@ -256,9 +256,9 @@ contains
 
         !! Position, velocity and source fields.
         type(vector_field), pointer :: U_mesh,  X_old, X_new
-        type(vector_field), target :: U_nl
+        type(vector_field), target, save :: U_nl
         !! Projected (non-linear) velocity field
-        type(vector_field), target ::  pvelocity
+        type(vector_field), target, save ::  pvelocity
         type(vector_field), pointer :: advecting_velocity
         !! Mesh for projected velocity.
         type(mesh_type) :: pmesh
@@ -280,7 +280,7 @@ contains
         type(scalar_field), pointer :: hb_density, hb_pressure
 
         !! field over the entire surface mesh, giving bc values
-        type(vector_field) :: velocity_bc
+        type(vector_field), save :: velocity_bc
         type(scalar_field) :: pressure_bc
         !! for each surface element, the bc type to be applied there
         !! integer value determined by ordering in call to get_entire_boundary_condition
@@ -343,7 +343,7 @@ contains
         real :: smagorinsky_coefficient
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
             & y_plus_debug, les_filter_width_debug
-        type(vector_field), pointer :: u_cg
+        type(vector_field), pointer, save :: u_cg
         type(tensor_field), pointer :: tensor_eddy_visc
 
         type(tensor_field), pointer :: uGrad
@@ -944,9 +944,7 @@ contains
                 p_shape=>ele_shape(P, 1)
                 q_shape=>ele_shape(q_mesh, 1)
 
-#ifdef CGONLY
-                FLExit("**** CoastED-Fluidity has been compiled with #define CGONLY ****")
-#else
+
                 if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
                     .and. ele_loc(U,1)==opNloc .and. ele_ngi(U,1)==opNgi ) then
@@ -1007,7 +1005,7 @@ contains
                     FLExit("Non-optimised DG assembly no longer supported")
 
                 end if
-#endif
+
 
                 call profiler_toc(u, "element_loop")
 

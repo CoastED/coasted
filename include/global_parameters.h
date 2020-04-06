@@ -29,8 +29,9 @@
 #ifndef GLOBAL_PARAMETERS
 #define GLOBAL_PARAMETERS
 
+
 /* This C header-file includes prototype definitions for external routines
-   witten in FORTRAN, that offer accesibility to variables declared in FORTRAN
+   written in FORTRAN, that offer accesibility to variables declared in FORTRAN
    module Global_Parameters.F90
 */
 

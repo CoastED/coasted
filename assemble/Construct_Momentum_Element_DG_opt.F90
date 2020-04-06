@@ -4,8 +4,6 @@
 
 !------------------ Start of template code ------------------------------
 
-#ifndef CGONLY
-
 subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
     & u_shape, p_shape, q_shape, &
@@ -2466,5 +2464,3 @@ contains
     end subroutine local_assembly_cdg_face
 
 end subroutine construct_momentum_elements_dg_opt
-
-#endif

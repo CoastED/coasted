@@ -26,6 +26,9 @@
 !    USA
 
 #include "fdebug.h"
+#include "compile_opt_defs.h"
+
+
 module transform_elements
   ! Module to calculate element transformations from local to physical
   ! coordinates.
@@ -1076,15 +1079,15 @@ contains
 
     
     ! Column n of X_f is the position of the nth node on the facet.
-    real, dimension(X%dim,face_loc(X,face)) :: X_f
+    real, dimension(opDim, opFloc) :: X_f
     ! Column n of X_f is the position of the nth node on the facet.
-    real, dimension(X%dim,ele_loc(X,face_ele(X,face))) :: X_val
+    real, dimension(opDim, opNloc) :: X_val
     ! shape function coordinate interpolation on the boundary
     type(element_type), pointer :: x_shape_f
 
 
     ! Jacobian matrix and its inverse.
-    real, dimension(X%dim,mesh_dim(X)-1) :: J
+    real, dimension(opDim, opDim-1) :: J
     ! Determinant of J
     real :: detJ
     ! Whether the cache can be used
@@ -1093,7 +1096,7 @@ contains
 
     integer :: gi, i, compute_ngi
 
-    x_shape_f=>face_shape(X,face)
+    x_shape_f=>face_shape(X,1)
 
 #ifdef DDEBUG
     assert(size(normal,1)==X%dim)
@@ -1130,8 +1133,8 @@ contains
     end if
 
     ! Loop over quadrature points.
-    quad_loop: do gi=1, compute_ngi
-
+!    quad_loop: do gi=1, compute_ngi
+    quad_loop: do concurrent (gi=1:compute_ngi)
        !     |- dx  dx  -|
        !     |  dL1 dL2  |
        !     |           |
@@ -1155,8 +1158,6 @@ contains
              detJ = sqrt(J(1,1)**2 + J(2,1)**2)
           case(3)
              detJ = sqrt(sum(J(:,1)**2))
-          case default
-             FLAbort("Unsupported dimension specified")
           end select
        case(3)
           select case (X%dim)
@@ -1167,11 +1168,8 @@ contains
                      &+1),1))**2
              end do
              detJ=sqrt(detJ)
-          case default
-             FLAbort("Unsupported dimension specified")
-          end select
-       case default
-          FLAbort("Unsupported dimension specified.  Universe is 3 dimensional (sorry Albert).")   
+         end select
+
        end select
 
        ! Calculate transformed quadrature weights.
@@ -1185,19 +1183,19 @@ contains
       
     ! copy the value at gi==1 to the rest of the gauss points
     if(present(detwei_f)) then
-      do gi=compute_ngi+1, x_shape_f%ngi
+      do concurrent (gi=compute_ngi+1:x_shape_f%ngi)
          ! uses detJ from above
          detwei_f=detJ*x_shape_f%quadrature%weight
       end do
     end if
 
-    do gi=compute_ngi+1, x_shape_f%ngi
+    do concurrent (gi=compute_ngi+1:x_shape_f%ngi)
        normal(:,gi)=normal(:,1)
     end do    
     
   end subroutine transform_facet_to_physical_full
 
-  function NORMGI(X, X_f, J)
+  pure function NORMGI(X, X_f, J)
     ! Calculate the normal at a given quadrature point,
     real, dimension(:,:), intent(in) :: J
     real, dimension(size(J,1)) :: normgi
@@ -1222,8 +1220,7 @@ contains
        normgi = (/ -J(2,1), J(1,1) /)
     case (3)
        normgi=cross_product(J(:,1),J(:,2))
-    case default
-       FLAbort("Unsupported dimension specified.  Universe is 3 dimensional (sorry Albert).")   
+
     end select
 
     ! Set correct orientation.
@@ -1234,7 +1231,7 @@ contains
 
   contains
 
-    function cross_product(vector1,vector2) result (prod)
+    pure function cross_product(vector1,vector2) result (prod)
       real, dimension(3) :: prod
       real, dimension(3), intent(in) :: vector1, vector2
 

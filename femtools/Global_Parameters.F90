@@ -169,7 +169,7 @@ module global_parameters
   ! These flag whether the CoordinateMesh geometry has changed, the
   ! connectivity, has changed, or both. As Velocity / Pressure meshes are
   ! derived from this, the flags also hold for them.
-  logical :: new_mesh_geometry, new_mesh_connectivity
+  logical :: new_mesh_geometry, new_mesh_connectivity, reallocate_fields_flag
 
   contains
 
