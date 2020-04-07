@@ -426,7 +426,7 @@ contains
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
-        unfiltered(:,:,:)=0.0
+        sgs_unfiltered(:,:,:)=0.0
         
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
@@ -504,7 +504,7 @@ contains
 !                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
 !                     / node_visits(n)
                 tmp_tensor = vd_damping * rho * &
-                ( alpha * sgs_unfiltered + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
+                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
 
 !                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
@@ -524,7 +524,7 @@ contains
 
 !                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
                 tmp_tensor = rho * &
-                ( alpha * sgs_unfiltered + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
+                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
 
 !                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
