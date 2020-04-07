@@ -304,10 +304,12 @@ contains
         integer :: state_flag, gnode
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:)
+        real, allocatable,save:: node_sum(:, :,:), unfiltered(:,:,:)
         integer, allocatable, save :: node_visits(:)
 
         real :: visc_norm2, visc_norm2_max
+
+        real, parameter :: alpha=0.75
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -410,12 +412,14 @@ contains
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
+                deallocate(unfiltered)
             end if
 
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
+            allocate(unfiltered(u%dim, u%dim, num_nodes))
         end if
 
         node_sum(:,:,:)=0.0
@@ -474,6 +478,7 @@ contains
                 node_sum(:,:, gnode) = visc_turb
                 node_visits(gnode) = 1
 #else
+                unfiltered(:,:, gnode) = visc_turb
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
 #endif
 
@@ -502,8 +507,9 @@ contains
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
 
-                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
-                     / node_visits(n)
+                tmp_tensor = vd_damping * rho * &
+                ( alpha * unfiltered(:,:,n) + (1-alpha)* node_sum(:,:,n)) &
+                    / node_visits(n)
 
 !                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
@@ -521,7 +527,9 @@ contains
         else
             do n=1, num_nodes
 
-                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+                tmp_tensor = rho * &
+                ( alpha * unfiltered(:,:,n) + (1-alpha)* node_sum(:,:,n)) &
+                    / node_visits(n)
 
 !                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
