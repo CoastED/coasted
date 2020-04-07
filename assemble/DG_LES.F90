@@ -304,12 +304,10 @@ contains
         integer :: state_flag, gnode
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:), unfiltered(:,:,:)
+        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered(:,:,:)
         integer, allocatable, save :: node_visits(:)
 
         real :: visc_norm2, visc_norm2_max
-
-        real, parameter :: alpha=0.75
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -318,6 +316,8 @@ contains
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
+
+        real, parameter :: alpha=0.75
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
@@ -412,20 +412,21 @@ contains
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-                deallocate(unfiltered)
+                deallocate(sgs_unfiltered)
             end if
 
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-            allocate(unfiltered(u%dim, u%dim, num_nodes))
+            allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
         end if
 
         node_sum(:,:,:)=0.0
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
+        unfiltered(:,:,:)=0.0
         
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
@@ -473,18 +474,11 @@ contains
                 ! Otherwise this is potentially negative (!)
                 visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
 
-#ifdef SHARP_LES_FILTER
-
-                node_sum(:,:, gnode) = visc_turb
-                node_visits(gnode) = 1
-#else
-                unfiltered(:,:, gnode) = visc_turb
+                sgs_unfiltered(:,:, gnode) = visc_turb
                 sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-#endif
 
             end do
 
-#ifndef SHARP_LES_FILTER
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
@@ -494,7 +488,7 @@ contains
 
                 node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
             end do
-#endif
+
 
         end do
 
@@ -507,9 +501,10 @@ contains
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
 
+!                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
+!                     / node_visits(n)
                 tmp_tensor = vd_damping * rho * &
-                ( alpha * unfiltered(:,:,n) + (1-alpha)* node_sum(:,:,n)) &
-                    / node_visits(n)
+                ( alpha * sgs_unfiltered + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
 
 !                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
@@ -527,9 +522,9 @@ contains
         else
             do n=1, num_nodes
 
+!                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
                 tmp_tensor = rho * &
-                ( alpha * unfiltered(:,:,n) + (1-alpha)* node_sum(:,:,n)) &
-                    / node_visits(n)
+                ( alpha * sgs_unfiltered + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
 
 !                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
