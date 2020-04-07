@@ -215,18 +215,23 @@ contains
                 rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
                 visc_turb = Cs_length_sq * rho * norm2(2.0 * rate_of_strain)
 
-                node_sum(gnode) = node_sum(gnode) + visc_turb
+#ifdef SHARP_LES_FILTER
+                node_sum(gnode) = visc_turb
                 node_visits(gnode) = 1
-
-!                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-!            end do
-!
-!            do ln=1, opNloc
-!                gnode = u_cg_ele(ln)
-!
-!                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-!                node_visits(gnode) = node_visits(gnode) + 1
+#else
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+#endif
             end do
+
+#ifndef SHARP_LES_FILTER
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
+            end do
+#endif
+
         end do
 
 
@@ -301,6 +306,8 @@ contains
         real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
         real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
+
+        real :: visc_norm2, visc_norm2_max
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -462,24 +469,27 @@ contains
                 ! Otherwise this is potentially negative (!)
                 visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
 
+#ifdef SHARP_LES_FILTER
+
                 node_sum(:,:, gnode) = visc_turb
                 node_visits(gnode) = 1
+#else
+                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+#endif
 
-!                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
-
-!            end do
-!
-!            do ln=1, opNloc
-!                gnode = u_cg_ele(ln)
-!
-!                node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
-!                node_visits(gnode) = node_visits(gnode) + 1
-
-!                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
-!
-!                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
             end do
 
+#ifndef SHARP_LES_FILTER
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
+                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
+
+                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
+            end do
+#endif
 
         end do
 
@@ -491,11 +501,11 @@ contains
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
-!                call set(sgs_visc, n, &
-!                     vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 
                 tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
                      / node_visits(n)
+
+!                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
 
                 ! L2 Norm of tensor (tensor magnitude)
@@ -510,11 +520,11 @@ contains
             end do
         else
             do n=1, num_nodes
-!                call set(sgs_visc, n, &
-!                     rho * node_vol_weighted_sum(:,:,n) &
-!                     / node_neigh_total_vol(n))
 
                 tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+
+!                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
+!                     / node_neigh_total_vol(n))
 
                 ! L2 Norm of tensor (tensor magnitude)
                 sgs_visc_val=0.0
