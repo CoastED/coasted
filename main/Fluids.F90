@@ -331,7 +331,8 @@ contains
     ! Defaults to 0.
     dump_no=0
     if(have_option("/io/last_dump_number")) then
-      call get_option("/io/last_dump_number", dump_no)
+       call get_option("/io/last_dump_number", dump_no)
+       dump_no = dump_no+1
     end if
 
 

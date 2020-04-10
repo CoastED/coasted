@@ -28,6 +28,18 @@
 #include "compile_opt_defs.h"
 
 
+! Filter types:
+! 1 = original LES filter (element averages and local peaks (quite diffuse)
+! 2 = box filter
+! 3 = hat type filter
+
+! Currently only implemented for anisotropic LES
+! Box filter not fully implemented
+
+#define FILTER_TYPE 3
+
+
+
 module dg_les
   !!< This module contains several subroutines and functions used to implement LES models
   use state_module
@@ -317,13 +329,23 @@ contains
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
 
-        real, parameter :: alpha=0.75
+        real, parameter :: alpha=0.5
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
         integer :: i
 
         print*, "In calc_dg_sgs_tensor_viscosity()"
+
+#if FILTER_TYPE == 1
+        print*, "- using original LES filter"
+#elif FILTER_TYPE == 2
+        print*, "- using box LES filter"
+#elif FILTER_TYPE == 3
+        print*, "- using hat LES filter"
+#else
+#error "Unsupported Large Eddy Simulation FILTER_TYPE"
+#endif
 
         t1=mpi_wtime()
 
@@ -473,38 +495,104 @@ contains
                 ! Otherwise this is potentially negative (!)
                 visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
 
-                sgs_unfiltered(:,:, gnode) = visc_turb
-                sgs_ele_av = sgs_ele_av + visc_turb/opNloc
+
+#if FILTER_TYPE == 1 || FILTER_TYPE == 2
+                ! Original and box filter needs the element average
+                sgs_ele_av = sgs_ele_av + visc_turb
+#else
+                ! hat-type filter averages over values co-occupying nodes
+                node_sum(:,:, gnode) = node_sum(:,:, gnode) + visc_turb
+                node_visits(gnode) = node_visits(gnode) + 1
+                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*visc_turb
+                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
+#endif
 
             end do
 
+            sgs_ele_av = sgs_ele_av / opNloc
+#if FILTER_TYPE == 1
+            ! Extra calculations for original filter
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
 
                 node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
                 node_visits(gnode) = node_visits(gnode) + 1
                 node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
-
                 node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
+
             end do
-
-
+#endif
         end do
 
+        ! For box filter, we'll just do all the stuff in here, rather than loop
+        ! round the global nodes
+#if FILTER_TYPE == 2
+        if(have_van_driest) then
+            do e=1, num_elements
+                u_cg_ele=ele_nodes(u_cg, e)
+
+                do ln=1, opNloc
+                    gnode = u_cg_ele(ln)
+                    u_grad_node = u_grad%val(:,:, gnode)
+                    y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(gnode)
+                    vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+
+                    tmp_tensor = vd_damping * rho * alpha * sgs_ele_av
+
+                    ! L2 Norm of tensor (tensor magnitude)
+                    sgs_visc_val=0.0
+                    do i=1, opDim
+                        sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                    end do
+                    sgs_visc_val = sqrt(sgs_visc_val)
+
+                    call set(sgs_visc, gnode,  tmp_tensor)
+                    call set(sgs_visc_mag, gnode, sgs_visc_val )
+                end do
+            end do
+        else
+            do e=1, num_elements
+                u_cg_ele=ele_nodes(u_cg, e)
+
+                do ln=1, opNloc
+                    gnode = u_cg_ele(ln)
+                    tmp_tensor = rho * alpha * sgs_ele_av
+
+                    ! L2 Norm of tensor (tensor magnitude)
+                    sgs_visc_val=0.0
+                    do i=1, opDim
+                        sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+                    end do
+                    sgs_visc_val = sqrt(sgs_visc_val)
+
+                    call set(sgs_visc, gnode,  tmp_tensor)
+                    call set(sgs_visc_mag, gnode, sgs_visc_val )
+                end do
+            end do
+        end if
+#endif
+
+        ! This part only works for original and hat filters
+#if FILTER_TYPE == 1 || FILTER_TYPE == 3
         ! Set final values. Two options here: one with Van Driest damping, one without.
         ! We multiply by rho here.
         if(have_van_driest) then
+
             do n=1, num_nodes
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
-
-!                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
-!                     / node_visits(n)
+#if FILTER_TYPE == 1
                 tmp_tensor = vd_damping * rho * &
                 ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
 
+#elif FILTER_TYPE == 3
+                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
+                     / node_visits(n)
+#endif
+
+!                Not using vol-weighted sums for now
 !                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
 
@@ -518,13 +606,16 @@ contains
                 call set(sgs_visc, n,  tmp_tensor)
                 call set(sgs_visc_mag, n, sgs_visc_val )
             end do
+
         else
             do n=1, num_nodes
 
-!                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+#if FILTER_TYPE == 1
                 tmp_tensor = rho * &
                 ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
-
+#elif FILTER_TYPE == 3
+                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+#endif
 !                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !                     / node_neigh_total_vol(n))
 
@@ -540,9 +631,12 @@ contains
 
             end do
         end if
+        ! End of code for original and hat filters
+#endif
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
+        call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
 
