@@ -649,7 +649,8 @@ contains
 
 
     ! ========================================================================
-    ! Split horizontal/vertical LES SGS viscosity
+    ! Use Vreman LES filter for anisotropic grids. Uses scalar
+    ! SGS eddy viscosity
     ! ========================================================================
 
     subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
@@ -669,7 +670,7 @@ contains
 
         real :: ele_vol
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mu, rho, y_plus, vd_damping
+        real :: mu, rho, y_plus
         real :: Cv
 
         integer :: state_flag, gnode
@@ -681,7 +682,7 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density
+        logical :: have_wall_distance, have_reference_density
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
@@ -717,30 +718,13 @@ contains
             FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
          end if
 
-        ! Van Driest wall damping
-        have_van_driest = have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/van_driest_damping")
 
-!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-!        ! (This will be checked for elsewhere)
-
-        if(have_van_driest) then
-            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-                mu=mviscosity%val(1,1,1)
-            else
-                FLAbort("DG_LES: must have constant or normal viscosity field")
-            end if
-
-            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
-            if (state_flag/=0) then
-                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
-            end if
-
+        ! Do we have a DistanceToWall field?
+        have_wall_distance=.false.
+        dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+        if (state_flag==0) then
+            print*, "DistanceToWall field: applying lengthscale limiting"
+            have_wall_distance=.true.
         end if
 
         ! We only use the reference density. This assumes the variation in density will be
@@ -786,7 +770,12 @@ contains
             allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
             allocate(del_sq(u%dim, num_nodes))
 
-            call vreman_filter_lengths_squared(X, del_sq)
+            ! We can apply filter-length limiting if we have a distance_to_wall field
+            if(have_wall_distance) then
+                call vreman_filter_lengths_squared(X, del_sq, dist_to_wall)
+            else
+                call vreman_filter_lengths_squared(X, del_sq)
+            end if
         end if
 
         node_sum(:,:,:)=0.0
@@ -819,14 +808,7 @@ contains
                 beta_product = beta_product + dot_product(beta(i,:),beta(i,:))
             end do
 
-            if(have_van_driest) then
-                u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
-            else
-                vd_damping = 1.0
-            end if
-            sgs_visc_val = vd_damping * rho * Cv * sqrt( B_beta/beta_product )
+            sgs_visc_val = rho * Cv * sqrt( B_beta/beta_product )
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -874,10 +856,11 @@ contains
     end subroutine les_length_scales_squared_mk2
 
 
-    ! This one is not per-element, but loops over all elements
-    subroutine vreman_filter_lengths_squared(pos, del_sq)
+    ! This one is not per-element as above, but loops over all elements
+    subroutine vreman_filter_lengths_squared(pos, del_sq, distwall)
         type(vector_field), intent(in) :: pos
         real, dimension(:,:), intent(inout) :: del_sq
+        type(scalar_field), optional, intent(in) :: distwall
 
         real, dimension(pos%dim, opNloc) :: X_val
         real, dimension(pos%dim) :: dx, del
@@ -890,12 +873,19 @@ contains
         integer :: e, n, i, gn
         integer :: num_elements, num_nodes
 
+        logical :: have_wall_distance
+
         num_elements = ele_count(pos)
         num_nodes = node_count(pos)
 
         allocate(dx_sum(pos%dim, num_nodes))
         allocate(visits(num_nodes))
 
+        ! Check for distance to wall field as argument
+        have_wall_distance=.false.
+        if(present(distwall)) have_wall_distance=.true.
+
+        ! Reset counters and sums
         visits=0
         dx_sum=0.
 
@@ -924,10 +914,18 @@ contains
             del = 2.0*dx_sum(:, n)/visits
             del_max=maxval(del)
 
-            do i=1, opDim
-                if(abs(del(i)/del_max) < 0.051) del(i)=0.05*del_max
-                del_sq(i, n) = del(i)**2.0
-            end do
+            ! Do some sensible limiting
+            if(have_wall_distance) then
+                do i=1, opDim
+                    if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
+                    del_sq(i, n) = (min(del(i), distwall%val(n)))**2.0
+                end do
+            else
+                do i=1, opDim
+                    if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
+                    del_sq(i, n) = del(i)**2.0
+                end do
+            end if
         end do
 
         deallocate(dx_sum)
