@@ -534,6 +534,7 @@ prognostic_velocity_field =
                      ## Literature symbol: Cs
                      ##
                      ## Suggested value: 0.1
+		     ## Note: If using Vremen SGS model, set this to 2.5 x Cs^2, where Cs is expected LES value
                      element smagorinsky_coefficient {
                         real
                      },
@@ -930,9 +931,11 @@ prognostic_velocity_field =
                   (
                      element isotropic { empty } |
                      element anisotropic { empty } |
-		     ## Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.
+		     ## Tackles grid anisotropic with scalar eddy viscosity. See 'An eddy-viscosity subgrid-scale model for turbulent shear flow:Algebraic theory and applications' (2004). Set Cs to 2.5 (Cs_typical)^2.
+                     element vreman { empty } |
+		     ## Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.  
                      element scotti { empty }
-                  ),
+		  ),
 
                   ## The boundaries that must satisfy the nu_sgs=0 condition (eg. no-slip)
                   element zero_subgrid_stress_boundaries {

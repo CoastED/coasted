@@ -36,7 +36,7 @@
 ! Currently only implemented for anisotropic LES
 ! Box filter not fully implemented
 
-#define FILTER_TYPE 3
+#define FILTER_TYPE 1
 
 
 
@@ -59,7 +59,8 @@ module dg_les
 
   private
 
-  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_tensor_viscosity
+  public :: calc_dg_sgs_scalar_viscosity, calc_dg_sgs_vreman_viscosity
+  public :: calc_dg_sgs_tensor_viscosity
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
@@ -647,6 +648,201 @@ contains
     end subroutine calc_dg_sgs_tensor_viscosity
 
 
+    ! ========================================================================
+    ! Split horizontal/vertical LES SGS viscosity
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: dist_to_wall
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements, n, num_nodes, ln
+
+        real :: ele_vol
+        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
+        real :: mu, rho, y_plus, vd_damping
+        real :: Cv
+
+        integer :: state_flag, gnode
+
+        real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
+        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered(:,:,:)
+        integer, allocatable, save :: node_visits(:)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_van_driest, have_reference_density
+
+        ! Constants for Van Driest damping equation
+        real, parameter :: A_plus=17.8, pow_m=2.0
+
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val
+        integer :: i, j, d
+
+
+        ! Vreman specific stuff (see A.W. Verman, 2004)
+        real, allocatable, save :: del_sq(:,:)
+        real, dimension(u%dim, u%dim) :: alpha, beta
+        real :: beta_product, B_beta
+
+        print*, "In calc_dg_sgs_vreman_viscosity()"
+
+        t1=mpi_wtime()
+
+        nullify(dist_to_wall)
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+         end if
+
+        ! Van Driest wall damping
+        have_van_driest = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/van_driest_damping")
+
+!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+!        ! (This will be checked for elsewhere)
+
+        if(have_van_driest) then
+            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+                mu=mviscosity%val(1,1,1)
+            else
+                FLAbort("DG_LES: must have constant or normal viscosity field")
+            end if
+
+            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+            if (state_flag/=0) then
+                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
+            end if
+
+        end if
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+
+        call get_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient", Cv)
+
+        print*, "Using Smagorinsky coefficient value for Vreman coefficient (approx = 2.5 x Cs^2):", Cv
+
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(node_sum)) then
+                deallocate(node_sum)
+                deallocate(node_visits)
+                deallocate(node_vol_weighted_sum)
+                deallocate(node_neigh_total_vol)
+                deallocate(sgs_unfiltered)
+                deallocate(del_sq)
+            end if
+
+            allocate(node_sum(u%dim, u%dim, num_nodes))
+            allocate(node_visits(num_nodes))
+            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
+            allocate(node_neigh_total_vol(num_nodes))
+            allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
+            allocate(del_sq(u%dim, num_nodes))
+
+            call vreman_filter_lengths_squared(X, del_sq)
+        end if
+
+        node_sum(:,:,:)=0.0
+        node_visits(:)=0
+        node_vol_weighted_sum(:,:,:)=0.0
+        node_neigh_total_vol(:)=0.0
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        ! Set final values. Two options here: one with Van Driest damping, one without.
+        ! We multiply by rho here.
+        do n=1, num_nodes
+            u_grad_node = u_grad%val(:,:,n)
+            beta=0.
+            do i=1, opDim
+                do j=1, opDim
+                    do d=1, opDim
+                        beta(i,j) = beta(i,j) + del_sq(d, n)*u_grad_node(d,i)*u_grad_node(d,j)
+                    end do
+                end do
+            end do
+
+            B_beta = beta(1,1)*beta(2,2) - beta(1,2)**2. &
+                    + beta(1,1)*beta(3,3) - beta(1,3)**2. &
+                    + beta(2,2)*beta(3,3) - beta(2,3)**2.
+
+            beta_product=0.
+            do i=1, opDim
+                beta_product = beta_product + dot_product(beta(i,:),beta(i,:))
+            end do
+
+            if(have_van_driest) then
+                u_grad_node = u_grad%val(:,:, n)
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
+                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+            else
+                vd_damping = 1.0
+            end if
+            sgs_visc_val = vd_damping * rho * Cv * sqrt( B_beta/beta_product )
+
+            call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_vreman_viscosity
+
+
 
 
     ! ========================================================================
@@ -676,4 +872,68 @@ contains
         vertSq = dx(3)**2
 
     end subroutine les_length_scales_squared_mk2
+
+
+    ! This one is not per-element, but loops over all elements
+    subroutine vreman_filter_lengths_squared(pos, del_sq)
+        type(vector_field), intent(in) :: pos
+        real, dimension(:,:), intent(inout) :: del_sq
+
+        real, dimension(pos%dim, opNloc) :: X_val
+        real, dimension(pos%dim) :: dx, del
+
+        real, allocatable :: dx_sum(:,:)
+        real :: del_max
+        integer, allocatable :: visits(:)
+        integer :: local_gnodes(opNloc)
+
+        integer :: e, n, i, gn
+        integer :: num_elements, num_nodes
+
+        num_elements = ele_count(pos)
+        num_nodes = node_count(pos)
+
+        allocate(dx_sum(pos%dim, num_nodes))
+        allocate(visits(num_nodes))
+
+        visits=0
+        dx_sum=0.
+
+        ! First go round all elements, calculate dimensions of each.
+        ! Count how many elements share each node.
+        do e=1, num_elements
+            local_gnodes = ele_nodes(pos, e)
+
+            X_val=ele_val(pos, e)
+
+            do n=1, opNloc
+                gn=local_gnodes(n)
+
+                do i=1, opDim
+                    ! Calculate largest dx, dy, dz for element nodes
+                    dx(i) = (maxval( X_val(i,:)) - minval (X_val(i,:)))
+                    dx_sum(i, gn) = dx_sum(i, gn) + dx(i)
+                end do
+                visits(gn) = visits(gn)+1
+            end do
+        end do
+
+        ! Now go around all nodes.
+        ! Now calculate del_sq (twice a
+        do n=1, num_nodes
+            del = 2.0*dx_sum(:, n)/visits
+            del_max=maxval(del)
+
+            do i=1, opDim
+                if(abs(del(i)/del_max) < 0.051) del(i)=0.05*del_max
+                del_sq(i, n) = del(i)**2.0
+            end do
+        end do
+
+        deallocate(dx_sum)
+        deallocate(visits)
+
+    end subroutine vreman_filter_lengths_squared
+
+
 end module dg_les

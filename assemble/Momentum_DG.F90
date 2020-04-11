@@ -338,7 +338,7 @@ contains
 
         ! LES - sp911
         logical :: have_les = .false., have_isotropic_les=.false.
-        logical :: have_scotti_les = .false.
+        logical :: have_vreman_les = .false.
         logical :: have_van_driest = .false., have_vel_cg=.false.
         real :: smagorinsky_coefficient
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
@@ -718,7 +718,7 @@ contains
                    end if
                    
                    ! Are we using the isotropic grid SGS eddy viscosity,
-                   ! or Scotti et al (anisotropic grids)?
+                   ! or Vreman et al (anisotropic grids)?
 
                     have_isotropic_les = &
                         have_option(trim(u%option_path)//&
@@ -726,19 +726,19 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/isotropic")
 
-                    have_scotti_les = &
+                    have_vreman_les = &
                         have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
                         &"/discontinuous_galerkin/les_model"//&
-                        &"/scotti")
+                        &"/vreman")
 
 ! Will eventually use partial_stress as an indicator
 !                    if(partial_stress) then
 
                     ! Extract scalar or vector eddy field
-                    if(have_isotropic_les .or. have_scotti_les ) then
+                    if(have_isotropic_les .or. have_vreman_les ) then
                       
-                        ewrite(1,*) "*** Scalar-based DG LES (experimental)"
+                        ewrite(1,*) "*** Scalar-based DG LES"
                         ! les eddy visc field - needs to be nullified if non-existent
                         nullify(tensor_eddy_visc)
                         eddy_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=stat)
@@ -750,7 +750,7 @@ contains
                             ewrite(1,*) "Found ScalarEddyViscosity field"
                         end if
                     else
-                        ewrite(1,*) "*** Tensor DG LES (experimental)"
+                        ewrite(1,*) "*** Tensor DG LES (Roman et al)"
                         nullify(eddy_visc)
                         tensor_eddy_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=stat)
 
@@ -900,10 +900,10 @@ contains
                 if(have_les) then
                     if(have_isotropic_les) then
                        call calc_dg_sgs_scalar_viscosity(state, x, u)
+                    elseif(have_vreman_les) then
+                       call calc_dg_sgs_vreman_viscosity(state, x, u)
                     else
                        call calc_dg_sgs_tensor_viscosity(state, x, u)
-!                    elseif (have_scotti_les) then
-!                       call calc_dg_sgs_scotti_viscosity(state, x, u)
                     end if
                 end if
 
@@ -978,7 +978,7 @@ contains
                              inverse_mass=inverse_mass, &
                              inverse_masslump=inverse_masslump, &
                              mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
-                             have_les=have_les, have_isotropic_les=have_isotropic_les, have_scotti_les=have_scotti_les, &
+                             have_les=have_les, have_isotropic_les=have_isotropic_les, have_vreman_les=have_vreman_les, &
                              smagorinsky_coefficient=smagorinsky_coefficient, &
                              eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                              prescribed_filter_width=prescribed_filter_width, &

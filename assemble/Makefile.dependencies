@@ -521,7 +521,8 @@ MeshMovement.o ../include/meshmovement.mod: MeshMovement.F90 \
    ../include/spud.mod ../include/state_module.mod \
    ../include/unittest_tools.mod ../include/vtk_interfaces.mod
 
-../include/momentum_cg.mod: Momentum_CG.o
+../include/momentum_cg.mod: Momentum_CG.o \
+   ../include/compile_opt_defs.h
 	@true
 
 Momentum_CG.o ../include/momentum_cg.mod: Momentum_CG.F90 \

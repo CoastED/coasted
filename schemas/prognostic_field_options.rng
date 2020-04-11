@@ -644,7 +644,8 @@ where N_a and N_b are shape functions of the ath and bth node respectively and m
                   <element name="smagorinsky_coefficient">
                     <a:documentation>Literature symbol: Cs
 
-Suggested value: 0.1</a:documentation>
+Suggested value: 0.1
+Note: If using Vremen SGS model, set this to 2.5 x Cs^2, where Cs is expected LES value</a:documentation>
                     <ref name="real"/>
                   </element>
                   <element name="length_scale_type">
@@ -1132,8 +1133,12 @@ suggested value 0.1</a:documentation>
                 <element name="anisotropic">
                   <empty/>
                 </element>
+                <element name="vreman">
+                  <a:documentation>Tackles grid anisotropic with scalar eddy viscosity. See 'An eddy-viscosity subgrid-scale model for turbulent shear flow:Algebraic theory and applications' (2004). Set Cs to 2.5 (Cs_typical)^2.</a:documentation>
+                  <empty/>
+                </element>
                 <element name="scotti">
-                  <a:documentation>Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.</a:documentation>
+                  <a:documentation>Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.  </a:documentation>
                   <empty/>
                 </element>
               </choice>

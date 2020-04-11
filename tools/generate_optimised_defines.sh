@@ -58,8 +58,36 @@ fi
 
 # Pull out element degrees for velocity and pressure
 
+coord_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 CoordinateMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+
+extruded_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 ExtrudedMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+
 vel_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 VelocityMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+
 pres_ele_degree=`grep -A 60 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+
+
+# Catch where Velocity or pressure polynomial degree isn't specified.
+
+if [ "$coord_ele_degree" != "" ]
+then
+    subst_degree="$coord_ele_degree"
+elif [ "$extruded_ele_degree" != "" ]
+then
+    subst_degree="$extruded_ele_degree"
+else
+    subst_degree=1
+fi
+
+if [ "$vel_ele_degree" == "" ]
+then
+    vel_ele_degree="$subst_degree"
+fi
+
+if [ "$pres_ele_degree" == "" ]
+then
+    pres_ele_degree="$subst_degree"
+fi
 
 
 # Viscosity schemes
@@ -68,8 +96,7 @@ case "$viscosity_scheme" in
     "compact_discontinuous_galerkin" ) opt_visc_scheme="SCHEME_CDG" ;;
     "bassi_rebay" ) opt_visc_scheme="SCHEME_BASSI" ;;
     "interior_penalty" ) opt_visc_scheme="SCHEME_IP" ;;
-    * ) >&2 echo "Error. scheme $viscosity_scheme not recognised or supported."
-	exit 1;;
+    * ) >&2 echo "Warning. Unrecognised scheme '$viscosity_scheme'."; opt_visc_scheme="NO_VISCOSITY_SCHEME" # Not needed for CG discretisation
 esac
 
 
