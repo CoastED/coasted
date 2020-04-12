@@ -741,7 +741,7 @@ contains
             // "spatial_discretisation/discontinuous_galerkin/les_model/" &
             // "smagorinsky_coefficient", Cs)
 
-        Cv = 2.5*(Cv**2.0)
+        Cv = 2.5*(Cs**2.0)
 
         print*, "Smagorinsky coefficient:", Cs
         print*, "=> Vreman coefficient (2.5 x Cs^2):", Cv
