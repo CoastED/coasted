@@ -696,7 +696,7 @@ contains
         ! Vreman specific stuff (see A.W. Verman, 2004)
         real, allocatable, save :: del_sq(:,:)
         real, dimension(u%dim, u%dim) :: alpha, beta
-        real :: beta_product, B_beta
+        real :: Cv, beta_product, B_beta
 
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
@@ -716,8 +716,7 @@ contains
 
         if (state_flag /= 0) then
             FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
-         end if
-
+        end if
 
         ! Do we have a DistanceToWall field?
         have_wall_distance=.false.
@@ -743,9 +742,12 @@ contains
 
         call get_option(trim(u%option_path)//"/prognostic/" &
             // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-            // "smagorinsky_coefficient", Cv)
+            // "smagorinsky_coefficient", Cs)
 
-        print*, "Using Smagorinsky coefficient value for Vreman coefficient (approx = 2.5 x Cs^2):", Cv
+        Cv = 2.5*(Cv**2.0)
+
+        print*, "Smagorinsky coefficient:", Cs
+        print*, "=> Vreman coefficient (2.5 x Cs^2):", Cv
 
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
@@ -784,7 +786,7 @@ contains
         node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
+        ! sgs_visc%val(:)=0.0
 
         ! Set final values. Two options here: one with Van Driest damping, one without.
         ! We multiply by rho here.
@@ -799,16 +801,22 @@ contains
                 end do
             end do
 
-            B_beta = beta(1,1)*beta(2,2) - beta(1,2)**2. &
-                    + beta(1,1)*beta(3,3) - beta(1,3)**2. &
-                    + beta(2,2)*beta(3,3) - beta(2,3)**2.
+            B_beta = (beta(1,1)*beta(2,2) - beta(1,2)**2.) &
+                    + (beta(1,1)*beta(3,3) - beta(1,3)**2.) &
+                    + (beta(2,2)*beta(3,3) - beta(2,3)**2.)
 
             beta_product=0.
             do i=1, opDim
                 beta_product = beta_product + dot_product(beta(i,:),beta(i,:))
             end do
 
-            sgs_visc_val = rho * Cv * sqrt( B_beta/beta_product )
+            ! If the dominator is vanishing small, then set the SGS viscosity
+            ! to zero
+            if(beta_product < 10e-10) then
+                sgs_visc_val = 0.
+            else
+                sgs_visc_val = rho * Cv * sqrt( B_beta/beta_product )
+            end if
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -882,8 +890,7 @@ contains
         allocate(visits(num_nodes))
 
         ! Check for distance to wall field as argument
-        have_wall_distance=.false.
-        if(present(distwall)) have_wall_distance=.true.
+        have_wall_distance=present(distwall)
 
         ! Reset counters and sums
         visits=0
