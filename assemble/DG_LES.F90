@@ -669,23 +669,20 @@ contains
         integer :: e, num_elements, n, num_nodes, ln
 
         real :: ele_vol
-        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mu, rho, y_plus
-        real :: Cv
+        real, dimension(u%dim, u%dim) :: u_grad_node
+        real :: rho, y_plus
+        real :: Cs
 
         integer :: state_flag, gnode
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered(:,:,:)
+        real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
         logical :: have_wall_distance, have_reference_density
-
-        ! Constants for Van Driest damping equation
-        real, parameter :: A_plus=17.8, pow_m=2.0
 
 
         ! For scalar tensor eddy visc magnitude field
@@ -761,7 +758,6 @@ contains
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-                deallocate(sgs_unfiltered)
                 deallocate(del_sq)
             end if
 
@@ -769,7 +765,6 @@ contains
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-            allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
             allocate(del_sq(u%dim, num_nodes))
 
             ! We can apply filter-length limiting if we have a distance_to_wall field
