@@ -868,21 +868,26 @@ contains
         real, dimension(pos%dim, opNloc) :: X_val
         real, dimension(pos%dim) :: dx, del
 
-        real, allocatable :: dx_sum(:,:)
-        real :: del_max
+        real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:), dx_ele_filt(:,:)
+        real, dimension(pos%dim) :: dx_neigh_sum, dx_neigh_average
+        real :: del_max, mean_val
         integer, allocatable :: visits(:)
+        integer, pointer :: neighs(:)
         integer :: local_gnodes(opNloc)
 
-        integer :: e, n, i, gn
-        integer :: num_elements, num_nodes
+        integer :: e, n, i, gn, f
+        integer :: num_elements, num_nodes, num_neighs
 
         logical :: have_wall_distance
+        real, parameter :: filter_alpha=0.75
 
         num_elements = ele_count(pos)
         num_nodes = node_count(pos)
 
         allocate(dx_sum(pos%dim, num_nodes))
         allocate(visits(num_nodes))
+        allocate(dx_ele_raw(pos%dim, num_elements))
+        allocate(dx_ele_filt(pos%dim, num_elements))
 
         ! Check for distance to wall field as argument
         have_wall_distance=present(distwall)
@@ -891,22 +896,52 @@ contains
         visits=0
         dx_sum=0.
 
-        ! First go round all elements, calculate dimensions of each.
-        ! Count how many elements share each node.
+
+        ! Raw sizes per element
+        do e=1, num_elements
+           X_val=ele_val(pos, e)
+           do i=1, opDim
+              mean_val = sum(X_val(i,:)) / opNloc
+              dx(i) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
+           end do
+           
+           dx_ele_raw(:,e) = dx(:)
+        end do
+
+        ! Filtered (smoothed) element sizes
+        do e=1, num_elements
+           X_val=ele_val(pos, e)
+           neighs=>ele_neigh(pos, e)
+           num_neighs = size(neighs)
+
+           dx_neigh_sum=0.
+           do f=1, num_neighs
+              dx_neigh_sum = dx_neigh_sum + dx_ele_raw(:,neighs(f))
+           end do
+
+           dx_neigh_average = dx_neigh_sum/num_neighs
+
+           ! Balance contribution from neighbours to filter.
+           ! Higher filter_alpha means more peaky filter shape
+           dx_ele_filt(:,e) = filter_alpha * dx_ele_raw(:,e) &
+                + (1-filter_alpha) * dx_neigh_average
+        end do
+        
+        ! Now create sizes per-node
         do e=1, num_elements
             local_gnodes = ele_nodes(pos, e)
 
             X_val=ele_val(pos, e)
 
-            do n=1, opNloc
-                gn=local_gnodes(n)
+            do i=1, opDim
 
-                do i=1, opDim
-                    ! Calculate largest dx, dy, dz for element nodes
-                    dx(i) = (maxval( X_val(i,:)) - minval (X_val(i,:)))
-                    dx_sum(i, gn) = dx_sum(i, gn) + dx(i)
-                end do
-                visits(gn) = visits(gn)+1
+               do n=1, opNloc
+                  gn=local_gnodes(n)
+                  
+                  ! Add element sizes to node size sum at each corner
+                  dx_sum(i, gn) = dx_sum(i, gn) + dx_ele_filt(i,e)
+                  visits(gn) = visits(gn)+1
+               end do
             end do
         end do
 
@@ -931,6 +966,8 @@ contains
         end do
 
         deallocate(dx_sum)
+        deallocate(dx_ele_raw)
+        deallocate(dx_ele_filt)
         deallocate(visits)
 
     end subroutine vreman_filter_lengths_squared
