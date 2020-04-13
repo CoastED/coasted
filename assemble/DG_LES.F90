@@ -879,7 +879,6 @@ contains
         integer :: num_elements, num_nodes, num_neighs
 
         logical :: have_wall_distance
-        real, parameter :: filter_alpha=0.75
 
         num_elements = ele_count(pos)
         num_nodes = node_count(pos)
@@ -919,12 +918,7 @@ contains
               dx_neigh_sum = dx_neigh_sum + dx_ele_raw(:,neighs(f))
            end do
 
-           dx_neigh_average = dx_neigh_sum/num_neighs
-
-           ! Balance contribution from neighbours to filter.
-           ! Higher filter_alpha means more peaky filter shape
-           dx_ele_filt(:,e) = filter_alpha * dx_ele_raw(:,e) &
-                + (1-filter_alpha) * dx_neigh_average
+           dx_ele_filt(:,e) = (dx_ele_raw(:,e) + dx_neigh_sum)/(num_neighs+1)
         end do
         
         ! Now create sizes per-node
