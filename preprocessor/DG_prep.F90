@@ -207,7 +207,7 @@ contains
             tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path
 
         logical :: have_les_option, have_les_visc_field
-        logical :: have_isotropic_les, have_vreman_les, have_partial_stress
+        logical :: have_isotropic_les, have_vreman_les, have_amd_les, have_partial_stress
         logical :: use_dg_velocity
 
         integer :: stat
@@ -220,6 +220,7 @@ contains
         ! Technically speaking, vreman et al (1993) LES has a scalar (isotropic)
         ! SGS viscosity, but accounts for anisotropic grid resolution.
         have_vreman_les = have_option(trim(dg_path)//"les_model/vreman")
+        have_amd_les = have_option(trim(dg_path)//"les_model/amd")
 
         have_partial_stress = have_option(trim(dg_path)//"viscosity_scheme/partial_stress_form")
 
@@ -237,7 +238,7 @@ contains
 
 
         if(have_les_option .and. .not. have_les_visc_field) then
-            if(have_isotropic_les .or. have_vreman_les) then
+            if(have_isotropic_les .or. have_vreman_les .or. have_amd_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
 
