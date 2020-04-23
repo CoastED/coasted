@@ -1082,8 +1082,6 @@ contains
         integer :: e, num_elements, n, num_nodes, ln
 
         real :: ele_vol
-        real, dimension(u%dim, u%dim) :: u_grad_node
-
         integer :: state_flag, gnode
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
@@ -1206,8 +1204,7 @@ contains
         do n=1, num_nodes
             dudx_n = u_grad%val(:,:,n)
 
-            S = 0.5 * (u_grad_node + transpose(u_grad_node))
-
+            S = 0.5 * (dudx_n + transpose(dudx_n))
             AS = 0.
             do i=1, opDim
                 do j=1, opDim
@@ -1215,8 +1212,14 @@ contains
                     (del(1,n)*dudx_n(i,1)+del(2,n)*dudx_n(i,2)+del(3,n)*dudx_n(i,3))&
                    *(del(1,n)*dudx_n(j,1)+del(2,n)*dudx_n(j,2)+del(3,n)*dudx_n(j,3))&
                    *S(i,j)
+
+! Not sure if this one isn't correct.
+!                    (del(1,n)*dudx_n(1,i)+del(2,n)*dudx_n(2,i)+del(3,n)*dudx_n(3,i))&
+!                   *(del(1,n)*dudx_n(1,j)+del(2,n)*dudx_n(2,j)+del(3,n)*dudx_n(3,j))&
+!                   *S(i,j)
                 end do
             end do
+
 
             topbit=max(-AS,0.)
 
@@ -1460,24 +1463,22 @@ contains
             do n=1, opNloc
                gn=local_gnodes(n)
 
-               do i=1, opDim
-                  ! Add element sizes to node size sum at each corner
-                  dx_sum(i, gn) = dx_sum(i, gn) + dx_ele_filt(i,e)
-               end do
+               ! Add element sizes to node size sum at each corner
+               dx_sum(:, gn) = dx_sum(:, gn) + dx_ele_filt(:,e)
                visits(gn) = visits(gn)+1
             end do
         end do
 
         ! Now go around all nodes.
         do n=1, num_nodes
-            del = 2.0*dx_sum(:, n)/visits
+            del = 2.0*dx_sum(:, n)/visits(n)
             del_max=maxval(del)
 
             ! Do some sensible limiting
             if(have_wall_distance) then
                 do i=1, opDim
                     if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
-                    del_fin(i, n) = (min(del(i), distwall%val(n)))
+                    del_fin(i, n) = (min(del(i), abs(distwall%val(n))))
                 end do
             else
                 do i=1, opDim
