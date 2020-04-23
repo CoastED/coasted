@@ -1135,7 +1135,13 @@ suggested value 0.1</a:documentation>
                 </element>
                 <element name="amd">
                   <a:documentation>Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015).</a:documentation>
-                  <empty/>
+                  <optional>
+                    <element name="poincare_constant">
+                      <a:documentation>Poincare constant. By default 0.3, which is used for second-order
+central-difference methods.</a:documentation>
+                      <ref name="real"/>
+                    </element>
+                  </optional>
                 </element>
                 <element name="vreman">
                   <a:documentation>Tackles grid anisotropic with scalar eddy viscosity. See 'An eddy-viscosity subgrid-scale model for turbulent shear flow:Algebraic theory and applications' (2004). Set Cs to 2.5 (Cs_typical)^2.</a:documentation>

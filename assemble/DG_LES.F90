@@ -1150,10 +1150,17 @@ contains
             FLAbort("DG_LES: missing reference density option in equation_of_state")
         end if
 
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
 
-        call get_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-            // "poincare_constant", Cpoin)
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
 
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
