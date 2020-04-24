@@ -133,6 +133,7 @@ contains
             call add_option(trim(opt_path)//"diagnostic/algorithm/solver/never_ignore_solver_failures", stat)
             call add_option(trim(opt_path)//"diagnostic/algorithm/solver/diagnostics", stat)
             call add_option(trim(opt_path)//"diagnostic/algorithm/solver/diagnostics/monitors", stat)
+            call add_option(trim(opt_path)//"diagnostic/algorithm/solver/cache_solver_context", stat)
 
             ! Diagnostic outputs, etc.
 
