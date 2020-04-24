@@ -1143,14 +1143,6 @@ central-difference methods.</a:documentation>
                     </element>
                   </optional>
                 </element>
-                <element name="vreman">
-                  <a:documentation>Tackles grid anisotropic with scalar eddy viscosity. See 'An eddy-viscosity subgrid-scale model for turbulent shear flow:Algebraic theory and applications' (2004). Set Cs to 2.5 (Cs_typical)^2.</a:documentation>
-                  <empty/>
-                </element>
-                <element name="scotti">
-                  <a:documentation>Use anisotropic lengthscales from Scotti et al, 'Generalized Smagorinsky for anisotropic grids' (1993). Calculates scalar SGS viscosity, so no tensorEddyViscosity field produced. Only requires C_s.  </a:documentation>
-                  <empty/>
-                </element>
               </choice>
               <optional>
                 <element name="zero_subgrid_stress_boundaries">

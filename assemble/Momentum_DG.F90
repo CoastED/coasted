@@ -338,7 +338,7 @@ contains
 
         ! LES - sp911
         logical :: have_les = .false., have_isotropic_les=.false.
-        logical :: have_vreman_les = .false., have_amd_les=.false.
+        logical :: have_amd_les=.false.
         logical :: have_van_driest = .false., have_vel_cg=.false.
         real :: smagorinsky_coefficient
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
@@ -718,7 +718,7 @@ contains
                    end if
                    
                    ! Are we using the isotropic grid SGS eddy viscosity,
-                   ! or Vreman et al (anisotropic grids)?
+                   ! or AMD (anisotropic grids)?
 
                     have_isotropic_les = &
                         have_option(trim(u%option_path)//&
@@ -726,11 +726,6 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/isotropic")
 
-                    have_vreman_les = &
-                        have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/vreman")
 
                     have_amd_les = &
                         have_option(trim(u%option_path)//&
@@ -743,7 +738,7 @@ contains
 !                    if(partial_stress) then
 
                     ! Extract scalar or vector eddy field
-                    if(have_isotropic_les .or. have_vreman_les &
+                    if(have_isotropic_les &
                         .or. have_amd_les ) then
                       
                         ewrite(1,*) "*** Scalar-based DG LES"
@@ -908,8 +903,6 @@ contains
                 if(have_les) then
                     if(have_isotropic_les) then
                        call calc_dg_sgs_scalar_viscosity(state, x, u)
-                    elseif(have_vreman_les) then
-                       call calc_dg_sgs_vreman_viscosity(state, x, u)
                     elseif(have_amd_les) then
                        call calc_dg_sgs_amd_viscosity(state, x, u)
                     else
@@ -989,7 +982,7 @@ contains
                              inverse_masslump=inverse_masslump, &
                              mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                              have_les=have_les, have_isotropic_les=have_isotropic_les, &
-                             have_vreman_les=have_vreman_les, have_amd_les=have_amd_les,&
+                             have_amd_les=have_amd_les,&
                              smagorinsky_coefficient=smagorinsky_coefficient, &
                              eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                              prescribed_filter_width=prescribed_filter_width, &
