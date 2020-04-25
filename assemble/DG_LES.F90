@@ -449,7 +449,7 @@ contains
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
-        
+
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
 
@@ -666,9 +666,8 @@ contains
         type(tensor_field), pointer :: mviscosity
         type(tensor_field) :: u_grad
 
-        integer :: e, num_elements, n, num_nodes, ln
+        integer :: e, num_elements, n, num_nodes
 
-        real :: ele_vol
         integer :: state_flag, gnode
 
         integer :: not_first_call
@@ -689,17 +688,20 @@ contains
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
-        integer :: i, j, d
+        integer :: i, j
 
         ! AMD stuff
         real, allocatable, save :: del(:,:)
-        real, dimension(u%dim, u%dim) :: S, dudx_n, del_gradu, B
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
         real :: BS, topbit, btmbit, Cpoin
 
 
         print*, "In calc_dg_sgs_amd_viscosity()"
 
         t1=mpi_wtime()
+
+        allocate( S(opDim,opDim), dudx_n(opDim,opDim), &
+            del_gradu(opDim,opDim), B(opDim,opDim) )
 
         nullify(dist_to_wall)
         nullify(mviscosity)
@@ -798,14 +800,15 @@ contains
 
             S = 0.5 * (dudx_n + transpose(dudx_n))
 
-            do concurrent (i=1:opDim, j=1:opDim)
-                del_gradu(i,j) = del(j,n) * dudx_n(j,i)
+            do i=1, opDim
+                do j=1, opDim
+                    del_gradu(i,j) = del(j,n) * dudx_n(j,i)
+                end do
             end do
 
             B = matmul(transpose(del_gradu), del_gradu)
 
             BS=0.0
-
             do i=1, opDim
                 do j=1, opDim
                     BS = BS+B(i,j)*S(i,j)
@@ -859,6 +862,7 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
+        deallocate( S, dudx_n, del_gradu, B )
 
         t2=mpi_wtime()
 
