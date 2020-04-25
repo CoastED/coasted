@@ -650,7 +650,7 @@ contains
 
     ! ========================================================================
     ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
-    ! See Rozema et al, Physics of Fluids, 2015.
+    ! See Rozema et al, Computational Methods in Engineering, 2020.
     ! ========================================================================
 
     subroutine calc_dg_sgs_amd_viscosity(state, x, u)
@@ -671,6 +671,9 @@ contains
         real :: ele_vol
         integer :: state_flag, gnode
 
+        integer :: not_first_call
+        real :: blend
+
         real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
         real, allocatable,save:: node_sum(:, :,:)
         integer, allocatable, save :: node_visits(:)
@@ -688,11 +691,11 @@ contains
         real :: sgs_visc_val
         integer :: i, j, d
 
-
         ! AMD stuff
         real, allocatable, save :: del(:,:)
-        real, dimension(u%dim, u%dim) :: S, dudx_n
-        real :: AS, topbit, btmbit, Cpoin
+        real, dimension(u%dim, u%dim) :: S, dudx_n, del_gradu, B
+        real :: BS, topbit, btmbit, Cpoin
+
 
         print*, "In calc_dg_sgs_amd_viscosity()"
 
@@ -784,45 +787,69 @@ contains
         node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
-        ! sgs_visc%val(:)=0.0
+        if( not_first_call==0 ) then
+            sgs_visc%val(:)=0.0
+        end if
+        not_first_call=1
 
-        ! Set final values. Two options here: one with Van Driest damping, one without.
-        ! We multiply by rho here.
+        ! Set final values. We multiply by rho here.
         do n=1, num_nodes
             dudx_n = u_grad%val(:,:,n)
 
             S = 0.5 * (dudx_n + transpose(dudx_n))
-            AS = 0.
+
+            do concurrent (i=1:opDim, j=1:opDim)
+                del_gradu(i,j) = del(j,n) * dudx_n(j,i)
+            end do
+
+            B = matmul(transpose(del_gradu), del_gradu)
+
+            BS=0.0
+
             do i=1, opDim
                 do j=1, opDim
-                    AS = AS + &
-                    (del(1,n)*dudx_n(i,1)+del(2,n)*dudx_n(i,2)+del(3,n)*dudx_n(i,3))&
-                   *(del(1,n)*dudx_n(j,1)+del(2,n)*dudx_n(j,2)+del(3,n)*dudx_n(j,3))&
-                   *S(i,j)
-
-! Not sure if this one isn't correct.
-!                    (del(1,n)*dudx_n(1,i)+del(2,n)*dudx_n(2,i)+del(3,n)*dudx_n(3,i))&
-!                   *(del(1,n)*dudx_n(1,j)+del(2,n)*dudx_n(2,j)+del(3,n)*dudx_n(3,j))&
-!                   *S(i,j)
+                    BS = BS+B(i,j)*S(i,j)
                 end do
             end do
 
+            topbit = rho * Cpoin * max(-BS, 0.)
 
-            topbit=max(-AS,0.)
+!            AS = 0.
+!            do i=1, opDim
+!                do j=1, opDim
+!                    AS = AS + &
+!                    (del(1,n)*dudx_n(i,1)+del(2,n)*dudx_n(i,2)+del(3,n)*dudx_n(i,3))&
+!                   *(del(1,n)*dudx_n(j,1)+del(2,n)*dudx_n(j,2)+del(3,n)*dudx_n(j,3))&
+!                   *S(i,j)
+!
+!! Not sure if this one isn't correct.
+!!                    (del(1,n)*dudx_n(1,i)+del(2,n)*dudx_n(2,i)+del(3,n)*dudx_n(3,i))&
+!!                   *(del(1,n)*dudx_n(1,j)+del(2,n)*dudx_n(2,j)+del(3,n)*dudx_n(3,j))&
+!!                   *S(i,j)
+!                end do
+!            end do
+!
+!
+!            topbit=max(-AS,0.)
 
             btmbit=0.
             do i=1, opDim
                 do j=1, opDim
-                    btmbit = btmbit + dudx_n(i,j)*dudx_n(i,j)
+                    btmbit = btmbit + dudx_n(i,j)**2
                 end do
             end do
 
             ! If the dominator is vanishing small, then set the SGS viscosity
             ! to zero
+            ! We use a randomly perturbated blend between old and new values.
+            !blend=0.5*rand()+0.5
+            blend=0.75
             if(btmbit < 10e-10) then
-                sgs_visc_val = 0.
+                sgs_visc_val = 0. + (1-blend)* sgs_visc%val(n)
             else
-                sgs_visc_val = rho * Cpoin * topbit / btmbit
+                sgs_visc_val = blend * (topbit / btmbit) &
+                    + (1-blend)*sgs_visc%val(n)
+
             end if
 
             call set(sgs_visc, n,  sgs_visc_val)
