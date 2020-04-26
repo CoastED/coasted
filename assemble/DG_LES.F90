@@ -668,13 +668,13 @@ contains
 
         integer :: e, num_elements, n, num_nodes
 
-        integer :: state_flag, gnode
+        integer :: state_flag
 
         integer :: not_first_call
         real :: blend
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:)
+        real, allocatable,save:: node_sum(:)
         integer, allocatable, save :: node_visits(:)
         real, allocatable, save :: node_weight_sum(:)
 
@@ -684,11 +684,13 @@ contains
         logical :: have_wall_distance, have_reference_density
 
         ! Reference density
-        real :: rho
+        real :: rho, mu
 
         ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val
-        integer :: i, j
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, ln, gnode
+
+        integer, allocatable :: u_cg_ele(:)
 
         ! AMD stuff
         real, allocatable, save :: del(:,:)
@@ -700,8 +702,9 @@ contains
 
         t1=mpi_wtime()
 
-        allocate( S(opDim,opDim), dudx_n(opDim,opDim), &
-            del_gradu(opDim,opDim), B(opDim,opDim) )
+        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+                 del_gradu(opDim,opDim), B(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
 
         nullify(dist_to_wall)
         nullify(mviscosity)
@@ -718,6 +721,17 @@ contains
         if (state_flag /= 0) then
             FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
         end if
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
 
         ! Do we have a DistanceToWall field?
         have_wall_distance=.false.
@@ -768,7 +782,7 @@ contains
                 deallocate(del)
             end if
 
-            allocate(node_sum(u%dim, u%dim, num_nodes))
+            allocate(node_sum(num_nodes))
             allocate(node_weight_sum(num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
@@ -783,7 +797,7 @@ contains
             end if
         end if
 
-        node_sum(:,:,:)=0.0
+        node_sum(:)=0.0
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
@@ -794,67 +808,69 @@ contains
         end if
         not_first_call=1
 
-        ! Set final values. We multiply by rho here.
+
+        do e=1, num_elements
+            u_cg_ele=ele_nodes(u_cg, e)
+
+            sgs_ele_av=0.0
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                dudx_n = u_grad%val(:,:,gnode)
+
+                S = 0.5 * (dudx_n + transpose(dudx_n))
+
+                do i=1, opDim
+                    do j=1, opDim
+                        del_gradu(i,j) = del(j,gnode) * dudx_n(j,i)
+                    end do
+                end do
+
+                B = matmul(transpose(del_gradu), del_gradu)
+
+                BS=0.0
+                do i=1, opDim
+                    do j=1, opDim
+                        BS = BS+B(i,j)*S(i,j)
+                    end do
+                end do
+
+                topbit = rho * Cpoin * max(-BS, 0.)
+
+
+                btmbit=0.
+                do i=1, opDim
+                    do j=1, opDim
+                        btmbit = btmbit + dudx_n(i,j)**2
+                    end do
+                end do
+
+                ! If the dominator is vanishing small, then set the SGS viscosity
+                ! to zero
+
+                if(btmbit < 10e-10) then
+                    sgs_visc_val = 0.
+                else
+                    sgs_visc_val = max(topbit/btmbit, mu*10e5)
+                end if
+
+                sgs_ele_av = sgs_ele_av + sgs_visc_val
+            end do
+
+            sgs_ele_av = sgs_ele_av / opNloc
+
+            ! Give each corner node the average
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
+            end do
+
+        end do
+
+        ! Set final values.
         do n=1, num_nodes
-            dudx_n = u_grad%val(:,:,n)
-
-            S = 0.5 * (dudx_n + transpose(dudx_n))
-
-            do i=1, opDim
-                do j=1, opDim
-                    del_gradu(i,j) = del(j,n) * dudx_n(j,i)
-                end do
-            end do
-
-            B = matmul(transpose(del_gradu), del_gradu)
-
-            BS=0.0
-            do i=1, opDim
-                do j=1, opDim
-                    BS = BS+B(i,j)*S(i,j)
-                end do
-            end do
-
-            topbit = rho * Cpoin * max(-BS, 0.)
-
-!            AS = 0.
-!            do i=1, opDim
-!                do j=1, opDim
-!                    AS = AS + &
-!                    (del(1,n)*dudx_n(i,1)+del(2,n)*dudx_n(i,2)+del(3,n)*dudx_n(i,3))&
-!                   *(del(1,n)*dudx_n(j,1)+del(2,n)*dudx_n(j,2)+del(3,n)*dudx_n(j,3))&
-!                   *S(i,j)
-!
-!! Not sure if this one isn't correct.
-!!                    (del(1,n)*dudx_n(1,i)+del(2,n)*dudx_n(2,i)+del(3,n)*dudx_n(3,i))&
-!!                   *(del(1,n)*dudx_n(1,j)+del(2,n)*dudx_n(2,j)+del(3,n)*dudx_n(3,j))&
-!!                   *S(i,j)
-!                end do
-!            end do
-!
-!
-!            topbit=max(-AS,0.)
-
-            btmbit=0.
-            do i=1, opDim
-                do j=1, opDim
-                    btmbit = btmbit + dudx_n(i,j)**2
-                end do
-            end do
-
-            ! If the dominator is vanishing small, then set the SGS viscosity
-            ! to zero
-            ! We use a randomly perturbated blend between old and new values.
-            !blend=0.5*rand()+0.5
-            blend=0.75
-            if(btmbit < 10e-10) then
-                sgs_visc_val = 0. + (1-blend)* sgs_visc%val(n)
-            else
-                sgs_visc_val = blend * (topbit / btmbit) &
-                    + (1-blend)*sgs_visc%val(n)
-
-            end if
-
+            sgs_visc_val = node_sum(n) / node_visits(n)
             call set(sgs_visc, n,  sgs_visc_val)
         end do
 
@@ -862,7 +878,7 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
-        deallocate( S, dudx_n, del_gradu, B )
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele )
 
         t2=mpi_wtime()
 
@@ -907,8 +923,8 @@ contains
         real, dimension(:,:), intent(inout) :: del_fin
         type(scalar_field), optional, intent(in) :: distwall
 
-        real, dimension(:,:), allocatable :: X_val
-        real, dimension(:), allocatable :: dx, del
+        real, dimension(pos%dim, opNloc) :: X_val
+        real, dimension(pos%dim) :: dx, del
 
         real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:), dx_ele_filt(:,:)
         real, dimension(pos%dim) :: dx_neigh_sum, dx_neigh_average
@@ -929,14 +945,9 @@ contains
         allocate(visits(num_nodes))
         allocate(dx_ele_raw(pos%dim, num_elements))
         allocate(dx_ele_filt(pos%dim, num_elements))
-        allocate(X_val(pos%dim, opNloc))
-        allocate(dx(pos%dim))
-        allocate(del(pos%dim))
 
         ! Check for distance to wall field as argument
-        ! have_wall_distance=present(distwall)
-        ! turn off for now.
-        have_wall_distance=.false.
+        have_wall_distance=present(distwall)
 
         ! Reset counters and sums
         visits=0
@@ -1006,8 +1017,6 @@ contains
         deallocate(dx_ele_raw)
         deallocate(dx_ele_filt)
         deallocate(visits)
-        deallocate(X_val)
-        deallocate(del, dx)
 
     end subroutine amd_filter_lengths
 
