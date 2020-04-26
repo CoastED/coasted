@@ -854,7 +854,7 @@ contains
                 if(btmbit < 10e-10) then
                     sgs_visc_val = 0.
                 else
-                    sgs_visc_val = max(topbit/btmbit, mu*10e5)
+                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
                 end if
 
                 ! Contributions of local node to shared node value.
