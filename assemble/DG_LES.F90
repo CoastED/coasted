@@ -854,7 +854,7 @@ contains
                 if(btmbit < 10e-10) then
                     sgs_visc_val = 0.
                 else
-                    sgs_visc_val = min(topbit/btmbit, mu*10e4)
+                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
                 end if
 
                 ! Contributions of local node to shared node value.
@@ -878,12 +878,12 @@ contains
         do n=1, num_nodes
             ! Blend of element-averaged value and local node averaged value
             ! blend=0...1 (0=peaky, 1=smoothed)
-            blend=1.0
+            blend=0.5
             sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
                          / node_visits(n)
 
             ! Hard limit again.
-            sgs_visc_val = min(sgs_visc_val, mu*10e4)
+            sgs_visc_val = min(sgs_visc_val, mu*10e5)
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -961,8 +961,10 @@ contains
         allocate(dx_ele_filt(pos%dim, num_elements))
 
         ! Check for distance to wall field as argument
-        have_wall_distance=present(distwall)
-
+        ! have_wall_distance=present(distwall)
+        ! Turning off wall distance effects
+        have_wall_distance=.false.
+        
         ! Reset counters and sums
         visits=0
         dx_sum=0.
