@@ -907,8 +907,8 @@ contains
         real, dimension(:,:), intent(inout) :: del_fin
         type(scalar_field), optional, intent(in) :: distwall
 
-        real, dimension(pos%dim, opNloc) :: X_val
-        real, dimension(pos%dim) :: dx, del
+        real, dimension(:,:), allocatable :: X_val
+        real, dimension(:), allocatable :: dx, del
 
         real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:), dx_ele_filt(:,:)
         real, dimension(pos%dim) :: dx_neigh_sum, dx_neigh_average
@@ -929,9 +929,14 @@ contains
         allocate(visits(num_nodes))
         allocate(dx_ele_raw(pos%dim, num_elements))
         allocate(dx_ele_filt(pos%dim, num_elements))
+        allocate(X_val(pos%dim, opNloc))
+        allocate(dx(pos%dim))
+        allocate(del(pos%dim))
 
         ! Check for distance to wall field as argument
-        have_wall_distance=present(distwall)
+        ! have_wall_distance=present(distwall)
+        ! turn off for now.
+        have_wall_distance=.false.
 
         ! Reset counters and sums
         visits=0
@@ -1001,6 +1006,8 @@ contains
         deallocate(dx_ele_raw)
         deallocate(dx_ele_filt)
         deallocate(visits)
+        deallocate(X_val)
+        deallocate(del, dx)
 
     end subroutine amd_filter_lengths
 
