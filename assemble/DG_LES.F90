@@ -674,7 +674,7 @@ contains
         real :: blend
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:)
+        real, allocatable,save:: node_sum(:), node_peaky_sum(:)
         integer, allocatable, save :: node_visits(:)
         real, allocatable, save :: node_weight_sum(:)
 
@@ -775,6 +775,7 @@ contains
         if(new_mesh_connectivity) then
             if(allocated(node_sum)) then
                 deallocate(node_sum)
+                deallocate(node_peaky_sum)
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_weight_sum)
@@ -783,6 +784,7 @@ contains
             end if
 
             allocate(node_sum(num_nodes))
+            allocate(node_peaky_sum(num_nodes))
             allocate(node_weight_sum(num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
@@ -798,6 +800,7 @@ contains
         end if
 
         node_sum(:)=0.0
+        node_peaky_sum(:)=0.0
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
@@ -854,6 +857,9 @@ contains
                     sgs_visc_val = max(topbit/btmbit, mu*10e5)
                 end if
 
+                ! Contributions of local node to shared node value.
+                node_peaky_sum(gnode) = node_peaky_sum(gnode) + sgs_visc_val
+
                 sgs_ele_av = sgs_ele_av + sgs_visc_val
             end do
 
@@ -870,7 +876,11 @@ contains
 
         ! Set final values.
         do n=1, num_nodes
-            sgs_visc_val = node_sum(n) / node_visits(n)
+            ! Blend of element-averaged value and local node averaged value
+            ! blend=0...1 (0=peaky, 1=smoothed)
+            blend=0.5
+            sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
+                         / node_visits(n)
             call set(sgs_visc, n,  sgs_visc_val)
         end do
 
