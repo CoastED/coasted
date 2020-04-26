@@ -854,7 +854,7 @@ contains
                 if(btmbit < 10e-10) then
                     sgs_visc_val = 0.
                 else
-                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
+                    sgs_visc_val = min(topbit/btmbit, mu*10e4)
                 end if
 
                 ! Contributions of local node to shared node value.
@@ -878,9 +878,13 @@ contains
         do n=1, num_nodes
             ! Blend of element-averaged value and local node averaged value
             ! blend=0...1 (0=peaky, 1=smoothed)
-            blend=0.5
+            blend=1.0
             sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
                          / node_visits(n)
+
+            ! Hard limit again.
+            sgs_visc_val = min(sgs_visc_val, mu*10e4)
+
             call set(sgs_visc, n,  sgs_visc_val)
         end do
 
