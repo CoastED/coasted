@@ -308,10 +308,8 @@ contains
 
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
-        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
         real :: mag_strain_horz, mag_strain_vert, mag_strain_r
         real :: sgs_horz, sgs_vert, sgs_r
-        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
         real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
@@ -336,6 +334,13 @@ contains
         real :: sgs_visc_val
         integer :: i
 
+        real, dimension(:,:), allocatable :: u_grad_node, rate_of_strain
+        real, dimension(:,:), allocatable :: sgs_ele_av, visc_turb, tmp_tensor
+
+!        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
+!        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
+
+        
         print*, "In calc_dg_sgs_tensor_viscosity()"
 
 #if FILTER_TYPE == 1
@@ -353,6 +358,11 @@ contains
         nullify(dist_to_wall)
         nullify(mviscosity)
 
+        ! Allocating work arrays
+        allocate(u_grad_node(u%dim,u%dim), rate_of_strain(u%dim,u%dim))
+        allocate(sgs_ele_av(u%dim,u%dim), visc_turb(u%dim,u%dim))
+        allocate(tmp_tensor(u%dim,u%dim))
+      
         ! Velocity projected to continuous Galerkin
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
@@ -640,6 +650,7 @@ contains
         call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
+        deallocate(u_grad_node,rate_of_strain,sgs_ele_av,visc_turb,tmp_tensor)
 
         t2=mpi_wtime()
 
