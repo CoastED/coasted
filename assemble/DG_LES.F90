@@ -681,7 +681,6 @@ contains
 
         integer :: state_flag
 
-        integer :: not_first_call
         real :: blend
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
@@ -817,11 +816,7 @@ contains
         node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
-        if( not_first_call==0 ) then
-            sgs_visc%val(:)=0.0
-        end if
-        not_first_call=1
-
+        sgs_visc%val(:)=0.0
 
         do e=1, num_elements
             u_cg_ele=ele_nodes(u_cg, e)
