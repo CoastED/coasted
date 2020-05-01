@@ -669,7 +669,6 @@ contains
         type(state_type), intent(in) :: state
 
         type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: dist_to_wall
         type(scalar_field), pointer :: sgs_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
@@ -691,7 +690,7 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_wall_distance, have_reference_density
+        logical :: have_reference_density
 
         ! Reference density
         real :: rho, mu
@@ -716,7 +715,6 @@ contains
                  del_gradu(opDim,opDim), B(opDim,opDim) )
         allocate( u_cg_ele(opNloc) )
 
-        nullify(dist_to_wall)
         nullify(mviscosity)
 
         ! Velocity projected to continuous Galerkin
@@ -742,14 +740,6 @@ contains
             FLAbort("DG_LES: must have constant or normal viscosity field")
         end if
 
-
-        ! Do we have a DistanceToWall field?
-        have_wall_distance=.false.
-        dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
-        if (state_flag==0) then
-            print*, "DistanceToWall field: applying lengthscale limiting"
-            have_wall_distance=.true.
-        end if
 
         ! We only use the reference density. This assumes the variation in density will be
         ! low (ie < 10%)
@@ -801,12 +791,7 @@ contains
             allocate(node_neigh_total_vol(num_nodes))
             allocate(del(u%dim, num_nodes))
 
-            ! We can apply filter-length limiting if we have a distance_to_wall field
-            if(have_wall_distance) then
-                call amd_filter_lengths(X, del, dist_to_wall)
-            else
-                call amd_filter_lengths(X, del)
-            end if
+            call amd_filter_lengths(X, del)
         end if
 
         node_sum(:)=0.0
@@ -889,7 +874,8 @@ contains
                          / node_visits(n)
 
             ! Hard limit again.
-            sgs_visc_val = min(sgs_visc_val, mu*10e5)
+            ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
+            if(sgs_visc_val > mu*10e4) sgs_visc_val=0.
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -938,10 +924,9 @@ contains
 
 
     ! This one is not per-element as above, but loops over all elements
-    subroutine amd_filter_lengths(pos, del_fin, distwall)
+    subroutine amd_filter_lengths(pos, del_fin)
         type(vector_field), intent(in) :: pos
         real, dimension(:,:), intent(inout) :: del_fin
-        type(scalar_field), optional, intent(in) :: distwall
 
         real, dimension(pos%dim, opNloc) :: X_val
         real, dimension(pos%dim) :: dx, del
@@ -956,8 +941,6 @@ contains
         integer :: e, n, i, gn, f
         integer :: num_elements, num_nodes, num_neighs
 
-        logical :: have_wall_distance
-
         num_elements = ele_count(pos)
         num_nodes = node_count(pos)
 
@@ -966,11 +949,6 @@ contains
         allocate(dx_ele_raw(pos%dim, num_elements))
         allocate(dx_ele_filt(pos%dim, num_elements))
 
-        ! Check for distance to wall field as argument
-        ! have_wall_distance=present(distwall)
-        ! Turning off wall distance effects
-        have_wall_distance=.false.
-        
         ! Reset counters and sums
         visits=0
         dx_sum=0.
@@ -1021,18 +999,10 @@ contains
             del = 2.0*dx_sum(:, n)/visits(n)
             del_max=maxval(del)
 
-            ! Do some sensible limiting
-            if(have_wall_distance) then
-                do i=1, opDim
-                    if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
-                    del_fin(i, n) = (min(del(i), abs(distwall%val(n))))
-                end do
-            else
-                do i=1, opDim
-                    if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
-                    del_fin(i, n) = del(i)
-                end do
-            end if
+            do i=1, opDim
+                ! if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
+                del_fin(i, n) = del(i)
+            end do
         end do
 
         deallocate(dx_sum)

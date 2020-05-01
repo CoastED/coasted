@@ -213,6 +213,8 @@ contains
 
         integer :: stat
 
+        character(len=*), parameter :: zerothPath="/geometry/mesh::ZerothMesh"
+
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
         mag_tensor_eddy_visc_path= trim(phase_path)//"scalar_field::TensorEddyViscosityMagnitude/"
@@ -235,6 +237,12 @@ contains
 !        if(.not. have_partial_stress) then
 !            FLExit("Error. Partial stress must be selected for Large Eddy Simulation")
 !        end if
+
+        ! For AMD LES mesh we require the zeroth-order mesh
+!        if(have_amd_les .and. .not. have_option(trim(zerothPath)) then
+!            call add_option(trim(zerothPath), stat)
+!
+!            call set_option
 
 
         if(have_les_option .and. .not. have_les_visc_field) then
