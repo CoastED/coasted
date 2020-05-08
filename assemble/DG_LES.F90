@@ -922,7 +922,8 @@ contains
         type(vector_field), intent(in) :: pos
         integer :: ele
         real, intent(inout) :: del(:)
-
+        real, dimension(opDim) :: dx
+        
         real, dimension(opDim, opNloc) :: X_val
         real :: mean_val
         integer :: i
@@ -932,10 +933,13 @@ contains
         ! Calculate largest dx, dy, dz for element nodes
         X_val=ele_val(pos, ele)
         do i=1, opDim
-            mean_val = sum(X_val(i,:)) / opNloc
-            del(i) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
+            dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
         end do
 
+        ! Concentrate on vertical anisotropy.
+        del(1:2) = sqrt( dx(1)**2.+dx(2)**2. )
+        del(3) = dx(3)
+        
     end subroutine amd_length_ele
 
 
