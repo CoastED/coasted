@@ -486,8 +486,8 @@ contains
                                      + 4.0* rate_of_strain(1,2)**2.0 )
 
                 mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-                     		     + 2.0* rate_of_strain(3,3)**2.0 &
-                     		     + 4.0* rate_of_strain(3,2)**2.0 )
+                                 + 2.0* rate_of_strain(3,3)**2.0 &
+                                 + 4.0* rate_of_strain(3,2)**2.0 )
 
                 mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
 
@@ -682,7 +682,6 @@ contains
 
         real :: blend
 
-        real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
         real, allocatable,save:: node_sum(:), node_peaky_sum(:)
         integer, allocatable, save :: node_visits(:)
         real, allocatable, save :: node_weight_sum(:)
@@ -702,7 +701,7 @@ contains
         integer, allocatable :: u_cg_ele(:)
 
         ! AMD stuff
-        real, allocatable, save :: del(:,:)
+        real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
         real :: BS, topbit, btmbit, Cpoin
 
@@ -712,7 +711,8 @@ contains
         t1=mpi_wtime()
 
         allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
-                 del_gradu(opDim,opDim), B(opDim,opDim) )
+                 del_gradu(opDim,opDim), B(opDim,opDim), &
+                 dx(opDim) )
         allocate( u_cg_ele(opNloc) )
 
         nullify(mviscosity)
@@ -777,34 +777,28 @@ contains
                 deallocate(node_sum)
                 deallocate(node_peaky_sum)
                 deallocate(node_visits)
-                deallocate(node_vol_weighted_sum)
                 deallocate(node_weight_sum)
-                deallocate(node_neigh_total_vol)
-                deallocate(del)
             end if
 
             allocate(node_sum(num_nodes))
             allocate(node_peaky_sum(num_nodes))
             allocate(node_weight_sum(num_nodes))
             allocate(node_visits(num_nodes))
-            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
-            allocate(node_neigh_total_vol(num_nodes))
-            allocate(del(u%dim, num_nodes))
 
-            call amd_filter_lengths(X, del)
         end if
 
         node_sum(:)=0.0
         node_peaky_sum(:)=0.0
         node_visits(:)=0
-        node_vol_weighted_sum(:,:,:)=0.0
-        node_neigh_total_vol(:)=0.0
+
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
 
         do e=1, num_elements
             u_cg_ele=ele_nodes(u_cg, e)
+
+            call amd_length_ele(x, e, dx)
 
             sgs_ele_av=0.0
             do ln=1, opNloc
@@ -816,7 +810,7 @@ contains
 
                 do i=1, opDim
                     do j=1, opDim
-                        del_gradu(i,j) = del(j,gnode) * dudx_n(j,i)
+                        del_gradu(i,j) = dx(j) * dudx_n(j,i)
                     end do
                 end do
 
@@ -845,7 +839,8 @@ contains
                 if(btmbit < 10e-10) then
                     sgs_visc_val = 0.
                 else
-                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
+                    sgs_visc_val = topbit/btmbit
+                    if(sgs_visc_val > mu*10e5) sgs_visc_val=0.
                 end if
 
                 ! Contributions of local node to shared node value.
@@ -875,7 +870,7 @@ contains
 
             ! Hard limit again.
             ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
-            if(sgs_visc_val > mu*10e4) sgs_visc_val=0.
+            if(sgs_visc_val > mu*10e5) sgs_visc_val=0.
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -884,7 +879,7 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
-        deallocate( S, dudx_n, del_gradu, B, u_cg_ele )
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
 
         t2=mpi_wtime()
 
@@ -921,6 +916,27 @@ contains
         vertSq = dx(3)**2
 
     end subroutine les_length_scales_squared_mk2
+
+
+    subroutine amd_length_ele(pos, ele, del)
+        type(vector_field), intent(in) :: pos
+        integer :: ele
+        real, intent(inout) :: del(:)
+
+        real, dimension(opDim, opNloc) :: X_val
+        real :: mean_val
+        integer :: i
+
+        X_val=ele_val(pos, ele)
+
+        ! Calculate largest dx, dy, dz for element nodes
+        X_val=ele_val(pos, ele)
+        do i=1, opDim
+            mean_val = sum(X_val(i,:)) / opNloc
+            del(i) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
+        end do
+
+    end subroutine amd_length_ele
 
 
     ! This one is not per-element as above, but loops over all elements
@@ -1011,6 +1027,55 @@ contains
         deallocate(visits)
 
     end subroutine amd_filter_lengths
+
+
+
+    ! This one is per-element
+    subroutine amd_filter_lengths_ele(pos, del_fin)
+        type(vector_field), intent(in) :: pos
+        real, dimension(:,:), intent(inout) :: del_fin
+
+        real, allocatable :: del_ele_raw(:, :)
+
+        integer, pointer :: neighs(:)
+
+        real, dimension(pos%dim, opNloc) :: X_val
+        real :: mean_val, dx_neigh_sum(pos%dim)
+
+        integer :: e, n, i, gn, f
+        integer :: num_elements, num_neighs
+
+        num_elements = ele_count(pos)
+
+        allocate(del_ele_raw(pos%dim, num_elements))
+
+        ! Raw sizes per element
+        do e=1, num_elements
+           X_val=ele_val(pos, e)
+           do i=1, opDim
+              mean_val = sum(X_val(i,:)) / opNloc
+              del_ele_raw(i, e) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
+           end do
+        end do
+
+        ! Filtered (smoothed) element sizes
+        do e=1, num_elements
+           X_val=ele_val(pos, e)
+           neighs=>ele_neigh(pos, e)
+           num_neighs = size(neighs)
+
+           dx_neigh_sum=0.
+           do f=1, num_neighs
+              dx_neigh_sum = dx_neigh_sum + del_ele_raw(:,neighs(f))
+           end do
+
+           del_fin(:,e) = (del_ele_raw(:,e) + dx_neigh_sum)/(num_neighs+1)
+        end do
+
+        deallocate(del_ele_raw)
+
+
+    end subroutine amd_filter_lengths_ele
 
 
 
