@@ -672,7 +672,7 @@ contains
         type(scalar_field), pointer :: sgs_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: u_cg
+        type(vector_field), pointer :: u_cg, filt_len
         type(tensor_field), pointer :: mviscosity
         type(tensor_field) :: u_grad
 
@@ -682,14 +682,15 @@ contains
 
         real :: blend
 
-        real, allocatable,save:: node_sum(:), node_peaky_sum(:)
+        real, allocatable, save:: node_sum(:), node_peaky_sum(:)
+        real, allocatable, save :: node_filter_lengths(:,:)
         integer, allocatable, save :: node_visits(:)
         real, allocatable, save :: node_weight_sum(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_reference_density
+        logical :: have_reference_density, have_filter_field
 
         ! Reference density
         real :: rho, mu
@@ -720,6 +721,7 @@ contains
         ! Velocity projected to continuous Galerkin
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
+
         ! Allocate gradient field
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
 
@@ -729,6 +731,15 @@ contains
         if (state_flag /= 0) then
             FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
         end if
+
+        ! Extract FilterLengths field for debugging
+        filt_len=>extract_vector_field(state, "FilterLengths", stat=state_flag)
+        if(state_flag /= 0 ) then
+            have_filter_field=.false.
+        else
+            have_filter_field=.true.
+        end if
+
 
         ! Molecular viscosity
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
@@ -778,18 +789,23 @@ contains
                 deallocate(node_peaky_sum)
                 deallocate(node_visits)
                 deallocate(node_weight_sum)
+                deallocate(node_filter_lengths)
             end if
 
             allocate(node_sum(num_nodes))
             allocate(node_peaky_sum(num_nodes))
             allocate(node_weight_sum(num_nodes))
             allocate(node_visits(num_nodes))
-
+            
+            allocate(node_filter_lengths(opDim, num_nodes))
+            call amd_filter_lengths(x, node_filter_lengths)
+            
         end if
 
-        node_sum(:)=0.0
-        node_peaky_sum(:)=0.0
-        node_visits(:)=0
+        node_sum(:)=0.
+        node_peaky_sum(:)=0.
+        node_visits(:)=0.
+        node_weight_sum(:)=0.
 
 
         ! Set entire SGS visc field to zero value initially
@@ -798,11 +814,12 @@ contains
         do e=1, num_elements
             u_cg_ele=ele_nodes(u_cg, e)
 
-            call amd_length_ele(x, e, dx)
+            ! call amd_length_ele(x, e, dx)
 
             sgs_ele_av=0.0
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
+                dx(:)=node_filter_lengths(:,gnode)
 
                 dudx_n = u_grad%val(:,:,gnode)
 
@@ -861,10 +878,14 @@ contains
         end do
 
         ! Set final values.
+        blend=0.666666666
         do n=1, num_nodes
+            if(have_filter_field) then
+                call set(filt_len, n, node_filter_lengths(:,n))
+            end if
+           
             ! Blend of element-averaged value and local node averaged value
             ! blend=0...1 (0=peaky, 1=smoothed)
-            blend=0.5
             sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
                          / node_visits(n)
 
@@ -877,6 +898,7 @@ contains
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
+        call halo_update(filt_len)
 
         call deallocate(u_grad)
         deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
@@ -886,6 +908,193 @@ contains
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
     end subroutine calc_dg_sgs_amd_viscosity
+
+
+
+    ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+
+    subroutine calc_dg_sgs_amd_viscosity_ele(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements
+        integer :: state_flag
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, ln, gnode
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable, save :: del(:,:)
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
+        real :: BS, topbit, btmbit, Cpoin
+
+
+        print*, "In calc_dg_sgs_amd_viscosity()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+                 del_gradu(opDim,opDim), B(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+        call halo_update(u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_elements = ele_count(u_cg)
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(del)) then
+                deallocate(del)
+            end if
+
+            allocate(del(u%dim, num_elements))
+
+            call amd_filter_lengths_ele(X, del)
+        end if
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do e=1, num_elements
+            u_cg_ele=ele_nodes(u_cg, e)
+
+            ! Go around
+            sgs_ele_av=0.0
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                dudx_n = u_grad%val(:,:,gnode)
+
+                S = 0.5 * (dudx_n + transpose(dudx_n))
+
+                do i=1, opDim
+                    do j=1, opDim
+                        del_gradu(i,j) = del(j,gnode) * dudx_n(j,i)
+                    end do
+                end do
+
+                B = matmul(transpose(del_gradu), del_gradu)
+
+                BS=0.0
+                do i=1, opDim
+                    do j=1, opDim
+                        BS = BS+B(i,j)*S(i,j)
+                    end do
+                end do
+
+                topbit = rho * Cpoin * max(-BS, 0.)
+
+
+                btmbit=0.
+                do i=1, opDim
+                    do j=1, opDim
+                        btmbit = btmbit + dudx_n(i,j)**2
+                    end do
+                end do
+
+                ! If the dominator is vanishing small, then set the SGS viscosity
+                ! to zero
+
+                if(btmbit < 10e-10) then
+                    sgs_visc_val = 0.
+                else
+                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
+                end if
+
+                sgs_ele_av = sgs_ele_av + sgs_visc_val
+            end do
+
+            sgs_ele_av = sgs_ele_av / opNloc
+
+            ! If we're over this value, reset
+            if(sgs_visc_val > mu*10e4) sgs_visc_val=0.
+
+            call set(sgs_visc, e,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele )
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_ele
 
 
 
@@ -918,28 +1127,77 @@ contains
     end subroutine les_length_scales_squared_mk2
 
 
-    subroutine amd_length_ele(pos, ele, del)
+
+
+    subroutine amd_length_ele(pos, ele, del, extruded_mesh)
         type(vector_field), intent(in) :: pos
         integer :: ele
         real, intent(inout) :: del(:)
-        real, dimension(opDim) :: dx
+        real :: dx(opDim)
         
-        real, dimension(opDim, opNloc) :: X_val
-        real :: mean_val
-        integer :: i
+        real :: X_val(opDim, opNloc)
+        real :: X_mean(opDim), r, diffx, diffy
+        real :: X_tri(opDim-1, 3)
+        real :: area, a, b, c, s, tmplen
+        integer :: i, n, m, trix
+        integer :: stpair(2)
+
+        ! Not used for now. But will later need conditional to switch in/out
+        ! specialised extruded mesh case logic
+        logical :: extruded_mesh
 
         X_val=ele_val(pos, ele)
 
-        ! Calculate largest dx, dy, dz for element nodes
-        X_val=ele_val(pos, ele)
-        do i=1, opDim
-            dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
+        ! First look for two points vertically aligned. These two will provide
+        ! dz metric. (There are always two in an extruded mesh)
+
+        stpair=0
+        outer_loop: do n=1, opNloc
+            do m=1, opNloc
+                if ( n /= m ) then
+                    diffx = abs(X_val(1, n)-X_val(1,m))
+                    diffy = abs(X_val(2, n)-X_val(2,m))
+
+                    if(diffx < 10e-10 .and. diffy < 10e-10) then
+                        stpair(1)=n
+                        stpair(2)=m
+                        exit outer_loop
+                    end if
+                end if
+            end do
+        end do outer_loop
+        del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
+
+        ! Find 2D points for horizontal triangle (easier/quicker than using
+        ! Fluidity framework)
+        trix=1
+        do n=1, opNloc
+            if(n /= stpair(1)) then
+                X_tri(:, trix)=X_val(1:2, n)
+                trix=trix+1
+            end if
         end do
 
-        ! Concentrate on vertical anisotropy.
-        del(1:2) = sqrt( dx(1)**2.+dx(2)**2. )
-        del(3) = dx(3)
+        ! Heron's formula for area of triangle
+        a = sqrt( (X_tri(1,2)-X_tri(1,1))**2. + (X_tri(2,2)-X_tri(2,1))**2.)
+        b = sqrt( (X_tri(1,3)-X_tri(1,2))**2. + (X_tri(2,3)-X_tri(2,2))**2.)
+        c = sqrt( (X_tri(1,3)-X_tri(1,1))**2. + (X_tri(2,3)-X_tri(2,1))**2.)
+
+        s = 0.5*(a+b+c)
+
+        area = 0.25 * sqrt( s*(s-a)*(s-b)*(s-c) )
         
+        if(area>10e5) print*, "WARNING: AMD LES metrics: large area"
+
+        ! Calculate radius of circle with same area
+        r = sqrt(area/ 3.141592653)
+
+        del(1) = 2.*r
+        del(2) = del(1)
+
+        ! Not quite done. Sanity check for very, very thin elements
+        if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
+
     end subroutine amd_length_ele
 
 
@@ -953,13 +1211,15 @@ contains
 
         real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:), dx_ele_filt(:,:)
         real, dimension(pos%dim) :: dx_neigh_sum, dx_neigh_average
-        real :: del_max, mean_val
+        real :: del_max, mean_val, ele_filt_sum(opDim)
         integer, allocatable :: visits(:)
-        integer, pointer :: neighs(:)
+        integer, pointer, dimension(:) :: neighs
         integer :: local_gnodes(ele_loc(pos,1))
 
         integer :: e, n, i, gn, f
         integer :: num_elements, num_nodes, num_neighs
+
+        logical :: extruded_mesh
 
         num_elements = ele_count(pos)
         num_nodes = node_count(pos)
@@ -973,31 +1233,34 @@ contains
         visits=0
         dx_sum=0.
 
+        ! Is this an extruded mesh?
+        extruded_mesh = option_count("/geometry/mesh/from_mesh/extrude") > 0
+
+        if( .not. extruded_mesh ) then
+            FLExit("Error: AMD LES is currently only works correctly on extruded meshes")
+        end if
 
         ! Raw sizes per element
         do e=1, num_elements
-           X_val=ele_val(pos, e)
-           do i=1, opDim
-              mean_val = sum(X_val(i,:)) / opNloc
-              dx(i) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
-           end do
+           call amd_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
 
            dx_ele_raw(:,e) = dx(:)
         end do
 
-        ! Filtered (smoothed) element sizes
+        ! Filter sizes per element
         do e=1, num_elements
-           X_val=ele_val(pos, e)
-           neighs=>ele_neigh(pos, e)
-           num_neighs = size(neighs)
+            neighs=>ele_neigh_mesh(pos%mesh, e)
 
-           dx_neigh_sum=0.
-           do f=1, num_neighs
-              dx_neigh_sum = dx_neigh_sum + dx_ele_raw(:,neighs(f))
-           end do
+            ele_filt_sum=dx_ele_raw(:,e)
 
-           dx_ele_filt(:,e) = (dx_ele_raw(:,e) + dx_neigh_sum)/(num_neighs+1)
+            do f=1, size(neighs)
+                ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+            end do
+
+            dx_ele_filt(:,e) = ele_filt_sum / (size(neighs)+1)
+
         end do
+
 
         ! Now create sizes per-node
         do e=1, num_elements
@@ -1016,13 +1279,7 @@ contains
 
         ! Now go around all nodes.
         do n=1, num_nodes
-            del = 2.0*dx_sum(:, n)/visits(n)
-            del_max=maxval(del)
-
-            do i=1, opDim
-                ! if(abs(del(i)/del_max) < 0.05) del(i)=0.05*del_max
-                del_fin(i, n) = del(i)
-            end do
+            del_fin(:, n) = dx_sum(:, n) / visits(n)
         end do
 
         deallocate(dx_sum)
@@ -1035,7 +1292,7 @@ contains
 
 
     ! This one is per-element
-    subroutine amd_filter_lengths_ele(pos, del_fin)
+    subroutine amd_filter_lengths_ele_old(pos, del_fin)
         type(vector_field), intent(in) :: pos
         real, dimension(:,:), intent(inout) :: del_fin
 
@@ -1079,7 +1336,7 @@ contains
         deallocate(del_ele_raw)
 
 
-    end subroutine amd_filter_lengths_ele
+    end subroutine amd_filter_lengths_ele_old
 
 
 

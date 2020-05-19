@@ -377,7 +377,8 @@ subroutine petsc_solve_vector_components(x, matrix, rhs, option_path)
         vfield=x, &
         option_path=option_path)
  
-  ewrite(1,*) 'Solving for multiple components of a vector field'
+  ewrite(1,*) "Solving for multiple components of vector field '" &
+       //trim(x%name)//"'"
   
   do i=1, x%dim
     
