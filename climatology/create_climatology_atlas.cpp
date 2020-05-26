@@ -352,6 +352,9 @@ int main(){
 
   int levels0 = ncdimdef(ncid, "levels0",   24);
   int varid = ncvardef(ncid, "levels0", NC_FLOAT, 1, &levels0);
+
+  int ferr;
+  
   ncattput(ncid, varid, "long_name", NC_CHAR, 19, "Top standard levels");
   ncattput(ncid, varid, "units", NC_CHAR, 6, "Meters");
 
@@ -461,7 +464,7 @@ int main(){
       // cout<<"Reading level "<<k<<endl;
       for(size_t j=0; j<(size_t)jdim0; j++)
   for(size_t i=0; i<(size_t)idim0; i++){
-    fscanf(fp, "%f", &(dat[m][k][j*idim0+i]));
+    ferr=fscanf(fp, "%f", &(dat[m][k][j*idim0+i]));
   }
     }
     fclose(fp);
@@ -490,7 +493,7 @@ int main(){
       // cout<<"Reading level "<<k<<endl;
       for(size_t j=0; j<(size_t)jdim0; j++)
   for(size_t i=0; i<(size_t)idim0; i++){
-    fscanf(fp, "%f", &(dat[m][k][j*idim0+i]));
+    ferr=fscanf(fp, "%f", &(dat[m][k][j*idim0+i]));
   }
     }
     fclose(fp);
@@ -527,8 +530,8 @@ int main(){
       // cout<<"Reading level "<<k<<endl;
       for(size_t j=0; j<(size_t)jdim0; j++)
   for(size_t i=0; i<(size_t)idim0; i++){
-    float v;
-    fscanf(fp, "%f", &v);
+    float v, ferr;
+    ferr=fscanf(fp, "%f", &v);
     if(k>=24){
       dat[m][k-24][j*idim0+i] = v;
     }
@@ -559,8 +562,8 @@ int main(){
       // cout<<"Reading level "<<k<<endl;
       for(size_t j=0; j<(size_t)jdim0; j++)
   for(size_t i=0; i<(size_t)idim0; i++){
-    float v;
-    fscanf(fp, "%f", &v);
+    float v, ferr;
+    ferr=fscanf(fp, "%f", &v);
     if(k>=24){
       dat[m][k-24][j*idim0+i] = v;
     }
