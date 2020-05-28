@@ -1249,16 +1249,19 @@ contains
 
         ! Filter sizes per element
         do e=1, num_elements
-            neighs=>ele_neigh_mesh(pos%mesh, e)
+            neighs=>ele_neigh(pos, e)
 
             ele_filt_sum=dx_ele_raw(:,e)
 
+            num_neighs=0
             do f=1, size(neighs)
-                ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+                if(neighs(f)>0) then
+                    ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+                    num_neighs=num_neighs+1
+                end if
             end do
 
-            dx_ele_filt(:,e) = ele_filt_sum / (size(neighs)+1)
-
+            dx_ele_filt(:,e) = ele_filt_sum / num_neighs
         end do
 
 
