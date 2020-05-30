@@ -1133,6 +1133,10 @@ suggested value 0.1</a:documentation>
                 <element name="anisotropic">
                   <empty/>
                 </element>
+                <element name="vorticity_anisotropic_grid">
+                  <a:documentation>Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.</a:documentation>
+                  <empty/>
+                </element>
                 <element name="amd">
                   <a:documentation>Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015).</a:documentation>
                   <optional>

@@ -931,6 +931,8 @@ prognostic_velocity_field =
                   (
                      element isotropic { empty } |
                      element anisotropic { empty } |
+		     ## Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.
+		     element vorticity_anisotropic_grid {empty} | 
 		     ## Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015).
                      element amd {
 		     	     ## Poincare constant. By default 0.3, which is used for second-order

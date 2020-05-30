@@ -61,6 +61,7 @@ module dg_les
 
   public :: calc_dg_sgs_scalar_viscosity
   public :: calc_dg_sgs_tensor_viscosity, calc_dg_sgs_amd_viscosity
+  public :: calc_dg_sgs_chauvet_viscosity
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
@@ -798,7 +799,7 @@ contains
             allocate(node_visits(num_nodes))
             
             allocate(node_filter_lengths(opDim, num_nodes))
-            call amd_filter_lengths(x, node_filter_lengths)
+            call aniso_filter_lengths(x, node_filter_lengths)
             
         end if
 
@@ -857,7 +858,7 @@ contains
                     sgs_visc_val = 0.
                 else
                     sgs_visc_val = topbit/btmbit
-                    if(sgs_visc_val > mu*10e5) sgs_visc_val=0.
+                    if(sgs_visc_val > mu*10e6) sgs_visc_val=0.
                 end if
 
                 ! Contributions of local node to shared node value.
@@ -878,14 +879,16 @@ contains
         end do
 
         ! Set final values.
-        blend=0.666666666
+
+        ! Blend of element-averaged value and local node averaged value
+        ! blend=0...1 (0=peaky, 1=smoothed)
+        blend=0.5
         do n=1, num_nodes
             if(have_filter_field) then
                 call set(filt_len, n, node_filter_lengths(:,n))
             end if
            
-            ! Blend of element-averaged value and local node averaged value
-            ! blend=0...1 (0=peaky, 1=smoothed)
+
             sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
                          / node_visits(n)
 
@@ -908,6 +911,216 @@ contains
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
     end subroutine calc_dg_sgs_amd_viscosity
+
+
+
+    ! ========================================================================
+    ! Use LES for anisotropic grids, using vorticity-derived filter lengths.
+    ! Based upon Chauvet (2007)
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_chauvet_viscosity(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg, filt_len
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements, n, num_nodes
+
+        integer :: state_flag
+
+        real, allocatable, save:: node_sum(:), node_peaky_sum(:)
+        real, allocatable, save :: node_filter_lengths(:,:)
+        real, allocatable, save :: node_vort_lengths(:)
+        integer, allocatable, save :: node_visits(:)
+        real, allocatable, save :: node_weight_sum(:)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av, Cs
+        integer :: i, j, ln, gnode
+
+        real :: blend
+
+        integer, allocatable :: u_cg_ele(:)
+
+        real, dimension(:, :), allocatable :: S, dudx_n
+
+        print*, "In calc_dg_sgs_chauvet_viscosity()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim), dudx_n(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+
+        ! Extract FilterLengths field for debugging
+        filt_len=>extract_vector_field(state, "FilterLengths", stat=state_flag)
+        if(state_flag /= 0 ) then
+            have_filter_field=.false.
+        else
+            have_filter_field=.true.
+        end if
+
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+
+        call get_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient", Cs)
+
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(node_sum)) then
+                deallocate(node_sum)
+                deallocate(node_peaky_sum)
+                deallocate(node_visits)
+                deallocate(node_weight_sum)
+                deallocate(node_filter_lengths)
+                deallocate(node_vort_lengths)
+            end if
+
+            allocate(node_sum(num_nodes))
+            allocate(node_peaky_sum(num_nodes))
+            allocate(node_weight_sum(num_nodes))
+            allocate(node_visits(num_nodes))
+
+            allocate(node_filter_lengths(opDim, num_nodes))
+            allocate(node_vort_lengths(num_nodes))
+            call aniso_filter_lengths(x, node_filter_lengths)
+
+        end if
+
+        node_sum(:)=0.
+        node_peaky_sum(:)=0.
+        node_visits(:)=0.
+        node_weight_sum(:)=0.
+
+        call vorticity_filter_lengths(x, u_grad, &
+                    node_filter_lengths, node_vort_lengths)
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do e=1, num_elements
+            u_cg_ele=ele_nodes(u_cg, e)
+
+            sgs_ele_av=0.0
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                dudx_n = u_grad%val(:,:,gnode)
+                S = 0.5 * (dudx_n + transpose(dudx_n))
+
+                sgs_visc_val = ((Cs*node_vort_lengths(gnode))**2.) &
+                            * rho *norm2(2.*S)
+
+                ! Contributions of local node to shared node value.
+                node_peaky_sum(gnode) = node_peaky_sum(gnode) + sgs_visc_val
+
+                sgs_ele_av = sgs_ele_av + sgs_visc_val
+            end do
+
+            sgs_ele_av = sgs_ele_av / opNloc
+
+            ! Give each corner node the average
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
+            end do
+
+        end do
+
+        ! Set final values.
+
+        ! Blend of element-averaged value and local node averaged value
+        ! blend=0...1 (0=peaky, 1=smoothed)
+        blend=0.5
+        do n=1, num_nodes
+            if(have_filter_field) then
+                call set(filt_len, n, node_filter_lengths(:,n))
+            end if
+
+
+            sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
+                         / node_visits(n)
+
+            ! Hard limit again.
+            ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
+            if(sgs_visc_val > mu*10e5) sgs_visc_val=0.
+
+            call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+        call halo_update(filt_len)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n )
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_chauvet_viscosity
 
 
 
@@ -1128,8 +1341,54 @@ contains
 
 
 
+    ! ========================================================================
+    ! Calculate vorticity-based filter lengths based upon Chauvet et al.
+    ! 3D only.
+    ! ========================================================================
 
-    subroutine amd_length_ele(pos, ele, del, extruded_mesh)
+    subroutine vorticity_filter_lengths(pos, ugrad, dx, vort_del)
+      type(vector_field), intent(in) :: pos
+      type(tensor_field), intent(in) :: ugrad
+      real, dimension(:,:), intent(in) :: dx
+      real, dimension(:), intent(out) :: vort_del
+
+      real :: magvort
+      real, dimension(pos%dim) :: vort, N
+      real, dimension(pos%dim, pos%dim) :: gr
+
+      integer :: i, num_nodes
+
+      num_nodes = pos%mesh%nodes
+
+      ! Go round all nodes, calculating vorticity-based filter length
+      do i=1, num_nodes
+         gr=ugrad%val(:,:,i)
+
+         ! Calculate vorticity: \/ x u
+         vort(1) = gr(3,2)-gr(2,3)
+         vort(2) = gr(1,3)-gr(3,1)
+         vort(3) = gr(1,2)-gr(2,1)
+
+         magvort = sqrt(vort(1)**2 + vort(2)**2 + vort(3)**2)
+
+         ! Chauvet et al.
+         N = vort / magvort
+         vort_del(i) = sqrt( dx(2, i) * dx(3,i) * N(1)**2 &
+              + dx(3, i) * dx(1,i) * N(2)**2 &
+              + dx(1, i) * dx(2,i) * N(3)**2 )
+
+      end do
+
+    end subroutine vorticity_filter_lengths
+
+
+
+    ! ========================================================================
+    ! Aniso lengthscales, but really only for pancake elements (small dz).
+    ! ========================================================================
+
+
+    subroutine aniso_length_ele(pos, ele, del, extruded_mesh)
         type(vector_field), intent(in) :: pos
         integer :: ele
         real, intent(inout) :: del(:)
@@ -1198,11 +1457,12 @@ contains
         ! Not quite done. Sanity check for very, very thin elements
         if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
 
-    end subroutine amd_length_ele
+    end subroutine aniso_length_ele
+
 
 
     ! This one is not per-element as above, but loops over all elements
-    subroutine amd_filter_lengths(pos, del_fin)
+    subroutine aniso_filter_lengths(pos, del_fin)
         type(vector_field), intent(in) :: pos
         real, dimension(:,:), intent(inout) :: del_fin
 
@@ -1242,7 +1502,7 @@ contains
 
         ! Raw sizes per element
         do e=1, num_elements
-           call amd_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
+           call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
 
            dx_ele_raw(:,e) = dx(:)
         end do
@@ -1290,7 +1550,7 @@ contains
         deallocate(dx_ele_filt)
         deallocate(visits)
 
-    end subroutine amd_filter_lengths
+    end subroutine aniso_filter_lengths
 
 
 
