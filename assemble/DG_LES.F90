@@ -1130,7 +1130,7 @@ contains
             dudx_n = u_grad%val(:,:,n)
             S = 0.5 * (dudx_n + transpose(dudx_n))
 
-            sgs_visc_val = ((Cs*node_vort_lengths(gnode))**2.) &
+            sgs_visc_val = ((Cs*node_vort_lengths(n))**2.) &
                         * rho *norm2(2.*S)
 
             call set(sgs_visc, n,  sgs_visc_val)
