@@ -924,7 +924,7 @@ contains
         type(state_type), intent(in) :: state
 
         type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: sgs_visc, dist_to_wall
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg, filt_len
@@ -944,7 +944,7 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_reference_density, have_filter_field
+        logical :: have_van_driest, have_reference_density, have_filter_field
 
         ! Reference density
         real :: rho, mu
@@ -963,8 +963,15 @@ contains
 
         t1=mpi_wtime()
 
+
         allocate( S(opDim,opDim), dudx_n(opDim,opDim) )
         allocate( u_cg_ele(opNloc) )
+
+        ! Van Driest wall damping
+        have_van_driest = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/van_driest_damping")
 
         nullify(mviscosity)
 
@@ -991,14 +998,23 @@ contains
         end if
 
 
-        ! Molecular viscosity
-        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
 
-        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-            mu=mviscosity%val(1,1,1)
-        else
-            FLAbort("DG_LES: must have constant or normal viscosity field")
+        if(have_van_driest) then
+            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+                mu=mviscosity%val(1,1,1)
+            else
+                FLAbort("DG_LES: must have constant dynamic viscosity field")
+            end if
+
+            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+            if (state_flag/=0) then
+                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
+            end if
         end if
 
 
@@ -1058,6 +1074,7 @@ contains
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
 
+#ifdef OLD
         do e=1, num_elements
             u_cg_ele=ele_nodes(u_cg, e)
 
@@ -1108,7 +1125,18 @@ contains
 
             call set(sgs_visc, n,  sgs_visc_val)
         end do
+#else
+        do n=1, num_nodes
+            dudx_n = u_grad%val(:,:,n)
+            S = 0.5 * (dudx_n + transpose(dudx_n))
 
+            sgs_visc_val = ((Cs*node_vort_lengths(gnode))**2.) &
+                        * rho *norm2(2.*S)
+
+            call set(sgs_visc, n,  sgs_visc_val)
+
+        end do
+#endif
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
         call halo_update(filt_len)
@@ -1353,12 +1381,15 @@ contains
       real, dimension(:), intent(out) :: vort_del
 
       real :: magvort
-      real, dimension(pos%dim) :: vort, N
-      real, dimension(pos%dim, pos%dim) :: gr
+      real, dimension(:), allocatable :: vort, N
+      real, dimension(:,:), allocatable :: gr
 
       integer :: i, num_nodes
 
       num_nodes = pos%mesh%nodes
+
+      allocate( vort(pos%dim), N(pos%dim) )
+      allocate( gr(pos%dim, pos%dim) )
 
       ! Go round all nodes, calculating vorticity-based filter length
       do i=1, num_nodes
@@ -1379,6 +1410,8 @@ contains
 
       end do
 
+      deallocate(gr, vort, N)
+
     end subroutine vorticity_filter_lengths
 
 
@@ -1394,9 +1427,9 @@ contains
         real, intent(inout) :: del(:)
         real :: dx(opDim)
         
-        real :: X_val(opDim, opNloc)
-        real :: X_mean(opDim), r, diffx, diffy
-        real :: X_tri(opDim-1, 3)
+        real :: X_val(pos%dim, opNloc)
+        real :: X_mean(pos%dim), r, diffx, diffy
+        real :: X_tri(pos%dim-1, 3)
         real :: area, a, b, c, s, tmplen
         integer :: i, n, m, trix
         integer :: stpair(2)
