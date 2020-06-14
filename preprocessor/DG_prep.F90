@@ -207,14 +207,14 @@ contains
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
             tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path
 
-        logical :: have_les_option, have_les_visc_field
+        logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_amd_les, have_partial_stress
         logical :: have_chauvet_les
         logical :: use_dg_velocity
 
         integer :: stat
 
-        character(len=*), parameter :: zerothPath="/geometry/mesh::ZerothMesh"
+        character(len=*), parameter :: zeroPath="/geometry/mesh::ZeroMesh"
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
@@ -240,12 +240,8 @@ contains
 !            FLExit("Error. Partial stress must be selected for Large Eddy Simulation")
 !        end if
 
-        ! For AMD LES mesh we require the zeroth-order mesh
-!        if(have_amd_les .and. .not. have_option(trim(zerothPath)) then
-!            call add_option(trim(zerothPath), stat)
-!
-!            call set_option
-
+        ! For AMD LES mesh we will use a zeroth-order mesh if we can find one
+        have_zero_mesh = have_amd_les .and. have_option(trim(zeroPath))
 
         if(have_les_option .and. .not. have_les_visc_field) then
             if(have_isotropic_les .or. have_amd_les .or. have_chauvet_les) then
@@ -266,8 +262,14 @@ contains
                 ! Normally use CG velocity field for LES calculations.
                 ! DG velocity field can be used BUT IS SLOW. Only for performance tests.
                 if(.not. use_dg_velocity) then
-                    call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
-                        "CoordinateMesh", stat)
+                    if(have_zero_mesh) then
+                        ewrite(1,*) "Found /geometry/mesh::ZeroMesh. Using for ScalarEddyViscosity field"
+                        call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+                            "ZeroMesh", stat)
+                    else
+                        call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+                            "CoordinateMesh", stat)
+                    end if
                 else
                     call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
                         "VelocityMesh", stat)

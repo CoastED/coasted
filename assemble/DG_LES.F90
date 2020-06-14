@@ -665,7 +665,7 @@ contains
     ! See Rozema et al, Computational Methods in Engineering, 2020.
     ! ========================================================================
 
-    subroutine calc_dg_sgs_amd_viscosity(state, x, u)
+    subroutine calc_dg_sgs_amd_viscosity_node(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -910,7 +910,7 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-    end subroutine calc_dg_sgs_amd_viscosity
+    end subroutine calc_dg_sgs_amd_viscosity_node
 
 
 
@@ -944,13 +944,13 @@ contains
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density, have_filter_field
+        logical :: have_dist_to_wall, have_reference_density, have_filter_field
 
         ! Reference density
         real :: rho, mu
 
         ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av, Cs
+        real :: sgs_visc_val, sgs_ele_av, Cs, vortlen
         integer :: i, j, ln, gnode
 
         real :: blend
@@ -966,12 +966,6 @@ contains
 
         allocate( S(opDim,opDim), dudx_n(opDim,opDim) )
         allocate( u_cg_ele(opNloc) )
-
-        ! Van Driest wall damping
-        have_van_driest = have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/van_driest_damping")
 
         nullify(mviscosity)
 
@@ -989,6 +983,7 @@ contains
             FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
         end if
 
+
         ! Extract FilterLengths field for debugging
         filt_len=>extract_vector_field(state, "FilterLengths", stat=state_flag)
         if(state_flag /= 0 ) then
@@ -1001,20 +996,25 @@ contains
         ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
         ! (This will be checked for elsewhere)
 
-        if(have_van_driest) then
-            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
 
-            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-                mu=mviscosity%val(1,1,1)
-            else
-                FLAbort("DG_LES: must have constant dynamic viscosity field")
-            end if
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant dynamic viscosity field")
+        end if
 
-            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
-            if (state_flag/=0) then
-                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
-            end if
+        dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+
+        have_dist_to_wall=.false.
+        if (state_flag==0) then
+            print*, "Using DistanceToWall for Chauvet LES."
+            have_dist_to_wall=.true.
+        else
+            dist_to_wall=>extract_scalar_field(state, "DistanceToBottom", stat=state_flag)
+            print*, "Using DistanceToBottom as substitute for DistanceToWall for Chauvet LES."
+            have_dist_to_wall=.true.
         end if
 
 
@@ -1130,19 +1130,29 @@ contains
             dudx_n = u_grad%val(:,:,n)
             S = 0.5 * (dudx_n + transpose(dudx_n))
 
-            sgs_visc_val = ((Cs*node_vort_lengths(n))**2.) &
+            vortlen = node_vort_lengths(n)
+
+            sgs_visc_val = ((Cs*vortlen)**2.) &
                         * rho *norm2(2.*S)
 
+            if(sgs_visc_val > mu*100) then
+               print *, "sgs_visc_val:", sgs_visc_val
+               print *, "vortlen:", vortlen
+               print *, "|S|:", norm2(2.*s)
+
+            end if
+
+            sgs_visc_val = 0.1
             call set(sgs_visc, n,  sgs_visc_val)
 
         end do
 #endif
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
-        call halo_update(filt_len)
+        !call halo_update(filt_len)
 
         call deallocate(u_grad)
-        deallocate( S, dudx_n )
+        deallocate( S, dudx_n, u_cg_ele )
 
         t2=mpi_wtime()
 
@@ -1152,6 +1162,28 @@ contains
 
 
 
+    ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+    subroutine calc_dg_sgs_amd_viscosity(state, x, u)
+        type(state_type), intent(in) :: state
+        type(vector_field), intent(in) :: u, x
+
+        character(len=OPTION_PATH_LEN) :: scalar_eddy_visc_path
+        character(len=256) :: mesh_name
+
+        call get_option(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", mesh_name)
+
+        ! It's not  bullet-proof, but consistent with the logic of DG_prep.F90
+        ! Please replace with something better...
+
+        if(trim(mesh_name) == "ZeroMesh") then
+            call calc_dg_sgs_amd_viscosity_ele(state, x, u)
+        else
+            call calc_dg_sgs_amd_viscosity_node(state, x, u)
+        end if
+
+
+    end subroutine calc_dg_sgs_amd_viscosity
     ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -1190,7 +1222,7 @@ contains
         real :: BS, topbit, btmbit, Cpoin
 
 
-        print*, "In calc_dg_sgs_amd_viscosity()"
+        print*, "In calc_dg_sgs_amd_viscosity_ele()"
 
         t1=mpi_wtime()
 
@@ -1262,7 +1294,7 @@ contains
 
             allocate(del(u%dim, num_elements))
 
-            call amd_filter_lengths_ele(X, del)
+            call aniso_filter_lengths(X, del)
         end if
 
         ! Set entire SGS visc field to zero value initially
@@ -1349,10 +1381,13 @@ contains
         integer :: ele
 
         real :: horzSq, vertSq
-        real, dimension(opDim, opNloc) :: X_val
-        real, dimension(opDim) :: dx
+        real, dimension(:,:), allocatable :: X_val
+        real, dimension(:), allocatable :: dx
 
         integer :: i
+
+        allocate( X_val(positions%dim, opNloc) )
+        allocate( dx(positions%dim) )
 
         X_val=ele_val(positions, ele)
 
@@ -1364,6 +1399,8 @@ contains
         ! Why squares? Used in LES visc calcs, no need for expensive square roots
         horzSq = dx(1)**2 + dx(2)**2
         vertSq = dx(3)**2
+
+        deallocate(X_val, dx)
 
     end subroutine les_length_scales_squared_mk2
 
@@ -1425,7 +1462,7 @@ contains
         type(vector_field), intent(in) :: pos
         integer :: ele
         real, intent(inout) :: del(:)
-        real :: dx(opDim)
+        real :: dx(pos%dim)
         
         real :: X_val(pos%dim, opNloc)
         real :: X_mean(pos%dim), r, diffx, diffy
@@ -1567,9 +1604,14 @@ contains
             do n=1, opNloc
                gn=local_gnodes(n)
 
-               ! Add element sizes to node size sum at each corner
-               dx_sum(:, gn) = dx_sum(:, gn) + dx_ele_filt(:,e)
-               visits(gn) = visits(gn)+1
+               if(gn>0 .and. gn<=num_nodes) then
+
+                   ! Add element sizes to node size sum at each corner
+                   dx_sum(:, gn) = dx_sum(:, gn) + dx_ele_filt(:,e)
+                   visits(gn) = visits(gn)+1
+               else
+                   print*, "gn:", gn
+               end if
             end do
         end do
 
