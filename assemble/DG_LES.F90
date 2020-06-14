@@ -1171,12 +1171,10 @@ contains
         character(len=OPTION_PATH_LEN) :: scalar_eddy_visc_path
         character(len=256) :: mesh_name
 
-        call get_option(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", mesh_name)
-
         ! It's not  bullet-proof, but consistent with the logic of DG_prep.F90
         ! Please replace with something better...
 
-        if(trim(mesh_name) == "ZeroMesh") then
+        if(have_option("/geometry/mesh::ZeroMesh")) then
             call calc_dg_sgs_amd_viscosity_ele(state, x, u)
         else
             call calc_dg_sgs_amd_viscosity_node(state, x, u)
