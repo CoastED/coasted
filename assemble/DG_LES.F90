@@ -268,15 +268,24 @@ contains
     end subroutine calc_dg_sgs_scalar_viscosity
 
 
+    ! Just a wrapper for switching between LES tensor subroutines.
 
+    subroutine calc_dg_sgs_tensor_viscosity(state, x, u)
+        type(state_type), intent(in) :: state
+        type(vector_field), intent(in) :: u, x
 
+        ! call calc_dg_sgs_tensor_viscosity_original(state, x, u)
+        
+        call calc_dg_sgs_tensor_viscosity_node(state, x, u)
+
+    end subroutine calc_dg_sgs_tensor_viscosity
 
 
     ! ========================================================================
     ! Split horizontal/vertical LES SGS viscosity
     ! ========================================================================
 
-    subroutine calc_dg_sgs_tensor_viscosity(state, x, u)
+    subroutine calc_dg_sgs_tensor_viscosity_original(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -581,7 +590,238 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-    end subroutine calc_dg_sgs_tensor_viscosity
+    end subroutine calc_dg_sgs_tensor_viscosity_original
+
+
+    ! This calculates per-node tensor LES, ie. a hat filter.
+
+    subroutine calc_dg_sgs_tensor_viscosity_node(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: dist_to_wall
+        type(tensor_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: sgs_visc_mag
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements, n, num_nodes
+        integer :: u_cg_ele(ele_loc(u,1))
+
+        real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
+        real :: length_horz_sq, length_vert_sq, ele_vol
+        real :: mag_strain_horz, mag_strain_vert, mag_strain_r
+        real :: sgs_horz, sgs_vert, sgs_r
+        real :: mu, rho, y_plus, vd_damping
+
+        integer :: state_flag, gnode
+
+        real, allocatable,save:: node_dx(:,:)
+
+        real :: visc_norm2, visc_norm2_max
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_van_driest, have_reference_density
+
+        ! Constants for Van Driest damping equation
+        real, parameter :: A_plus=25.0, pow_m=2.0
+
+        ! Control of mixture of sharp / averaged filter
+        real :: blend
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val
+        integer :: i
+
+        real, dimension(:,:), allocatable :: u_grad_node, rate_of_strain
+        real, dimension(:,:), allocatable :: sgs_ele_av, visc_turb, tmp_tensor
+
+!        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
+!        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
+
+
+        print*, "In calc_dg_sgs_tensor_viscosity()"
+
+        print*, "- using original LES filter"
+
+
+        t1=mpi_wtime()
+
+        nullify(dist_to_wall)
+        nullify(mviscosity)
+
+        ! Allocating work arrays
+        allocate(u_grad_node(u%dim,u%dim), rate_of_strain(u%dim,u%dim))
+        allocate(sgs_ele_av(u%dim,u%dim), visc_turb(u%dim,u%dim))
+        allocate(tmp_tensor(u%dim,u%dim))
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+        call halo_update(u_grad)
+
+        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
+         end if
+
+        ! Van Driest wall damping
+        have_van_driest = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/van_driest_damping")
+
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
+        if(have_van_driest) then
+            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+                mu=mviscosity%val(1,1,1)
+            else
+                FLAbort("DG_LES: must have constant or normal viscosity field")
+            end if
+
+            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+            if (state_flag/=0) then
+                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
+            end if
+
+        end if
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+
+        call get_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient", Cs_horz)
+
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient_vertical")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                // "smagorinsky_coefficient_vertical", Cs_vert)
+        else
+            FLAbort("DG_LES: you've requested anisotropic LES, but have not specified smagorinsky_coefficient_vertical")
+        end if
+
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(node_dx)) then
+                deallocate(node_dx)
+            end if
+
+            allocate(node_dx(u%dim, num_nodes))
+            call aniso_filter_lengths(x, node_dx)
+        end if
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:,:,:)=0.0
+
+        ! Loop over nodes
+        do n=1, num_nodes
+
+
+            Cs_length_horz_sq = (Cs_horz**2.0)* node_dx(1,n)**2.
+            Cs_length_vert_sq = (Cs_vert**2.0) * node_dx(3,n)**2.
+
+            gnode = n
+            rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
+
+            mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
+                                 + 2.0* rate_of_strain(2,2)**2.0 &
+                                 + 4.0* rate_of_strain(1,2)**2.0 )
+
+            mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
+                             + 2.0* rate_of_strain(3,3)**2.0 &
+                             + 4.0* rate_of_strain(3,2)**2.0 )
+
+            mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
+
+            ! Note, this is without density. That comes later.
+            sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
+            sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
+            sgs_r = rho * Cs_length_vert_sq * mag_strain_r
+
+            ! As per Roman et al, 2010.
+            visc_turb(1:2, 1:2) = sgs_horz
+            visc_turb(1, 3) = sgs_vert
+            visc_turb(3, 1) = sgs_vert
+            visc_turb(2, 3) = sgs_vert
+            visc_turb(3, 2) = sgs_vert
+            ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
+            ! Otherwise this is potentially negative (!)
+            visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
+
+            ! Wall damping with Van Driest
+            if(have_van_driest) then
+                u_grad_node = u_grad%val(:,:, n)
+                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
+                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+                tmp_tensor = vd_damping * rho * visc_turb
+
+            else
+                tmp_tensor = rho * visc_turb
+
+            end if
+
+             ! L2 Norm of tensor (tensor magnitude)
+            sgs_visc_val=0.0
+            do i=1, opDim
+                sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
+            end do
+            sgs_visc_val = sqrt(sgs_visc_val)
+
+            call set(sgs_visc, n,  tmp_tensor)
+            call set(sgs_visc_mag, n, sgs_visc_val )
+
+
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+        call halo_update(sgs_visc_mag)
+
+        call deallocate(u_grad)
+        deallocate(u_grad_node,rate_of_strain,sgs_ele_av,visc_turb,tmp_tensor)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_tensor_viscosity_node
+
 
 
     ! ========================================================================
