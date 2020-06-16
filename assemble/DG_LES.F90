@@ -302,7 +302,7 @@ contains
         integer :: state_flag, gnode
 
         real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered(:,:,:)
+        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered_sum(:,:,:)
         integer, allocatable, save :: node_visits(:)
 
         real :: visc_norm2, visc_norm2_max
@@ -315,7 +315,8 @@ contains
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
 
-        real, parameter :: alpha=0.5
+        ! Control of mixture of sharp / averaged filter
+        real :: blend
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
@@ -365,9 +366,8 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
 
-!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-!        ! (This will be checked for elsewhere)
-
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
         if(have_van_driest) then
             mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
 
@@ -426,17 +426,18 @@ contains
                 deallocate(node_visits)
                 deallocate(node_vol_weighted_sum)
                 deallocate(node_neigh_total_vol)
-                deallocate(sgs_unfiltered)
+                deallocate(sgs_unfiltered_sum)
             end if
 
             allocate(node_sum(u%dim, u%dim, num_nodes))
             allocate(node_visits(num_nodes))
             allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
             allocate(node_neigh_total_vol(num_nodes))
-            allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
+            allocate(sgs_unfiltered_sum(u%dim, u%dim, num_nodes))
         end if
 
         node_sum(:,:,:)=0.0
+        node_unfiltered_sum(:,:,:)=0.0
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
@@ -444,11 +445,9 @@ contains
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
 
-
+        ! Loop over elements
         do e=1, num_elements
-
             u_cg_ele=ele_nodes(u_cg, e)
-
             ele_vol = element_volume(x, e)
 
             call les_length_scales_squared_mk2(x, e, length_horz_sq, length_vert_sq)
@@ -489,6 +488,7 @@ contains
 
                 ! Original and box filter needs the element average
                 sgs_ele_av = sgs_ele_av + visc_turb
+                sgs_unfiltered_sum(:,:,gnode) = sgs_unfiltered_sum(:,:,gnode) + visc_turb
 
             end do
 
@@ -509,6 +509,11 @@ contains
 
         ! Set final values. Two options here: one with Van Driest damping, one without.
         ! We multiply by rho here.
+
+        ! This controls the mixture of unfiltered (sharp) filter, and averaged cell (soft)
+        ! filter. 0.0-1.0 (soft-sharp)
+        blend=0.5
+
         if(have_van_driest) then
 
             do n=1, num_nodes
@@ -516,10 +521,11 @@ contains
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
 
-                tmp_tensor = vd_damping * rho * node_sum(:,:,n)/node_visits(n)
+!                tmp_tensor = vd_damping * rho * node_sum(:,:,n)/node_visits(n)
 
-!                tmp_tensor = vd_damping * rho * &
-!                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
+                tmp_tensor = vd_damping * rho * &
+                ( blend * sgs_unfiltered_sum(:,:,n) + (1-blend) * node_sum(:,:,n) ) &
+                / node_visits(n)
 
 !                Not using vol-weighted sums for now
 !                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
@@ -539,13 +545,14 @@ contains
         else
             do n=1, num_nodes
 
-!                tmp_tensor = rho * &
-!                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
+                tmp_tensor = rho * &
+                ( blend * sgs_unfiltered_sum(:,:,n) + (1-blend) * node_sum(:,:,n) ) &
+                / node_visits(n)
 !!                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !!                     / node_neigh_total_vol(n))
 !!                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
 !!                     / node_neigh_total_vol(n))
-                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
+!                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
 
                 ! L2 Norm of tensor (tensor magnitude)
                 sgs_visc_val=0.0
