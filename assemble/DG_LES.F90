@@ -437,7 +437,7 @@ contains
         end if
 
         node_sum(:,:,:)=0.0
-        node_unfiltered_sum(:,:,:)=0.0
+        sgs_unfiltered_sum(:,:,:)=0.0
         node_visits(:)=0
         node_vol_weighted_sum(:,:,:)=0.0
         node_neigh_total_vol(:)=0.0
