@@ -27,7 +27,6 @@
 #include "fdebug.h"
 #include "compile_opt_defs.h"
 
-
 ! Filter types:
 ! 1 = original LES filter (element averages and local peaks (quite diffuse)
 ! 2 = box filter
@@ -62,6 +61,9 @@ module dg_les
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
+
+#include "mpif.h"
+
 
 contains
 
@@ -683,6 +685,7 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
 
+
         ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
         ! (This will be checked for elsewhere)
         if(have_van_driest) then
@@ -782,19 +785,24 @@ contains
             visc_turb(3, 2) = sgs_vert
             ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
             ! Otherwise this is potentially negative (!)
-            visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
+            !visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
+            visc_turb(3, 3) = abs(sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
 
             ! Wall damping with Van Driest
             if(have_van_driest) then
                 u_grad_node = u_grad%val(:,:, n)
                 y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
                 vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+
                 tmp_tensor = vd_damping * rho * visc_turb
 
             else
                 tmp_tensor = rho * visc_turb
 
             end if
+
+!            ! For when stuff goes bananas.
+!            if(norm2(tmp_tensor) > mu*10e5) tmp_tensor=0.
 
              ! L2 Norm of tensor (tensor magnitude)
             sgs_visc_val=0.0
@@ -851,6 +859,7 @@ contains
         real, allocatable, save :: node_filter_lengths(:,:)
         integer, allocatable, save :: node_visits(:)
         real, allocatable, save :: node_weight_sum(:)
+        real, save :: minmaxlen(2)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -870,6 +879,11 @@ contains
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
         real :: BS, topbit, btmbit, Cpoin
+
+        ! Cell-size adaptive viscosity
+        real :: thismaxlen, scalelen, startlen, endlen
+        real :: startvisc, endvisc, adaptvisc
+        real :: valpha
 
 
         print*, "In calc_dg_sgs_amd_viscosity()"
@@ -963,8 +977,8 @@ contains
             allocate(node_visits(num_nodes))
             
             allocate(node_filter_lengths(opDim, num_nodes))
-            call aniso_filter_lengths(x, node_filter_lengths)
-            
+            call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
         end if
 
         node_sum(:)=0.
@@ -1060,7 +1074,26 @@ contains
             ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
             if(sgs_visc_val > mu*10e5) sgs_visc_val=0.
 
-            call set(sgs_visc, n,  sgs_visc_val)
+            ! Lastly, to adaptive mesh scaling for large cell sizes
+            thismaxlen = maxval(node_filter_lengths(:,n))
+            scalelen = minmaxlen(2)-minmaxlen(1)
+            startvisc = 0.0
+            endvisc = 100.0*mu
+
+            startlen = 5*minmaxlen(1)
+            endlen = 0.5*minmaxlen(2)
+
+            if(thismaxlen < startlen) then
+                adaptvisc=0.0
+            elseif(thismaxlen >= startlen .and.  thismaxlen < endlen) then
+                valpha = (thismaxlen-startlen)/scalelen
+
+                adaptvisc=(1-valpha)*startvisc + valpha*endvisc
+            else
+                adaptvisc=endvisc
+            end if
+
+            call set(sgs_visc, n,  sgs_visc_val+adaptvisc)
         end do
 
         ! Must be done to avoid discontinuities at halos
@@ -1693,9 +1726,12 @@ contains
 
 
     ! This one is not per-element as above, but loops over all elements
-    subroutine aniso_filter_lengths(pos, del_fin)
+    subroutine aniso_filter_lengths(pos, del_fin, lenrange)
         type(vector_field), intent(in) :: pos
         real, dimension(:,:), intent(inout) :: del_fin
+
+        real, optional :: lenrange(2)
+        real :: tmplen
 
         real, dimension(pos%dim, opNloc) :: X_val
         real, dimension(pos%dim) :: dx, del
@@ -1709,6 +1745,8 @@ contains
 
         integer :: e, n, i, gn, f
         integer :: num_elements, num_nodes, num_neighs
+
+        integer :: ierr
 
         logical :: extruded_mesh
 
@@ -1776,10 +1814,31 @@ contains
             end do
         end do
 
-        ! Now go around all nodes.
+        ! Now set node values, and calculate scalar min/max range
+        lenrange(1) = 10e10
+        lenrange(2) = 0.
         do n=1, num_nodes
             del_fin(:, n) = dx_sum(:, n) / visits(n)
+
+            if(present(lenrange)) then
+                tmplen = maxval(del_fin(:,n))
+
+                if(tmplen<lenrange(1)) lenrange(1)=tmplen
+                if(tmplen>lenrange(2)) lenrange(2)=tmplen
+            end if
         end do
+
+        ! Only output element length stats if we've asked for them
+        if(present(lenrange)) then
+            ! Calculate global min/max values
+            call mpi_allreduce(lenrange(1), tmplen, 1, mpi_double_precision, &
+                mpi_min, mpi_comm_world, ierr)
+            lenrange(1) = tmplen
+
+            call mpi_allreduce(lenrange(2), tmplen, 1, mpi_double_precision, &
+                mpi_max, mpi_comm_world, ierr)
+            lenrange(2) = tmplen
+        end if
 
         deallocate(dx_sum)
         deallocate(dx_ele_raw)
