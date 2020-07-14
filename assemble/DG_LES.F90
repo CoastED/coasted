@@ -140,6 +140,8 @@ contains
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
         call grad(u_cg, x, u_grad)
 
+        ! Crucially, update halos for use
+        call halo_update(u_grad)
 
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)
@@ -1773,25 +1775,26 @@ contains
         do e=1, num_elements
            call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
 
-           dx_ele_raw(:,e) = dx(:)
+!           dx_ele_raw(:,e) = dx(:)
+           dx_ele_filt(:,e) = dx(:)
         end do
 
         ! Filter sizes per element
-        do e=1, num_elements
-            neighs=>ele_neigh(pos, e)
+!         do e=1, num_elements
+!             neighs=>ele_neigh(pos, e)
 
-            ele_filt_sum=dx_ele_raw(:,e)
+!             ele_filt_sum=dx_ele_raw(:,e)
 
-            num_neighs=0
-            do f=1, size(neighs)
-                if(neighs(f)>0) then
-                    ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
-                    num_neighs=num_neighs+1
-                end if
-            end do
+!             num_neighs=0
+!             do f=1, size(neighs)
+!                 if(neighs(f)>0) then
+!                     ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+!                     num_neighs=num_neighs+1
+!                 end if
+!             end do
 
-            dx_ele_filt(:,e) = ele_filt_sum / num_neighs
-        end do
+!             dx_ele_filt(:,e) = ele_filt_sum / num_neighs
+!         end do
 
 
         ! Now create sizes per-node
