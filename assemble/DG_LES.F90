@@ -995,8 +995,6 @@ contains
         do e=1, num_elements
             u_cg_ele=ele_nodes(u_cg, e)
 
-            ! call amd_length_ele(x, e, dx)
-
             sgs_ele_av=0.0
             do ln=1, opNloc
                 gnode = u_cg_ele(ln)
@@ -1100,7 +1098,7 @@ contains
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
-        call halo_update(filt_len)
+        if(have_filter_field) call halo_update(filt_len)
 
         call deallocate(u_grad)
         deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
@@ -1347,7 +1345,7 @@ contains
 #endif
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
-        !call halo_update(filt_len)
+        if(have_filter_field) call halo_update(filt_len)
 
         call deallocate(u_grad)
         deallocate( S, dudx_n, u_cg_ele )
@@ -1775,26 +1773,22 @@ contains
         do e=1, num_elements
            call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
 
-!           dx_ele_raw(:,e) = dx(:)
-           dx_ele_filt(:,e) = dx(:)
+           dx_ele_raw(:,e) = dx(:)
         end do
 
         ! Filter sizes per element
-!         do e=1, num_elements
-!             neighs=>ele_neigh(pos, e)
-
-!             ele_filt_sum=dx_ele_raw(:,e)
-
-!             num_neighs=0
-!             do f=1, size(neighs)
-!                 if(neighs(f)>0) then
-!                     ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
-!                     num_neighs=num_neighs+1
-!                 end if
-!             end do
-
-!             dx_ele_filt(:,e) = ele_filt_sum / num_neighs
-!         end do
+         do e=1, num_elements
+             neighs=>ele_neigh(pos, e)
+             ele_filt_sum=dx_ele_raw(:,e)
+             num_neighs=0
+             do f=1, size(neighs)
+                 if(neighs(f)>0) then
+                     ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+                     num_neighs=num_neighs+1
+                 end if
+             end do
+             dx_ele_filt(:,e) = ele_filt_sum / num_neighs
+         end do
 
 
         ! Now create sizes per-node
