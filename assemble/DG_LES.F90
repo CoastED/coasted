@@ -300,11 +300,11 @@ contains
 
         real :: blend
 
-        real, allocatable, save:: node_sum(:), node_peaky_sum(:)
-        real, allocatable, save :: node_filter_lengths(:,:)
-        integer, allocatable, save :: node_visits(:)
-        real, allocatable, save :: node_weight_sum(:)
-        real, save :: minmaxlen(2)
+        real, allocatable :: node_sum(:), node_peaky_sum(:)
+        real, allocatable :: node_filter_lengths(:,:)
+        integer, allocatable :: node_visits(:)
+        real, allocatable :: node_weight_sum(:)
+        real :: minmaxlen(2)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -324,12 +324,6 @@ contains
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
         real :: BS, topbit, btmbit, Cpoin
-
-        ! Cell-size adaptive viscosity
-        real :: thismaxlen, scalelen, startlen, endlen
-        real :: startvisc, endvisc, adaptvisc
-        real :: valpha
-
 
         print*, "In calc_dg_sgs_amd_viscosity_node()"
 
@@ -401,27 +395,13 @@ contains
         ! We only allocate if mesh connectivity unchanged from
         ! last iteration; reuse saved arrays otherwise
 
-#undef RUN_THIS_BELOW
-#ifdef RUN_THIS_BELOW
+        allocate(node_sum(num_nodes))
+        allocate(node_peaky_sum(num_nodes))
+        allocate(node_weight_sum(num_nodes))
+        allocate(node_visits(num_nodes))
 
-        if(new_mesh_connectivity) then
-            if(allocated(node_sum)) then
-                deallocate(node_sum)
-                deallocate(node_peaky_sum)
-                deallocate(node_visits)
-                deallocate(node_weight_sum)
-                deallocate(node_filter_lengths)
-            end if
-
-            allocate(node_sum(num_nodes))
-            allocate(node_peaky_sum(num_nodes))
-            allocate(node_weight_sum(num_nodes))
-            allocate(node_visits(num_nodes))
-            
-            allocate(node_filter_lengths(opDim, num_nodes))
-!            call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
-
-        end if
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
 
         node_sum(:)=0.
         node_peaky_sum(:)=0.
@@ -502,50 +482,29 @@ contains
         ! blend=0...1 (0=peaky, 1=smoothed)
         blend=0.5
         do n=1, num_nodes
-            ! if(have_filter_field) then
-            !     call set(filt_len, n, node_filter_lengths(:,n))
-            ! end if
 
             sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
                          / node_visits(n)
-
-            ! Hard limit again.
+            ! Limiter
             ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
             if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(gnode)
 
-            ! Lastly, to adaptive mesh scaling for large cell sizes
-            thismaxlen = maxval(node_filter_lengths(:,n))
-            scalelen = minmaxlen(2)-minmaxlen(1)
-            startvisc = 0.0
-            endvisc = 100.0*mu
-
-            startlen = 5*minmaxlen(1)
-            endlen = 0.5*minmaxlen(2)
-
-            if(thismaxlen < startlen) then
-                adaptvisc=0.0
-            elseif(thismaxlen >= startlen .and.  thismaxlen < endlen) then
-                valpha = (thismaxlen-startlen)/scalelen
-
-                adaptvisc=(1-valpha)*startvisc + valpha*endvisc
-            else
-                adaptvisc=endvisc
-            end if
-
-            call set(sgs_visc, n,  sgs_visc_val+adaptvisc)
+            call set(sgs_visc, n,  sgs_visc_val)
         end do
 
-! RUN_THIS_BELOW
-#endif
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
 !        if(have_filter_field) call halo_update(filt_len)
 
-
-
         call deallocate(u_grad)
         deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
+
+        deallocate(node_sum)
+        deallocate(node_peaky_sum)
+        deallocate(node_visits)
+        deallocate(node_weight_sum)
+        deallocate(node_filter_lengths)
 
         t2=mpi_wtime()
 
