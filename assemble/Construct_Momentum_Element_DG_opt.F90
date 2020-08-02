@@ -72,20 +72,20 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Bilinear forms.
 
     real :: visc_dot_prod
-    real, dimension(opDim, opDim) :: visc_grad_dot_u
-    real, dimension(opDim, opDim, opNloc) :: Viscosity_ele
-    real, dimension(opDim, opDim, opNgi) :: visc_ele_quad
+!    real, dimension(opDim, opDim) :: visc_grad_dot_u
+!    real, dimension(opDim, opDim, opNloc) :: Viscosity_ele
+!    real, dimension(opDim, opDim, opNgi) :: visc_ele_quad
 
-    real, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
+!    real, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
 
     ! \Int_{ele} N_i kappa N_j dV, used for CDG fluxes
-    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
+!    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
 
     ! Local assembly matrices.
-    real, dimension(opNloc) :: l_MassLump, l_move_masslump
+!    real, dimension(opNloc) :: l_MassLump, l_move_masslump
 
     ! Local node number map for 2nd order element.
-    integer, dimension(opEFloc) :: local_glno
+!    integer, dimension(opEFloc) :: local_glno
 
     ! Local variables.
 
@@ -99,29 +99,29 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     integer :: start, finish
 
     ! Variable transform times quadrature weights.
-    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
-    ! Transformed gradient function for velocity.
-    ! Transformed gradient function for grid velocity.
-    ! Transformed gradient function for auxiliary variable.
-    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
+!    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
+!    ! Transformed gradient function for velocity.
+!    ! Transformed gradient function for grid velocity.
+!    ! Transformed gradient function for auxiliary variable.
+!    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
 
     ! Density at quadrature points.
     ! Coriolis magnitude and sign at quadrature points.
 
-    real, dimension(opNgi) :: Rho_q, Coriolis_q
-    ! Different velocities at quad points.
-    real, dimension(opDim, opNgi) :: u_nl_q
-    real, dimension(opNgi) :: u_nl_div_q
+!    real, dimension(opNgi) :: Rho_q, Coriolis_q
+!    ! Different velocities at quad points.
+!    real, dimension(opDim, opNgi) :: u_nl_q
+!    real, dimension(opNgi) :: u_nl_div_q
 
-    ! surface tension terms
-    real, dimension(opDim, opDim, opNgi) :: tension
-    real, dimension(opDim, opNgi) :: dtensiondj
+!    ! surface tension terms
+!    real, dimension(opDim, opDim, opNgi) :: tension
+!    real, dimension(opDim, opNgi) :: dtensiondj
 
     ! Node and shape pointers.
 
     ! JRM: Can you avoid using pointers?
     ! integer, dimension(:), pointer :: u_ele, p_ele
-    integer, dimension(opNloc ):: u_ele, p_ele, x_ele
+!    integer, dimension(opNloc ):: u_ele, p_ele, x_ele
     type(element_type), intent(in), pointer :: u_shape, p_shape, q_shape
     !    type(element_type), pointer :: u_face_shape, p_face_shape, q_face_shape
 
@@ -160,24 +160,24 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     logical :: on_sphere
 
     ! Absorption matrices
-    real, dimension(opDim, opNgi) :: absorption_gi
-    real, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
+!    real, dimension(opDim, opNgi) :: absorption_gi
+!    real, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
 
     ! Add vertical velocity relaxation to the absorption if present
     real, intent(in) :: vvr_sf
-    real, dimension(opDim, opDim, opNgi) :: vvr_abs
-    real, dimension(opDim, opNgi) :: vvr_abs_diag
-    real, dimension(opNgi) :: depth_at_quads
+!    real, dimension(opDim, opDim, opNgi) :: vvr_abs
+!    real, dimension(opDim, opNgi) :: vvr_abs_diag
+!    real, dimension(opNgi) :: depth_at_quads
     type(scalar_field), intent(in) :: depth
 
     ! Add implicit buoyancy to the absorption if present
     real, intent(in) :: ib_min_grad
-    real, dimension(opDim, opDim, opNgi) :: ib_abs
-    real, dimension(opDim, opNgi) :: ib_abs_diag
-    real, dimension(opNloc, opNgi, opDim) :: dt_rho
-    real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
-    real, dimension(opDim, opNloc) :: ele_grav_val
-    real, dimension(opNgi) :: drho_dz
+!    real, dimension(opDim, opDim, opNgi) :: ib_abs
+!    real, dimension(opDim, opNgi) :: ib_abs_diag
+!    real, dimension(opNloc, opNgi, opDim) :: dt_rho
+!    real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
+!    real, dimension(opDim, opNloc) :: ele_grav_val
+!    real, dimension(opNgi) :: drho_dz
 
 !    ! Non-linear approximation to the PhaseVolumeFraction field
     type(scalar_field), intent(in) :: nvfrac
@@ -190,15 +190,15 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !    real, dimension(opDim, opNgi) :: grad_nvfrac_gi
 
     ! Moving mesh
-    real, dimension(opDim, opNgi) :: ele_u_mesh_quad
+!    real, dimension(opDim, opNgi) :: ele_u_mesh_quad
 
     ! element centre and neighbour centre
     ! for IP parameters
 
-    real, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
+!    real, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
     real :: turbine_fluxfac
 
-    real, dimension(opNgi) :: alpha_u_quad
+!    real, dimension(opNgi) :: alpha_u_quad
 
     ! added for partial stress form (sp911)
     logical, intent(in) :: partial_stress
@@ -210,7 +210,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         & les_filter_width_debug
     type(tensor_field), pointer, intent(in) :: tensor_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
-    real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
+!    real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
     logical, intent(in) :: have_free_stab
     real, intent(in) :: free_stab_param
@@ -227,26 +227,26 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Matrix for assembling primal fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
-    real, dimension(opFloc, opFloc) :: face_shape_shape_work
+!    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
+!    real, dimension(opFloc, opFloc) :: face_shape_shape_work
 
     ! Matrix for assembling penalty fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
+!    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
 
     ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
     !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
     !    & normal_mat
     ! I think the above is wrong, and the dimensions below are correct.
-    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
+!    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
 
     ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
     !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
     !        & kappa_normal_mat
-    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
+!    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
 
     ! Face objects and numberings.
     ! type(element_type), intent(in), pointer :: u_shape, u_shape_2, p_shape, q_shape
