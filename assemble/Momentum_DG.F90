@@ -174,42 +174,63 @@ module momentum_DG
     real, allocatable, dimension(:, :) :: sh_ot_temp
     real, allocatable, dimension(:, :) :: sh_dt_temp
 
+    real, allocatable, dimension(:, :) :: visc_grad_dot_u
+    real, allocatable, dimension(:, :, :) :: Viscosity_ele
+    real, allocatable, dimension(:, :, :) :: visc_ele_quad
+    real, allocatable, dimension(:, :) :: x_val, x_val_2, u_val
+    real, allocatable, dimension(:, :, :, :) :: kappa_mat
+    real, allocatable, dimension(:) :: l_MassLump, l_move_masslump
+    integer, allocatable, dimension(:) :: local_glno
+    real, allocatable, dimension(:) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
+    real, allocatable, dimension(:, :, :) :: du_t, dug_t, dq_t
+    real, allocatable, dimension(:) :: Rho_q, Coriolis_q
+    real, allocatable, dimension(:, :) :: u_nl_q
+    real, allocatable, dimension(:) :: u_nl_div_q
+    real, allocatable, dimension(:, :, :) :: tension
+    real, allocatable, dimension(:, :) :: dtensiondj
+    integer, allocatable, dimension(:) :: u_ele, p_ele, x_ele
+    real, allocatable, dimension(:, :) :: absorption_gi
+    real, allocatable, dimension(:, :, :) :: tensor_absorption_gi
+    real, allocatable, dimension(:, :, :) :: vvr_abs
+    real, allocatable, dimension(:, :) :: vvr_abs_diag
+    real, allocatable, dimension(:) :: depth_at_quads
+    real, allocatable, dimension(:, :, :) :: ib_abs
+    real, allocatable, dimension(:, :) :: ib_abs_diag
+    real, allocatable, dimension(:, :, :) :: dt_rho
+    real, allocatable, dimension(:, :) :: grav_at_quads, grad_rho
+    real, allocatable, dimension(:, :) :: ele_grav_val
+    real, allocatable, dimension(:) :: drho_dz
+    real, allocatable, dimension(:, :) :: ele_u_mesh_quad
+    real, allocatable, dimension(:) :: ele_centre, neigh_centre, face_centre, face_centre_2
+    real, allocatable, dimension(:) :: alpha_u_quad
+    real, allocatable, dimension(:, :, :) :: tmp_face_tensor
+    real, allocatable, dimension(:, :, :) :: face_primal_fluxes_mat
+    real, allocatable, dimension(:, :) :: face_shape_shape_work
+    real, allocatable, dimension(:, :, :) :: face_penalty_fluxes_mat
+    real, allocatable, dimension(:, :, :) :: face_normal_mat
+    real, allocatable, dimension(:, :, :) :: face_kappa_normal_mat
 
-    real, allocatable, dimension(opDim, opDim) :: visc_grad_dot_u
-    real, allocatable, dimension(opDim, opDim, opNloc) :: Viscosity_ele
-    real, allocatable, dimension(opDim, opDim, opNgi) :: visc_ele_quad
-    real, allocatable, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
-    real, allocatable, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
-    real, allocatable, dimension(opNloc) :: l_MassLump, l_move_masslump
-    integer, allocatable, dimension(opEFloc) :: local_glno
-    real, allocatable, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
-    real, allocatable, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
-    real, allocatable, dimension(opNgi) :: Rho_q, Coriolis_q
-    real, allocatable, dimension(opDim, opNgi) :: u_nl_q
-    real, allocatable, dimension(opNgi) :: u_nl_div_q
-    real, allocatable, dimension(opDim, opDim, opNgi) :: tension
-    real, allocatable, dimension(opDim, opNgi) :: dtensiondj
-    integer, allocatable, dimension(opNloc) :: u_ele, p_ele, x_ele
-    real, allocatable, dimension(opDim, opNgi) :: absorption_gi
-    real, allocatable, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
-    real, allocatable, dimension(opDim, opDim, opNgi) :: vvr_abs
-    real, allocatable, dimension(opDim, opNgi) :: vvr_abs_diag
-    real, allocatable, dimension(opNgi) :: depth_at_quads
-    real, allocatable, dimension(opDim, opDim, opNgi) :: ib_abs
-    real, allocatable, dimension(opDim, opNgi) :: ib_abs_diag
-    real, allocatable, dimension(opNloc, opNgi, opDim) :: dt_rho
-    real, allocatable, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
-    real, allocatable, dimension(opDim, opNloc) :: ele_grav_val
-    real, allocatable, dimension(opNgi) :: drho_dz
-    real, allocatable, dimension(opDim, opNgi) :: ele_u_mesh_quad
-    real, allocatable, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
-    real, allocatable, dimension(opNgi) :: alpha_u_quad
-    real, allocatable, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
-    real, allocatable, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
-    real, allocatable, dimension(opFloc, opFloc) :: face_shape_shape_work
-    real, allocatable, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
-    real, allocatable, dimension(opDim, opFloc, opFloc) :: face_normal_mat
-    real, allocatable, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
+    integer, allocatable, dimension(:) :: u_face_l, u_mesh_glno, u_face_glno_1, u_face_glno_2, Rho_face_glno_1, x_face_glno_1
+    integer, allocatable, dimension(:) :: q_face_l
+    real, allocatable, dimension(:) :: face_Rho_q
+    real, allocatable, dimension(:) :: face_Rho_val
+    real, allocatable, dimension(:, :) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
+    real, allocatable, dimension(:, :) :: face_u_mesh_quad
+    logical, allocatable, dimension(:) :: face_inflow
+    real, allocatable, dimension(:) :: face_u_nl_q_dotn, face_income
+    real, allocatable, dimension(:) :: face_detwei, face_detwei_work
+    real, allocatable, dimension(:) :: face_inner_advection_integral, face_outer_advection_integral
+    real, allocatable, dimension(:, :) :: face_nnAdvection_out
+    real, allocatable, dimension(:, :) :: face_nnAdvection_in
+    real, allocatable, dimension(:, :, :, :) :: face_mnCT
+    real, allocatable, dimension(:, :, :) :: face_kappa_gi
+    real, allocatable, dimension(:, :, :) :: face_visc_val
+    real, allocatable, dimension(:, :, :) :: face_tension_q
+    logical, allocatable, dimension(:) :: face_dirichlet
+    real, allocatable, dimension(:) :: kappa_n
+    real, allocatable, dimension(:, :, :) :: cdg_R_mat
+    real, allocatable, dimension(:, :, :, :) :: cdg_add_mat
+
 
 
     ! =======================================================================
