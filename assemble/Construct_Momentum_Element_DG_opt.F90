@@ -72,20 +72,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Bilinear forms.
 
     real :: visc_dot_prod
-    real, dimension(opDim, opDim) :: visc_grad_dot_u
-    real, dimension(opDim, opDim, opNloc) :: Viscosity_ele
-    real, dimension(opDim, opDim, opNgi) :: visc_ele_quad
 
-    real, dimension(opDim, opNloc) :: x_val, x_val_2, u_val
-
-    ! \Int_{ele} N_i kappa N_j dV, used for CDG fluxes
-    real, dimension(opDim, opDim, opNloc, opNloc) :: kappa_mat
-
-    ! Local assembly matrices.
-    real, dimension(opNloc) :: l_MassLump, l_move_masslump
-
-    ! Local node number map for 2nd order element.
-    integer, dimension(opEFloc) :: local_glno
 
     ! Local variables.
 
@@ -98,24 +85,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Array bounds for faces of the 2nd order element.
     integer :: start, finish
 
-    ! Variable transform times quadrature weights.
-    real, dimension(opNgi) :: detwei, detwei_old, detwei_new, coefficient_detwei, detwei_rhoq
-    ! Transformed gradient function for velocity.
-    ! Transformed gradient function for grid velocity.
-    ! Transformed gradient function for auxiliary variable.
-    real, dimension(opNloc, opNgi, opDim) :: du_t, dug_t, dq_t
-
-    ! Density at quadrature points.
-    ! Coriolis magnitude and sign at quadrature points.
-
-    real, dimension(opNgi) :: Rho_q, Coriolis_q
-    ! Different velocities at quad points.
-    real, dimension(opDim, opNgi) :: u_nl_q
-    real, dimension(opNgi) :: u_nl_div_q
-
-    ! surface tension terms
-    real, dimension(opDim, opDim, opNgi) :: tension
-    real, dimension(opDim, opNgi) :: dtensiondj
 
     ! Node and shape pointers.
 
