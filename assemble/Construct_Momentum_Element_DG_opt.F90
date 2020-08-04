@@ -129,24 +129,24 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     logical :: on_sphere
 
     ! Absorption matrices
-    real, dimension(opDim, opNgi) :: absorption_gi
-    real, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
+!    real, dimension(opDim, opNgi) :: absorption_gi
+!    real, dimension(opDim, opDim, opNgi) :: tensor_absorption_gi
 
     ! Add vertical velocity relaxation to the absorption if present
     real, intent(in) :: vvr_sf
-    real, dimension(opDim, opDim, opNgi) :: vvr_abs
-    real, dimension(opDim, opNgi) :: vvr_abs_diag
-    real, dimension(opNgi) :: depth_at_quads
+!    real, dimension(opDim, opDim, opNgi) :: vvr_abs
+!    real, dimension(opDim, opNgi) :: vvr_abs_diag
+!    real, dimension(opNgi) :: depth_at_quads
     type(scalar_field), intent(in) :: depth
 
     ! Add implicit buoyancy to the absorption if present
     real, intent(in) :: ib_min_grad
-    real, dimension(opDim, opDim, opNgi) :: ib_abs
-    real, dimension(opDim, opNgi) :: ib_abs_diag
-    real, dimension(opNloc, opNgi, opDim) :: dt_rho
-    real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
-    real, dimension(opDim, opNloc) :: ele_grav_val
-    real, dimension(opNgi) :: drho_dz
+!    real, dimension(opDim, opDim, opNgi) :: ib_abs
+!    real, dimension(opDim, opNgi) :: ib_abs_diag
+!    real, dimension(opNloc, opNgi, opDim) :: dt_rho
+!    real, dimension(opDim, opNgi) :: grav_at_quads, grad_rho
+!    real, dimension(opDim, opNloc) :: ele_grav_val
+!    real, dimension(opNgi) :: drho_dz
 
 !    ! Non-linear approximation to the PhaseVolumeFraction field
     type(scalar_field), intent(in) :: nvfrac
@@ -226,34 +226,37 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     ! Note that both sides of the face can be assumed to have the same
     ! number of quadrature points.
-    real, dimension(opFngi) :: face_Rho_q !, face_nvfrac_gi
-    real, dimension(opFloc) :: face_Rho_val
-    real, dimension(opDim, opFngi) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
-    real, dimension(opDim, opFngi) :: face_u_mesh_quad
+!
+!    real, dimension(opFngi) :: face_Rho_q !, face_nvfrac_gi
+!    real, dimension(opFloc) :: face_Rho_val
+!    real, dimension(opDim, opFngi) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
+!    real, dimension(opDim, opFngi) :: face_u_mesh_quad
+!
+!    logical, dimension(opFngi) :: face_inflow
+!    real, dimension(opFngi) :: face_u_nl_q_dotn, face_income
+!    ! Variable transform times quadrature weights.
+!    real, dimension(opFngi) :: face_detwei, face_detwei_work
+!    real, dimension(opFngi) :: face_inner_advection_integral, face_outer_advection_integral
+!
+!    ! Bilinear forms
+!    !real, dimension(face_loc(U,face),face_loc(U,face)) :: nnAdvection_out
+!    !real, dimension(face_loc(U,face),face_loc(U,face_2)) :: nnAdvection_in
+!    ! real, dimension(1, mesh_dim(U), face_loc(P,face),face_loc(U,face)) :: mnCT
+!    real, dimension(opFloc, opFloc) :: face_nnAdvection_out
+!    real, dimension(opFloc, opFloc) :: face_nnAdvection_in
+!
+!    ! This is almost good enough.
+!    real, dimension(1, opDim, opPFloc, opFloc) :: face_mnCT
+!
+!
+!    ! Viscosity values on face (used for CDG and IP fluxes)
+!    real, dimension(opDim, opDim, opFngi) :: face_kappa_gi
+!    real, dimension(opDim, opDim, opFloc) :: face_visc_val
+!
+!    ! surfacetension stuff
+!    real, dimension(opDim, opDim, opFngi) :: face_tension_q
 
-    logical, dimension(opFngi) :: face_inflow
-    real, dimension(opFngi) :: face_u_nl_q_dotn, face_income
-    ! Variable transform times quadrature weights.
-    real, dimension(opFngi) :: face_detwei, face_detwei_work
-    real, dimension(opFngi) :: face_inner_advection_integral, face_outer_advection_integral
 
-    ! Bilinear forms
-    !real, dimension(face_loc(U,face),face_loc(U,face)) :: nnAdvection_out
-    !real, dimension(face_loc(U,face),face_loc(U,face_2)) :: nnAdvection_in
-    ! real, dimension(1, mesh_dim(U), face_loc(P,face),face_loc(U,face)) :: mnCT
-    real, dimension(opFloc, opFloc) :: face_nnAdvection_out
-    real, dimension(opFloc, opFloc) :: face_nnAdvection_in
-
-    ! This is almost good enough.
-    real, dimension(1, opDim, opPFloc, opFloc) :: face_mnCT
-
-
-    ! Viscosity values on face (used for CDG and IP fluxes)
-    real, dimension(opDim, opDim, opFngi) :: face_kappa_gi
-    real, dimension(opDim, opDim, opFloc) :: face_visc_val
-
-    ! surfacetension stuff
-    real, dimension(opDim, opDim, opFngi) :: face_tension_q
 
     integer :: face_dim, face_start, face_finish
     logical :: face_boundary, face_free_surface, face_no_normal_flow, face_l_have_pressure_bc
