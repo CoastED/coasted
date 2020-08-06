@@ -2078,7 +2078,7 @@ contains
         real :: C_h
         integer :: ip_d1, ip_d2
 
-!        real, dimension(opFngi) :: kappa_n
+        real, dimension(opFngi) :: kappa_n
 
         ! FIXME: JRM HACK
         !face_kappa_gi = face_kappa_gi + ele_val_at_quad(tensor_eddy_visc, ele)
@@ -2348,8 +2348,8 @@ contains
         integer :: cdg_i, cdg_j, cdg_dim1, cdg_dim2, cdg_face1, cdg_face2, cdg_outer_dim
         ! integer, dimension(opFloc) :: cdg_U_face_loc
 
-!        real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
-!        real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
+        real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
+        real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
 
         ! cdg_U_face_loc=face_local_nodes(U, face)
 
