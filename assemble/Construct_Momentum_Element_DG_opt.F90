@@ -159,15 +159,15 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 !    real, dimension(opDim, opNgi) :: grad_nvfrac_gi
 
     ! Moving mesh
-    real, dimension(opDim, opNgi) :: ele_u_mesh_quad
+!    real, dimension(opDim, opNgi) :: ele_u_mesh_quad
 
     ! element centre and neighbour centre
     ! for IP parameters
 
-    real, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
+!    real, dimension(opDim) :: ele_centre, neigh_centre, face_centre, face_centre_2
     real :: turbine_fluxfac
 
-    real, dimension(opNgi) :: alpha_u_quad
+!    real, dimension(opNgi) :: alpha_u_quad
 
     ! added for partial stress form (sp911)
     logical, intent(in) :: partial_stress
@@ -179,7 +179,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
         & les_filter_width_debug
     type(tensor_field), pointer, intent(in) :: tensor_eddy_visc
     type(scalar_field), pointer, intent(in) :: prescribed_filter_width, distance_to_wall
-    real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
 
     logical, intent(in) :: have_free_stab
     real, intent(in) :: free_stab_param
@@ -193,29 +192,31 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     logical :: CDG_switch_in
 
+    ! real, dimension(opDim, opDim, opFloc) :: tmp_face_tensor
+
     ! Matrix for assembling primal fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
-    real, dimension(opFloc, opFloc) :: face_shape_shape_work
+!    real, dimension(2, opFloc, opNloc) :: face_primal_fluxes_mat
+!    real, dimension(opFloc, opFloc) :: face_shape_shape_work
 
     ! Matrix for assembling penalty fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
-    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
+!    real, dimension(2, opFloc, opFloc) :: face_penalty_fluxes_mat
 
     ! \Int_{s_ele} N_iN_j n ds, used for CDG fluxes
     !real, dimension(mesh_dim(U),ele_loc(U,ele),ele_loc(U,ele)) :: &
     !    & normal_mat
     ! I think the above is wrong, and the dimensions below are correct.
-    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
+!    real, dimension(opDim, opFloc, opFloc) :: face_normal_mat
 
     ! \Int_{s_ele} N_iN_j kappa.n ds, used for CDG fluxes
     ! Note that this assumes same order polys in each element
     ! Code will need reorganising for p-refinement
     !    real, dimension(mesh_dim(U),face_loc(U,face),face_loc(U,face)) :: &
     !        & kappa_normal_mat
-    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
+!    real, dimension(opDim, opFloc, opFloc) :: face_kappa_normal_mat
 
     ! Face objects and numberings.
     ! type(element_type), intent(in), pointer :: u_shape, u_shape_2, p_shape, q_shape
@@ -2077,7 +2078,7 @@ contains
         real :: C_h
         integer :: ip_d1, ip_d2
 
-        real, dimension(opFngi) :: kappa_n
+!        real, dimension(opFngi) :: kappa_n
 
         ! FIXME: JRM HACK
         !face_kappa_gi = face_kappa_gi + ele_val_at_quad(tensor_eddy_visc, ele)
@@ -2346,8 +2347,9 @@ contains
         ! Internal variables
         integer :: cdg_i, cdg_j, cdg_dim1, cdg_dim2, cdg_face1, cdg_face2, cdg_outer_dim
         ! integer, dimension(opFloc) :: cdg_U_face_loc
-        real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
-        real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
+
+!        real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
+!        real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
 
         ! cdg_U_face_loc=face_local_nodes(U, face)
 

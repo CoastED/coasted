@@ -28,7 +28,6 @@
 #include "fdebug.h"
 #include "compile_opt_defs.h"
 
-! #define CGONLY
 
 module momentum_DG
     ! This module contains the Discontinuous Galerkin form of the momentum
@@ -200,6 +199,10 @@ module momentum_DG
     real, allocatable, dimension(:, :) :: ele_grav_val
     real, allocatable, dimension(:) :: drho_dz
 
+    real, allocatable, dimension(:, :) :: ele_u_mesh_quad
+    real, allocatable, dimension(:) :: ele_centre, neigh_centre, face_centre, face_centre_2
+    real, allocatable, dimension(:) :: alpha_u_quad
+
     real, allocatable, dimension(:) :: face_Rho_q
     real, allocatable, dimension(:) :: face_Rho_val
     real, allocatable, dimension(:, :) :: face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q
@@ -214,6 +217,18 @@ module momentum_DG
     real, allocatable, dimension(:, :, :) :: face_kappa_gi
     real, allocatable, dimension(:, :, :) :: face_visc_val
     real, allocatable, dimension(:, :, :) :: face_tension_q
+
+    real, allocatable, dimension(:, :, :) :: tmp_face_tensor
+    real, allocatable, dimension(:, :, :) :: face_primal_fluxes_mat
+    real, allocatable, dimension(:, :) :: face_shape_shape_work
+    real, allocatable, dimension(:, :, :) :: face_penalty_fluxes_mat
+    real, allocatable, dimension(:, :, :) :: face_normal_mat
+    real, allocatable, dimension(:, :, :) :: face_kappa_normal_mat
+
+    real, allocatable, dimension(:) :: kappa_n
+    real, allocatable, dimension(:, :, :) :: cdg_R_mat
+    real, allocatable, dimension(:,:, :, :) :: cdg_add_mat
+
 
     ! =======================================================================
     ! Make assembly arrays private to each OpenMP thread
@@ -264,6 +279,10 @@ module momentum_DG
     !$OMP THREADPRIVATE(ele_grav_val)
     !$OMP THREADPRIVATE(drho_dz)
 
+    !$OMP THREADPRIVATE(ele_u_mesh_quad)
+    !$OMP THREADPRIVATE(ele_centre, neigh_centre, face_centre, face_centre_2)
+    !$OMP THREADPRIVATE(alpha_u_quad)
+
     !$OMP THREADPRIVATE(face_Rho_q)
     !$OMP THREADPRIVATE(face_Rho_val)
     !$OMP THREADPRIVATE(face_normal, face_u_nl_q, face_u_f_q, face_u_f2_q, face_div_u_f_q)
@@ -278,6 +297,17 @@ module momentum_DG
     !$OMP THREADPRIVATE(face_kappa_gi)
     !$OMP THREADPRIVATE(face_visc_val)
     !$OMP THREADPRIVATE(face_tension_q)
+
+    !$OMP THREADPRIVATE(tmp_face_tensor)
+    !$OMP THREADPRIVATE(face_primal_fluxes_mat)
+    !$OMP THREADPRIVATE(face_shape_shape_work)
+    !$OMP THREADPRIVATE(face_penalty_fluxes_mat)
+    !$OMP THREADPRIVATE(face_normal_mat)
+    !$OMP THREADPRIVATE(face_kappa_normal_mat)
+
+    !$OMP THREADPRIVATE(kappa_n)
+    !$OMP THREADPRIVATE(cdg_R_mat)
+    !$OMP THREADPRIVATE(cdg_add_mat)
 
 contains
 
@@ -1849,6 +1879,13 @@ subroutine allocateDGAssemblyArrays()
     allocate( ele_grav_val(opDim, opNloc) )
     allocate( drho_dz(opNgi) )
 
+    allocate( ele_u_mesh_quad(opDim, opNgi) )
+    allocate( ele_centre(opDim) )
+    allocate( neigh_centre(opDim) )
+    allocate( face_centre(opDim) )
+    allocate( face_centre_2(opDim) )
+    allocate( alpha_u_quad(opNgi) )
+
     allocate( face_Rho_q(opFngi) )
     allocate( face_Rho_val(opFloc) )
     allocate( face_normal(opDim, opFngi) )
@@ -1870,6 +1907,17 @@ subroutine allocateDGAssemblyArrays()
     allocate( face_kappa_gi(opDim, opDim, opFngi) )
     allocate( face_visc_val(opDim, opDim, opFloc) )
     allocate( face_tension_q(opDim, opDim, opFngi) )
+
+    allocate( tmp_face_tensor(opDim, opDim, opFloc) )
+    allocate( face_primal_fluxes_mat(2, opFloc, opNloc) )
+    allocate( face_shape_shape_work(opFloc, opFloc) )
+    allocate( face_penalty_fluxes_mat(2, opFloc, opFloc) )
+    allocate( face_normal_mat(opDim, opFloc, opFloc) )
+    allocate( face_kappa_normal_mat(opDim, opFloc, opFloc) )
+
+    allocate( kappa_n(opFngi) )
+    allocate( cdg_R_mat(opDim, opNloc, opFloc) )
+    allocate( cdg_add_mat(2,2, opFloc, opFloc) )
 
 end subroutine allocateDGAssemblyArrays
 
@@ -1944,6 +1992,13 @@ subroutine deallocateDGAssemblyArrays()
     deallocate( ele_grav_val )
     deallocate( drho_dz )
 
+    deallocate( ele_u_mesh_quad )
+    deallocate( ele_centre )
+    deallocate( neigh_centre )
+    deallocate( face_centre )
+    deallocate( face_centre_2 )
+    deallocate( alpha_u_quad )
+
     deallocate( face_Rho_q )
     deallocate( face_Rho_val )
     deallocate( face_normal )
@@ -1965,6 +2020,17 @@ subroutine deallocateDGAssemblyArrays()
     deallocate( face_kappa_gi )
     deallocate( face_visc_val )
     deallocate( face_tension_q )
+
+    deallocate( tmp_face_tensor )
+    deallocate( face_primal_fluxes_mat )
+    deallocate( face_shape_shape_work )
+    deallocate( face_penalty_fluxes_mat )
+    deallocate( face_normal_mat )
+    deallocate( face_kappa_normal_mat )
+
+    deallocate( kappa_n )
+    deallocate( cdg_R_mat )
+    deallocate( cdg_add_mat )
 
   end subroutine deallocateDGAssemblyArrays
 
