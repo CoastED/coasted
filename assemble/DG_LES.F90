@@ -513,6 +513,182 @@ contains
     end subroutine calc_dg_sgs_amd_viscosity_node
 
 
+    ! ========================================================================
+    ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
+    ! See Rozema et al, Computational Methods in Engineering, 2020.
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_amd_viscosity_node_2(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable :: dx(:)
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
+        real :: BS, topbit, btmbit, Cpoin
+
+        print*, "In calc_dg_sgs_amd_viscosity_node_2()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+                 del_gradu(opDim,opDim), B(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.        
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+        end if
+
+        sgs_visc%val(:)=0.0
+
+        call grad(u_cg, x, u_grad)
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+           dx(:)=node_filter_lengths(:,n)
+           dudx_n = u_grad%val(:,:,n)
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           do i=1, opDim
+              do j=1, opDim
+                 del_gradu(i,j) = dx(j) * dudx_n(j,i)
+              end do
+           end do
+
+           B = matmul(transpose(del_gradu), del_gradu)
+
+           BS=0.0
+           do i=1, opDim
+              do j=1, opDim
+                 BS = BS+B(i,j)*S(i,j)
+              end do
+           end do
+
+           topbit = rho * Cpoin * max(-BS, 0.)
+
+
+           btmbit=0.
+           do i=1, opDim
+              do j=1, opDim
+                 btmbit = btmbit + dudx_n(i,j)**2
+              end do
+           end do
+
+           ! If the dominator is vanishing small, then set the SGS viscosity
+           ! to zero
+           if(btmbit < 10e-10) then
+              sgs_visc_val = sgs_visc%val(n)
+           else
+              sgs_visc_val = topbit/btmbit
+              if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
+           end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_node_2
+
+
 
     ! ========================================================================
     ! Use LES for anisotropic grids, using vorticity-derived filter lengths.
@@ -535,7 +711,7 @@ contains
         if(have_option("/geometry/mesh::ZeroMesh")) then
             call calc_dg_sgs_amd_viscosity_ele(state, x, u)
         else
-            call calc_dg_sgs_amd_viscosity_node(state, x, u)
+            call calc_dg_sgs_amd_viscosity_node_2(state, x, u)
         end if
 
 
