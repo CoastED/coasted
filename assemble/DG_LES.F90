@@ -902,6 +902,172 @@ contains
     end subroutine calc_dg_sgs_amd_viscosity_ele
 
 
+    ! ========================================================================
+    ! Use LES for anisotropic grids, using vorticity-derived filter lengths.
+    ! Based upon Chauvet (2007)
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_chauvet_viscosity(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc, dist_to_wall
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg, filt_len
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements, n, num_nodes
+
+        integer :: state_flag
+
+        real, allocatable, save :: node_filter_lengths(:,:)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_van_driest, have_reference_density, have_filter_field
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av, Cs
+        integer :: i, j, ln, gnode
+
+        real :: blend
+
+        integer, allocatable :: u_cg_ele(:)
+
+        real, dimension(:, :), allocatable :: S, dudx_n
+
+        print*, "In calc_dg_sgs_chauvet_viscosity()"
+
+        t1=mpi_wtime()
+
+
+        allocate( S(opDim,opDim), dudx_n(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+        ! Van Driest wall damping
+        have_van_driest = have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/van_driest_damping")
+
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+
+        ! Extract FilterLengths field for debugging
+        filt_len=>extract_vector_field(state, "FilterLengths", stat=state_flag)
+        if(state_flag /= 0 ) then
+            have_filter_field=.false.
+        else
+            have_filter_field=.true.
+        end if
+
+
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
+
+        if(have_van_driest) then
+            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+                mu=mviscosity%val(1,1,1)
+            else
+                FLAbort("DG_LES: must have constant dynamic viscosity field")
+            end if
+
+            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+            if (state_flag/=0) then
+                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
+            end if
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+
+        call get_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+            // "smagorinsky_coefficient", Cs)
+
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(node_sum)) then
+                deallocate(node_filter_lengths)
+            end if
+
+            allocate(node_filter_lengths(opDim, num_nodes))
+            call aniso_filter_lengths(x, node_filter_lengths)
+
+        end if
+
+
+        call vorticity_filter_lengths(x, u_grad, &
+                    node_filter_lengths, node_vort_lengths)
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+            dudx_n = u_grad%val(:,:,n)
+            S = 0.5 * (dudx_n + transpose(dudx_n))
+
+            sgs_visc_val = ((Cs*node_vort_lengths(n))**2.) &
+                        * rho *norm2(2.*S)
+
+            call set(sgs_visc, n,  sgs_visc_val)
+
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+        ! call halo_update(filt_len)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n )
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_chauvet_viscosity
+
+
 
     ! ========================================================================
     ! Horizontal and vertical lengthscales for anisotropic meshes,
@@ -965,9 +1131,9 @@ contains
          gr=ugrad%val(:,:,i)
 
          ! Calculate vorticity: \/ x u
-         vort(1) = gr(3,2)-gr(2,3)
-         vort(2) = gr(1,3)-gr(3,1)
-         vort(3) = gr(1,2)-gr(2,1)
+         vort(1) = gr(2,3)-gr(3,2)
+         vort(2) = gr(3,1)-gr(3,1)
+         vort(3) = gr(2,1)-gr(1,2)
 
          magvort = sqrt(vort(1)**2 + vort(2)**2 + vort(3)**2)
 
