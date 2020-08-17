@@ -639,7 +639,7 @@ contains
 
            do i=1, opDim
               do j=1, opDim
-                 del_gradu(i,j) = dx(j) * dudx_n(j,i)
+                 del_gradu(j,i) = dx(j) * dudx_n(j,i)
               end do
            end do
 
@@ -924,6 +924,7 @@ contains
         integer :: state_flag
 
         real, allocatable, save :: node_filter_lengths(:,:)
+        real, allocatable :: node_vort_lengths(:)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -1023,11 +1024,12 @@ contains
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
 
+        allocate(node_vort_lengths(num_nodes))
         ! We only allocate if mesh connectivity unchanged from
         ! last iteration; reuse saved arrays otherwise
 
         if(new_mesh_connectivity) then
-            if(allocated(node_sum)) then
+            if(allocated(node_filter_lengths)) then
                 deallocate(node_filter_lengths)
             end if
 
@@ -1060,6 +1062,7 @@ contains
 
         call deallocate(u_grad)
         deallocate( S, dudx_n )
+        deallocate( node_vort_lengths)
 
         t2=mpi_wtime()
 
