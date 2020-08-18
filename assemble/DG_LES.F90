@@ -524,6 +524,7 @@ contains
 
         type(vector_field), intent(in) :: u, x
         type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -543,6 +544,7 @@ contains
         real (kind=8), external :: mpi_wtime
 
         logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc
 
         ! Reference density
         real :: rho, mu
@@ -581,8 +583,16 @@ contains
         if (state_flag /= 0) then
             FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
         end if
-
         sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
 
         call grad(u_cg, x, u_grad)
 
@@ -669,6 +679,10 @@ contains
            else
               sgs_visc_val = topbit/btmbit
               if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
+           end if
+
+           if(have_artificial_visc) then
+              sgs_visc_val = sgs_visc_val + artifical_visc%val(n)
            end if
 
            call set(sgs_visc, n,  sgs_visc_val)
