@@ -682,7 +682,7 @@ contains
            end if
 
            if(have_artificial_visc) then
-              sgs_visc_val = sgs_visc_val + artifical_visc%val(n)
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
            end if
 
            call set(sgs_visc, n,  sgs_visc_val)
