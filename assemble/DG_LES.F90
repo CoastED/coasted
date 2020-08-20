@@ -685,6 +685,9 @@ contains
               sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
            end if
 
+            ! Limiter
+            if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(gnode)
+
            call set(sgs_visc, n,  sgs_visc_val)
         end do
 
