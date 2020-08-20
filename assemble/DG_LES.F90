@@ -686,7 +686,7 @@ contains
            end if
 
             ! Limiter
-            if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(gnode)
+            if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
 
            call set(sgs_visc, n,  sgs_visc_val)
         end do
