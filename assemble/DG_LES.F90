@@ -527,9 +527,10 @@ contains
         type(scalar_field), pointer :: artificial_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: u_cg
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
         type(tensor_field), pointer :: mviscosity
-        type(tensor_field) :: u_grad
+        type(vector_field) :: u_grad, v_grad, w_grad
 
         integer :: n, num_nodes
 
@@ -573,10 +574,17 @@ contains
 !        nullify(mviscosity)
 
         ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+        
         ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
 
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
              stat=state_flag)
@@ -595,6 +603,8 @@ contains
         end if
 
         call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
 
         ! Molecular viscosity
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
@@ -643,22 +653,25 @@ contains
 
         do n=1, num_nodes
            dx(:)=node_filter_lengths(:,n)
-           dudx_n = u_grad%val(:,:,n)
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
            do i=1, opDim
               do j=1, opDim
-                 del_gradu(j,i) = dx(j) * dudx_n(j,i)
+                 del_gradu(i,j) = dx(i) * dudx_n(i,j)
               end do
            end do
-
-           B = matmul(transpose(del_gradu), del_gradu)
 
            BS=0.0
            do i=1, opDim
               do j=1, opDim
-                 BS = BS+B(i,j)*S(i,j)
+                B(i,j) = (del_gradu(1,i) + del_gradu(2,i) + del_gradu(3,i)) &
+                    * (del_gradu(1,j) + del_gradu(2,j) + del_gradu(3,j))
+
+                BS = BS+B(i,j)*S(i,j)
               end do
            end do
 
