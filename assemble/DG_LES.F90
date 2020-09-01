@@ -714,6 +714,8 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
         deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
 
         deallocate(node_filter_lengths)
