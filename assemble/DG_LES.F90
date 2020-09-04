@@ -552,7 +552,7 @@ contains
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val, sgs_ele_av
-        integer :: i, j
+        integer :: i, j, k
 
         integer, allocatable :: u_cg_ele(:)
 
@@ -668,10 +668,11 @@ contains
            BS=0.0
            do i=1, opDim
               do j=1, opDim
-                B(i,j) = (del_gradu(1,i) + del_gradu(2,i) + del_gradu(3,i)) &
-                    * (del_gradu(1,j) + del_gradu(2,j) + del_gradu(3,j))
+                do k=1, opDim
+                    B(i,j) = del_gradu(k,i) * del_gradu(k,j) * S(i,j)
 
-                BS = BS+B(i,j)*S(i,j)
+                    BS = BS+B(i,j)*S(j,i)
+                end do
               end do
            end do
 
