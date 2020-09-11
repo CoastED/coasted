@@ -671,7 +671,7 @@ contains
                 do k=1, opDim
                     B(i,j) = del_gradu(k,i) * del_gradu(k,j) * S(i,j)
 
-                    BS = BS+B(i,j)*S(j,i)
+                    BS = BS+B(i,j)
                 end do
               end do
            end do
