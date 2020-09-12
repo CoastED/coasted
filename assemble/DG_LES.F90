@@ -558,15 +558,15 @@ contains
 
         ! AMD stuff
         real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
-        real :: BS, topbit, btmbit, Cpoin
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu
+        real :: B, BS, topbit, btmbit, Cpoin, udim
 
         print*, "In calc_dg_sgs_amd_viscosity_node_2()"
 
         t1=mpi_wtime()
 
         allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
-                 del_gradu(opDim,opDim), B(opDim,opDim), &
+                 del_gradu(opDim,opDim), &
                  dx(opDim) )
         allocate( u_cg_ele(opNloc) )
 
@@ -575,6 +575,9 @@ contains
 
         ! Velocity projected to continuous Galerkin
         vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        udim = vel_cg%dim
+
         ! We are doing it this way, as I cannot be sure which gradient tensor
         ! component are which.
         u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
@@ -666,12 +669,11 @@ contains
            end do
 
            BS=0.0
-           do i=1, opDim
-              do j=1, opDim
+           do i=1, udim
+              do j=1, udim
                 do k=1, opDim
-                    B(i,j) = del_gradu(k,i) * del_gradu(k,j) * S(i,j)
-
-                    BS = BS+B(i,j)
+                   B = del_gradu(k,i) * del_gradu(k,j) * S(i,j)
+                   BS = BS + B
                 end do
               end do
            end do
