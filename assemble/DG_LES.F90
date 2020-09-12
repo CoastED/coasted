@@ -559,7 +559,8 @@ contains
         ! AMD stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_gradu
-        real :: B, BS, topbit, btmbit, Cpoin, udim
+        real :: B, BS, topbit, btmbit, Cpoin
+        integer :: udim
 
         print*, "In calc_dg_sgs_amd_viscosity_node_2()"
 
