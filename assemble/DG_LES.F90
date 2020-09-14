@@ -672,10 +672,9 @@ contains
            BS=0.0
            do i=1, udim
               do j=1, udim
-                do k=1, opDim
-                   B = del_gradu(k,i) * del_gradu(k,j) * S(i,j)
-                   BS = BS + B
-                end do
+                    BS = ( del_gradu(1,i) * del_gradu(1,j) &
+                        + del_gradu(2,i) * del_gradu(2,j) &
+                        + del_gradu(3,i) * del_gradu(3,j) ) * S(i,j)
               end do
            end do
 
