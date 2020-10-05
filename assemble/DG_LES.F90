@@ -973,7 +973,7 @@ contains
         real :: dx(pos%dim)
         
         real :: X_val(pos%dim, opNloc)
-        real :: X_mean(pos%dim), r, diffx, diffy
+        real :: X_mean(pos%dim), r, diffx, diffy, diffz
         real :: X_tri(pos%dim-1, 3)
         real :: area, a, b, c, s, tmplen
         integer :: i, n, m, trix
@@ -985,55 +985,78 @@ contains
 
         X_val=ele_val(pos, ele)
 
-        ! First look for two points vertically aligned. These two will provide
-        ! dz metric. (There are always two in an extruded mesh)
+        ! What we do depends upon whether this is an extruded mesh or not.
 
-        stpair=0
-        outer_loop: do n=1, opNloc
-            do m=1, opNloc
-                if ( n /= m ) then
-                    diffx = abs(X_val(1, n)-X_val(1,m))
-                    diffy = abs(X_val(2, n)-X_val(2,m))
+        if(extruded_mesh) then
+            ! First look for two points vertically aligned. These two will provide
+            ! dz metric. (There are always two in an extruded mesh)
 
-                    if(diffx < 10e-10 .and. diffy < 10e-10) then
-                        stpair(1)=n
-                        stpair(2)=m
-                        exit outer_loop
+            stpair=0
+            outer_loop: do n=1, opNloc
+                do m=1, opNloc
+                    if ( n /= m ) then
+                        diffx = abs(X_val(1, n)-X_val(1,m))
+                        diffy = abs(X_val(2, n)-X_val(2,m))
+
+                        if(diffx < 10e-10 .and. diffy < 10e-10) then
+                            stpair(1)=n
+                            stpair(2)=m
+                            exit outer_loop
+                        end if
                     end if
+                end do
+            end do outer_loop
+            del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
+
+            ! Find 2D points for horizontal triangle (easier/quicker than using
+            ! Fluidity framework)
+            trix=1
+            do n=1, opNloc
+                if(n /= stpair(1)) then
+                    X_tri(:, trix)=X_val(1:2, n)
+                    trix=trix+1
                 end if
             end do
-        end do outer_loop
-        del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
 
-        ! Find 2D points for horizontal triangle (easier/quicker than using
-        ! Fluidity framework)
-        trix=1
-        do n=1, opNloc
-            if(n /= stpair(1)) then
-                X_tri(:, trix)=X_val(1:2, n)
-                trix=trix+1
-            end if
-        end do
+            ! Heron's formula for area of triangle
+            a = sqrt( (X_tri(1,2)-X_tri(1,1))**2. + (X_tri(2,2)-X_tri(2,1))**2.)
+            b = sqrt( (X_tri(1,3)-X_tri(1,2))**2. + (X_tri(2,3)-X_tri(2,2))**2.)
+            c = sqrt( (X_tri(1,3)-X_tri(1,1))**2. + (X_tri(2,3)-X_tri(2,1))**2.)
 
-        ! Heron's formula for area of triangle
-        a = sqrt( (X_tri(1,2)-X_tri(1,1))**2. + (X_tri(2,2)-X_tri(2,1))**2.)
-        b = sqrt( (X_tri(1,3)-X_tri(1,2))**2. + (X_tri(2,3)-X_tri(2,2))**2.)
-        c = sqrt( (X_tri(1,3)-X_tri(1,1))**2. + (X_tri(2,3)-X_tri(2,1))**2.)
+            s = 0.5*(a+b+c)
 
-        s = 0.5*(a+b+c)
+            area = 0.25 * sqrt( s*(s-a)*(s-b)*(s-c) )
 
-        area = 0.25 * sqrt( s*(s-a)*(s-b)*(s-c) )
-        
-        if(area>10e5) print*, "WARNING: AMD LES metrics: large area"
+            if(area>10e5) print*, "WARNING: AMD LES metrics: large area"
 
-        ! Calculate radius of circle with same area
-        r = sqrt(area/ 3.141592653)
+            ! Calculate radius of circle with same area
+            r = sqrt(area/ 3.141592653)
 
-        del(1) = 2.*r
-        del(2) = del(1)
+            del(1) = 2.*r
+            del(2) = del(1)
 
-        ! Not quite done. Sanity check for very, very thin elements
-        if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
+            ! Not quite done. Sanity check for very, very thin elements
+            if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
+
+        else
+
+            ! For unstructured meshes, do something slightly different.
+            del(:)=0.0
+            do m=1, opNloc
+                do n=1, opNloc
+
+                    if (n/=m) then
+                        diffx = abs(X_val(1, n)-X_val(1,m))
+                        diffy = abs(X_val(2, n)-X_val(2,m))
+                        diffz = abs(X_val(3, n)-X_val(3,m))
+
+                        if(diffx > del(1)) del(1)=diffx
+                        if(diffy > del(2)) del(2)=diffx
+                        if(diffz > del(3)) del(3)=diffx
+                    end if
+                end do
+            end do
+        end if
 
     end subroutine aniso_length_ele
 
@@ -1079,9 +1102,9 @@ contains
         ! Is this an extruded mesh?
         extruded_mesh = option_count("/geometry/mesh/from_mesh/extrude") > 0
 
-        if( .not. extruded_mesh ) then
-            FLExit("Error: AMD LES is currently only works correctly on extruded meshes")
-        end if
+!        if( .not. extruded_mesh ) then
+!            FLExit("Error: AMD LES is currently only works correctly on extruded meshes")
+!        end if
 
         ! Raw sizes per element
         do e=1, num_elements
