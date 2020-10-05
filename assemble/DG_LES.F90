@@ -277,241 +277,6 @@ contains
 
 
 
-    ! ========================================================================
-    ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
-    ! See Rozema et al, Computational Methods in Engineering, 2020.
-    ! ========================================================================
-
-    subroutine calc_dg_sgs_amd_viscosity_node(state, x, u)
-        ! Passed parameters
-        type(state_type), intent(in) :: state
-
-        type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: sgs_visc
-
-        ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: mviscosity
-        type(tensor_field) :: u_grad
-
-        integer :: e, num_elements, n, num_nodes
-
-        integer :: state_flag
-
-        real :: blend
-
-        real, allocatable :: node_sum(:), node_peaky_sum(:)
-        real, allocatable :: node_filter_lengths(:,:)
-        integer, allocatable :: node_visits(:)
-        real, allocatable :: node_weight_sum(:)
-        real :: minmaxlen(2)
-
-        real (kind=8) :: t1, t2
-        real (kind=8), external :: mpi_wtime
-
-        logical :: have_reference_density, have_filter_field
-
-        ! Reference density
-        real :: rho, mu
-
-        ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av
-        integer :: i, j, ln, gnode
-
-        integer, allocatable :: u_cg_ele(:)
-
-        ! AMD stuff
-        real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
-        real :: BS, topbit, btmbit, Cpoin
-
-        print*, "In calc_dg_sgs_amd_viscosity_node()"
-
-        t1=mpi_wtime()
-
-        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
-                 del_gradu(opDim,opDim), B(opDim,opDim), &
-                 dx(opDim) )
-        allocate( u_cg_ele(opNloc) )
-
-! I think this is the suspect call -- not needed.        
-!        nullify(mviscosity)
-
-        ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
-             stat=state_flag)
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
-        end if
-
-        sgs_visc%val(:)=0.0
-
-        call grad(u_cg, x, u_grad)
-
-        ! Molecular viscosity
-        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-            mu=mviscosity%val(1,1,1)
-        else
-            FLAbort("DG_LES: must have constant or normal viscosity field")
-        end if
-
-
-        ! We only use the reference density. This assumes the variation in density will be
-        ! low (ie < 10%)
-        have_reference_density=have_option("/material_phase::"&
-            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
-
-        if(have_reference_density) then
-            call get_option("/material_phase::"&
-                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
-                rho)
-        else
-            FLAbort("DG_LES: missing reference density option in equation_of_state")
-        end if
-
-        ! The Poincare constant (default 0.3)
-        if(have_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
-            // "poincare_constant")) then
-
-            call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
-                // "poincare_constant", Cpoin)
-        else
-            Cpoin=0.3
-        end if
-
-        num_elements = ele_count(u_cg)
-        num_nodes = u_cg%mesh%nodes
-
-        ! We only allocate if mesh connectivity unchanged from
-        ! last iteration; reuse saved arrays otherwise
-
-        allocate(node_sum(num_nodes))
-        allocate(node_peaky_sum(num_nodes))
-        allocate(node_weight_sum(num_nodes))
-        allocate(node_visits(num_nodes))
-
-        allocate(node_filter_lengths(opDim, num_nodes))
-        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
-
-        node_sum(:)=0.
-        node_peaky_sum(:)=0.
-        node_visits(:)=0.
-        node_weight_sum(:)=0.
-
-
-        ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
-
-        do e=1, num_elements
-            u_cg_ele=ele_nodes(u_cg, e)
-
-            sgs_ele_av=0.0
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                dx(:)=node_filter_lengths(:,gnode)
-
-                dudx_n = u_grad%val(:,:,gnode)
-
-                S = 0.5 * (dudx_n + transpose(dudx_n))
-
-                do i=1, opDim
-                    do j=1, opDim
-                        del_gradu(i,j) = dx(j) * dudx_n(j,i)
-                    end do
-                end do
-
-                B = matmul(transpose(del_gradu), del_gradu)
-
-                BS=0.0
-                do i=1, opDim
-                    do j=1, opDim
-                        BS = BS+B(i,j)*S(i,j)
-                    end do
-                end do
-
-                topbit = rho * Cpoin * max(-BS, 0.)
-
-
-                btmbit=0.
-                do i=1, opDim
-                    do j=1, opDim
-                        btmbit = btmbit + dudx_n(i,j)**2
-                    end do
-                end do
-
-                ! If the dominator is vanishing small, then set the SGS viscosity
-                ! to zero
-
-                if(btmbit < 10e-10) then
-                    sgs_visc_val = sgs_visc%val(gnode)
-                else
-                    sgs_visc_val = topbit/btmbit
-                    if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(gnode)
-                end if
-
-                ! Contributions of local node to shared node value.
-                node_peaky_sum(gnode) = node_peaky_sum(gnode) + sgs_visc_val
-
-                sgs_ele_av = sgs_ele_av + sgs_visc_val
-            end do
-
-            sgs_ele_av = sgs_ele_av / opNloc
-
-            ! Give each corner node the average
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1
-            end do
-
-        end do
-
-        ! Set final values.
-
-        ! Blend of element-averaged value and local node averaged value
-        ! blend=0...1 (0=peaky, 1=smoothed)
-        blend=0.5
-        do n=1, num_nodes
-
-            sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
-                         / node_visits(n)
-            ! Limiter
-            ! sgs_visc_val = min(sgs_visc_val, mu*10e5)
-            if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(gnode)
-
-            call set(sgs_visc, n,  sgs_visc_val)
-        end do
-
-
-        ! Must be done to avoid discontinuities at halos
-        call halo_update(sgs_visc)
-!        if(have_filter_field) call halo_update(filt_len)
-
-        call deallocate(u_grad)
-        deallocate( S, dudx_n, del_gradu, B, u_cg_ele, dx )
-
-        deallocate(node_sum)
-        deallocate(node_peaky_sum)
-        deallocate(node_visits)
-        deallocate(node_weight_sum)
-        deallocate(node_filter_lengths)
-
-        t2=mpi_wtime()
-
-        print*, "**** DG_LES_execution_time:", (t2-t1)
-
-    end subroutine calc_dg_sgs_amd_viscosity_node
-
 
     ! ========================================================================
     ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
@@ -558,15 +323,16 @@ contains
 
         ! AMD stuff
         real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu
-        real :: B, BS, topbit, btmbit, Cpoin
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu
+        real :: BS, topbit, btmbit, Cpoin
         integer :: udim
 
         print*, "In calc_dg_sgs_amd_viscosity_node_2()"
 
         t1=mpi_wtime()
 
-        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+        allocate( B(opDim,opDim), S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
                  del_gradu(opDim,opDim), &
                  dx(opDim) )
         allocate( u_cg_ele(opNloc) )
@@ -669,14 +435,12 @@ contains
               end do
            end do
 
-           BS=0.0
-           do i=1, udim
-              do j=1, udim
-                    BS = BS + &
-                         ( del_gradu(1,i) * del_gradu(1,j) &
-                         + del_gradu(2,i) * del_gradu(2,j) &
-                         + del_gradu(3,i) * del_gradu(3,j) ) &
-                         * S(i,j)
+           B = transpose(del_gradu) + del_gradu
+
+           BS = 0.
+           do i=1, opDim
+              do j=1, opDim
+                BS = BS + B(i,j) * S(i,j)
               end do
            end do
 
@@ -721,7 +485,7 @@ contains
         call deallocate(u_grad)
         call deallocate(v_grad)
         call deallocate(w_grad)
-        deallocate( S, dudx_n, del_gradu, u_cg_ele, dx )
+        deallocate( B, S, dudx_n, del_gradu, u_cg_ele, dx )
 
         deallocate(node_filter_lengths)
 
@@ -751,11 +515,11 @@ contains
         ! It's not  bullet-proof, but consistent with the logic of DG_prep.F90
         ! Please replace with something better...
 
-        if(have_option("/geometry/mesh::ZeroMesh")) then
-            call calc_dg_sgs_amd_viscosity_ele(state, x, u)
-        else
+!        if(have_option("/geometry/mesh::ZeroMesh")) then
+!            call calc_dg_sgs_amd_viscosity_ele(state, x, u)
+!        else
             call calc_dg_sgs_amd_viscosity_node_2(state, x, u)
-        end if
+!        end if
 
 
     end subroutine calc_dg_sgs_amd_viscosity
