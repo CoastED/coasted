@@ -435,7 +435,7 @@ contains
               end do
            end do
 
-           B = transpose(del_gradu) + del_gradu
+           B = transpose(del_gradu) * del_gradu
 
            BS = 0.
            do i=1, opDim
@@ -1051,11 +1051,12 @@ contains
                         diffz = abs(X_val(3, n)-X_val(3,m))
 
                         if(diffx > del(1)) del(1)=diffx
-                        if(diffy > del(2)) del(2)=diffx
-                        if(diffz > del(3)) del(3)=diffx
+                        if(diffy > del(2)) del(2)=diffy
+                        if(diffz > del(3)) del(3)=diffz
                     end if
                 end do
             end do
+
         end if
 
     end subroutine aniso_length_ele
