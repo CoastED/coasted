@@ -1657,15 +1657,15 @@
          call addto(u, delta_u, dt)
 
          ! Hard-limit calculated velocity field.
-         if(have_option(trim(u%option_path)//"/hard_limiter")) then
-            ewrite(1,*) "Using hard limiter for velocity"
+         if(have_option(trim(u%option_path)//"/prognostic/hard_limiter")) then
+            print*, "Using hard limiter for velocity"
 
-            call get_option(trim(u%option_path)//"/hard_limiter/u_min", umin)
-            call get_option(trim(u%option_path)//"/hard_limiter/u_max", umax)
-            call get_option(trim(u%option_path)//"/hard_limiter/v_min", vmin)
-            call get_option(trim(u%option_path)//"/hard_limiter/v_max", vmax)
-            call get_option(trim(u%option_path)//"/hard_limiter/w_min", wmin)
-            call get_option(trim(u%option_path)//"/hard_limiter/w_max", wmax)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/u_min", umin)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/u_max", umax)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/v_min", vmin)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/v_max", vmax)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/w_min", wmin)
+            call get_option(trim(u%option_path)//"/prognostic/hard_limiter/w_max", wmax)
 
             do i=1, u%mesh%nodes
                 u%val(1,i) = max(umin, u%val(1,i))
