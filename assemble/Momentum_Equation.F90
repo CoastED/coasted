@@ -1574,7 +1574,11 @@
 
          !! Local variables
          ! Change in velocity
+
          type(vector_field) :: delta_u
+         real :: umin, umax, vmin, vmax, wmin, wmax
+
+         integer :: i
          type(vector_field), pointer :: positions
 
          ! Fields for the subtract_out_reference_profile option under the Velocity field
@@ -1651,6 +1655,29 @@
          call profiler_tic(u, "assembly")
          ! Apply change to velocity field (Note that this gets stored in state)
          call addto(u, delta_u, dt)
+
+         ! Hard-limit calculated velocity field.
+         if(have_option(trim(u%option_path)//"/hard_limiter")) then
+            ewrite(1,*) "Using hard limiter for velocity"
+
+            call get_option(trim(u%option_path)//"/hard_limiter/u_min", umin)
+            call get_option(trim(u%option_path)//"/hard_limiter/u_max", umax)
+            call get_option(trim(u%option_path)//"/hard_limiter/v_min", vmin)
+            call get_option(trim(u%option_path)//"/hard_limiter/v_max", vmax)
+            call get_option(trim(u%option_path)//"/hard_limiter/w_min", wmin)
+            call get_option(trim(u%option_path)//"/hard_limiter/w_max", wmax)
+
+            do i=1, u%mesh%nodes
+                u%val(1,i) = max(umin, u%val(1,i))
+                u%val(1,i) = min(umax, u%val(1,i))
+                u%val(2,i) = max(vmin, u%val(2,i))
+                u%val(2,i) = min(vmax, u%val(2,i))
+                u%val(3,i) = max(wmin, u%val(3,i))
+                u%val(3,i) = min(wmax, u%val(3,i))
+            end do
+
+         end if
+
          ewrite_minmax(u)
 
          call deallocate(delta_u)

@@ -1271,6 +1271,29 @@ calculations.
         <ref name="real"/>
       </element>
     </element>
+    <optional>
+      <element name="hard_limiter">
+        <a:documentation>Hard-limit range of values for velocity. Last-ditch attempt to stop unphysical oscillations.</a:documentation>
+        <element name="u_min">
+          <ref name="real"/>
+        </element>
+        <element name="u_max">
+          <ref name="real"/>
+        </element>
+        <element name="v_min">
+          <ref name="real"/>
+        </element>
+        <element name="v_max">
+          <ref name="real"/>
+        </element>
+        <element name="w_min">
+          <ref name="real"/>
+        </element>
+        <element name="w_max">
+          <ref name="real"/>
+        </element>
+      </element>
+    </optional>
     <element name="temporal_discretisation">
       <a:documentation>Temporal discretisation options</a:documentation>
       <element name="theta">

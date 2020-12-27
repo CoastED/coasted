@@ -1040,6 +1040,17 @@ prognostic_velocity_field =
             real
          }
       },
+
+      ## Hard-limit range of values for velocity. Last-ditch attempt to stop unphysical oscillations.
+      element hard_limiter {
+      	      element u_min { real } ,
+      	      element u_max { real } ,
+      	      element v_min { real } ,
+      	      element v_max { real } ,
+      	      element w_min { real } ,
+      	      element w_max { real }
+      }?,
+
       ## Temporal discretisation options
       element temporal_discretisation {
          ## Implicit/explicit control (THETA)
