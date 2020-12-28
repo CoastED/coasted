@@ -283,7 +283,7 @@ contains
     ! See Rozema et al, Computational Methods in Engineering, 2020.
     ! ========================================================================
 
-    subroutine calc_dg_sgs_amd_viscosity_node_2(state, x, u)
+    subroutine calc_dg_sgs_amd_viscosity_node(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -324,10 +324,10 @@ contains
         ! AMD stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu
-        real :: BS, topbit, btmbit, Cpoin
+        real :: BS, topbit, btmbit, Cpoin, filter_harm
         integer :: udim
 
-        print*, "In calc_dg_sgs_amd_viscosity_node_2()"
+        print*, "In calc_dg_sgs_amd_viscosity_node()"
 
         t1=mpi_wtime()
 
@@ -427,6 +427,9 @@ contains
            dudx_n(:,2) = v_grad%val(:,n)
            dudx_n(:,3) = w_grad%val(:,n)
 
+           ! Harmonic mean of individual filter lengths (Verstappen et al)
+           filter_harm = 3.0 / sqrt( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
            do i=1, opDim
@@ -444,7 +447,7 @@ contains
               end do
            end do
 
-           topbit = rho * Cpoin * max(-BS, 0.)
+           topbit = rho * ((Cpoin*filter_harm)**2) * max(-BS, 0.)
 
 
            btmbit=0.
@@ -493,7 +496,7 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-    end subroutine calc_dg_sgs_amd_viscosity_node_2
+    end subroutine calc_dg_sgs_amd_viscosity_node
 
 
 
@@ -512,15 +515,9 @@ contains
         character(len=OPTION_PATH_LEN) :: scalar_eddy_visc_path
         character(len=256) :: mesh_name
 
-        ! It's not  bullet-proof, but consistent with the logic of DG_prep.F90
-        ! Please replace with something better...
+        ! Currently goes straight to nodal AMD LES
 
-!        if(have_option("/geometry/mesh::ZeroMesh")) then
-!            call calc_dg_sgs_amd_viscosity_ele(state, x, u)
-!        else
-            call calc_dg_sgs_amd_viscosity_node_2(state, x, u)
-!        end if
-
+        call calc_dg_sgs_amd_viscosity_node(state, x, u)
 
     end subroutine calc_dg_sgs_amd_viscosity
     ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
