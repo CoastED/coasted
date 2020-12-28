@@ -323,7 +323,7 @@ contains
 
         ! AMD stuff
         real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu, didj
         real :: BS, topbit, btmbit, Cpoin, filter_harm
         integer :: udim
 
@@ -334,7 +334,8 @@ contains
         allocate( B(opDim,opDim), S(opDim,opDim), &
                  dudx_n(opDim,opDim), &
                  del_gradu(opDim,opDim), &
-                 dx(opDim) )
+                 dx(opDim), &
+                 didj(opDim,opDim) )
         allocate( u_cg_ele(opNloc) )
 
 ! I think this is the suspect call -- not needed.        
@@ -423,12 +424,17 @@ contains
 
         do n=1, num_nodes
            dx(:)=node_filter_lengths(:,n)
-           dudx_n(:,1) = u_grad%val(:,n)
-           dudx_n(:,2) = v_grad%val(:,n)
-           dudx_n(:,3) = w_grad%val(:,n)
+
+           didj(:,1) = dx(:)/dx(1)
+           didj(:,2) = dx(:)/dx(2)
+           didj(:,3) = dx(:)/dx(3)
+
+           dudx_n(:,1) = didj(:,1) * u_grad%val(:,n)
+           dudx_n(:,2) = didj(:,2) * v_grad%val(:,n)
+           dudx_n(:,3) = didj(:,3) * w_grad%val(:,n)
 
            ! Harmonic mean of individual filter lengths (Verstappen et al)
-           filter_harm = 3.0 / sqrt( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           filter_harm = sqrt(3.0) / sqrt( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
@@ -488,7 +494,7 @@ contains
         call deallocate(u_grad)
         call deallocate(v_grad)
         call deallocate(w_grad)
-        deallocate( B, S, dudx_n, del_gradu, u_cg_ele, dx )
+        deallocate( B, S, dudx_n, del_gradu, u_cg_ele, dx, didj )
 
         deallocate(node_filter_lengths)
 
