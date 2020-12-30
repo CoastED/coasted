@@ -324,7 +324,7 @@ contains
         ! AMD stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu, didj
-        real :: BS, topbit, btmbit, Cpoin, filter_harm
+        real :: BS, topbit, btmbit, Cpoin, filter_harm_sq
         integer :: udim
 
         print*, "In calc_dg_sgs_amd_viscosity_node()"
@@ -434,7 +434,7 @@ contains
            dudx_n(:,3) = didj(:,3) * w_grad%val(:,n)
 
            ! Harmonic mean of individual filter lengths (Verstappen et al)
-           filter_harm = sqrt(3.0) / sqrt( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
@@ -453,7 +453,7 @@ contains
               end do
            end do
 
-           topbit = rho * Cpoin * ((filter_harm)**2) * max(-BS, 0.)
+           topbit = rho * Cpoin * filter_harm_sq * max(-BS, 0.)
 
 
            btmbit=0.
