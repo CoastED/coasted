@@ -440,7 +440,7 @@ contains
 
            do i=1, opDim
               do j=1, opDim
-                 del_gradu(i,j) = dx(i) * dudx_n(i,j)
+                 del_gradu(i,j) = dudx_n(i,j)
               end do
            end do
 
@@ -453,7 +453,7 @@ contains
               end do
            end do
 
-           topbit = rho * ((Cpoin*filter_harm)**2) * max(-BS, 0.)
+           topbit = rho * Cpoin * ((filter_harm)**2) * max(-BS, 0.)
 
 
            btmbit=0.
