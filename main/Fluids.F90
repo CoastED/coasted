@@ -505,13 +505,25 @@ contains
     timestep_loop: do
        timestep = timestep + 1
 
-       ewrite(1, *) "********************"
-       ewrite(1, *) "*** NEW TIMESTEP ***"
-       ewrite(1, *) "********************"
-       ewrite(1, *) "Current simulation time: ", current_time
-       ewrite(1, *) "Timestep number: ", timestep
-       ewrite(1, *) "Timestep size (dt): ", dt
-       if(.not. allfequals(dt)) then
+       ! Master process always outputs these no matter the debug level
+       if( getprocno() == 1 ) then
+          print*, "********************"
+          print*, "*** NEW TIMESTEP ***"
+          print*, "********************"
+          print*, "Current simulation time: ", current_time
+          print*, "Timestep number: ", timestep
+          print*, "Timestep size (dt): ", dt
+       else
+          ! These only appear for slave processes for -v1 or greater
+          ewrite(1, *) "********************"
+          ewrite(1, *) "*** NEW TIMESTEP ***"
+          ewrite(1, *) "********************"
+          ewrite(1, *) "Current simulation time: ", current_time
+          ewrite(1, *) "Timestep number: ", timestep
+          ewrite(1, *) "Timestep size (dt): ", dt
+       end if
+
+       if (.not. allfequals(dt)) then
           ewrite(-1, *) "Timestep size (dt): ", dt
           FLAbort("The timestep is not global across all processes!")
        end if
