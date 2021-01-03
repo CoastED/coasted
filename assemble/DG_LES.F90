@@ -323,8 +323,8 @@ contains
 
         ! AMD stuff
         real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: B, S, dudx_n, del_gradu, didj
-        real :: BS, topbit, btmbit, Cpoin, filter_harm_sq
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real :: BS, topbit, btmbit, Cpoin
         integer :: udim
 
         print*, "In calc_dg_sgs_amd_viscosity_node()"
@@ -333,9 +333,8 @@ contains
 
         allocate( B(opDim,opDim), S(opDim,opDim), &
                  dudx_n(opDim,opDim), &
-                 del_gradu(opDim,opDim), &
-                 dx(opDim), &
-                 didj(opDim,opDim) )
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
         allocate( u_cg_ele(opNloc) )
 
 ! I think this is the suspect call -- not needed.        
@@ -425,26 +424,26 @@ contains
         do n=1, num_nodes
            dx(:)=node_filter_lengths(:,n)
 
-           didj(:,1) = dx(:)/dx(1)
-           didj(:,2) = dx(:)/dx(2)
-           didj(:,3) = dx(:)/dx(3)
+!           didj(:,1) = dx(:)/dx(1)
+!           didj(:,2) = dx(:)/dx(2)
+!           didj(:,3) = dx(:)/dx(3)
 
-           dudx_n(:,1) = didj(:,1) * u_grad%val(:,n)
-           dudx_n(:,2) = didj(:,2) * v_grad%val(:,n)
-           dudx_n(:,3) = didj(:,3) * w_grad%val(:,n)
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
 
-           ! Harmonic mean of individual filter lengths (Verstappen et al)
-           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+!           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
            do i=1, opDim
               do j=1, opDim
-                 del_gradu(i,j) = dudx_n(i,j)
+                 del_dudx(i,j) = dx(i) * dudx_n(i,j)
               end do
            end do
 
-           B = transpose(del_gradu) * del_gradu
+           B = transpose(del_dudx) * del_dudx
 
            BS = 0.
            do i=1, opDim
@@ -453,7 +452,8 @@ contains
               end do
            end do
 
-           topbit = rho * Cpoin * filter_harm_sq * max(-BS, 0.)
+!           topbit = rho * Cpoin * filter_harm_sq * max(-BS, 0.)
+           topbit = rho * Cpoin * max(-BS, 0.)
 
 
            btmbit=0.
@@ -494,7 +494,7 @@ contains
         call deallocate(u_grad)
         call deallocate(v_grad)
         call deallocate(w_grad)
-        deallocate( B, S, dudx_n, del_gradu, u_cg_ele, dx, didj )
+        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
 
         deallocate(node_filter_lengths)
 
@@ -504,6 +504,217 @@ contains
 
     end subroutine calc_dg_sgs_amd_viscosity_node
 
+
+    ! ================================================================================
+    !  QR Model.
+    ! ================================================================================
+
+
+    subroutine calc_dg_sgs_qr_viscosity(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(tensor_field), pointer :: mviscosity
+        type(vector_field) :: u_grad, v_grad, w_grad
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, k
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable :: dx(:)
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real :: r, q, Cpoin, filter_harm_sq, topbit
+        integer :: udim
+
+        print*, "In calc_dg_sgs_amd_viscosity_node()"
+
+        t1=mpi_wtime()
+
+        allocate( B(opDim,opDim), S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        udim = vel_cg%dim
+
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+
+        ! Allocate gradient field
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+        end if
+        sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
+
+        call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+           dx(:)=node_filter_lengths(:,n)
+
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
+
+!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           r = 0
+           q = 0
+           do i=1, opDim
+              do j=1, opDim
+                 do k=1, opDim
+                    r  = r + S(i,j)*S(j,k)*S(k,i)
+                 end do
+                 q = q + S(i,j)*S(i,j)
+              end do
+           end do
+           q = 0.5 * q
+           r = - r / 3.
+
+           topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+
+           ! If the denominator is vanishing small, then set the SGS viscosity
+           ! to zero
+           if(q < 10e-10) then
+              sgs_visc_val = 0.0
+           else
+              sgs_visc_val = topbit/q
+              if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
+           end if
+
+           if(have_artificial_visc) then
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+           end if
+
+            ! Limiter
+            if(sgs_visc_val > mu*10e4) then
+               if(sgs_visc%val(n) < mu*10e4) then
+                  sgs_visc_val=sgs_visc%val(n)
+               else
+                  sgs_visc_val=0.
+               end if
+            end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
+        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_qr_viscosity
 
 
     ! ========================================================================
@@ -523,7 +734,9 @@ contains
 
         ! Currently goes straight to nodal AMD LES
 
-        call calc_dg_sgs_amd_viscosity_node(state, x, u)
+!        call calc_dg_sgs_amd_viscosity_node(state, x, u)
+        ! Calling QR for now, see how it does.
+        call calc_dg_sgs_qr_viscosity(state, x, u)
 
     end subroutine calc_dg_sgs_amd_viscosity
     ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
