@@ -554,7 +554,7 @@ contains
         real :: r, q, Cpoin, filter_harm_sq, topbit
         integer :: udim
 
-        print*, "In calc_dg_sgs_amd_viscosity_node()"
+        print*, "In calc_dg_sgs_qr_viscosity()"
 
         t1=mpi_wtime()
 
