@@ -551,7 +551,7 @@ contains
         ! AMD stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
-        real :: r, q, Cpoin, filter_harm_sq, topbit
+        real :: r, q, Cpoin, filter_geom_mean_sq, topbit ! filter_harm_sq,
         integer :: udim
 
         print*, "In calc_dg_sgs_qr_viscosity()"
@@ -656,7 +656,9 @@ contains
            dudx_n(:,3) = w_grad%val(:,n)
 
 !           ! Harmonic mean of individual filter lengths (Verstappen et al)
-           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           !filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           ! According to Rozema et al, best choice for anisotropic grids
+           filter_geom_mean_sq = (dx(1) * dx(2) * dx(3))**(2/3)
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
@@ -673,7 +675,8 @@ contains
            q = 0.5 * q
            r = - r / 3.
 
-           topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+           ! topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+           topbit = Cpoin * filter_geom_mean_sq * max(r, 0.0)
 
            ! If the denominator is vanishing small, then set the SGS viscosity
            ! to zero
