@@ -692,12 +692,8 @@ contains
            end if
 
             ! Limiter
-            if(sgs_visc_val > mu*1e4) then
-               if(sgs_visc%val(n) < mu*1e4) then
-                  sgs_visc_val=sgs_visc%val(n)
-               else
-                  sgs_visc_val=0.
-               end if
+            if(sgs_visc_val > mu*5e3) then
+                sgs_visc_val=0.
             end if
 
            call set(sgs_visc, n,  sgs_visc_val)
