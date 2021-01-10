@@ -523,6 +523,7 @@ contains
         type(scalar_field) :: u_cg, v_cg, w_cg
         type(tensor_field), pointer :: mviscosity
         type(vector_field) :: u_grad, v_grad, w_grad
+        type(scalar_field), pointer :: dist_to_top
 
         integer :: n, num_nodes
 
@@ -537,7 +538,7 @@ contains
         real (kind=8), external :: mpi_wtime
 
         logical :: have_reference_density, have_filter_field
-        logical :: have_artificial_visc
+        logical :: have_artificial_visc, have_top
 
         ! Reference density
         real :: rho, mu
@@ -570,6 +571,13 @@ contains
         ! Velocity projected to continuous Galerkin
         vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
+        dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
+        if (state_flag==0) then
+            have_top=.true.
+        else
+            have_top=.false.
+        end if
+
         udim = vel_cg%dim
 
         ! We are doing it this way, as I cannot be sure which gradient tensor
@@ -586,7 +594,7 @@ contains
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
              stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
         end if
         sgs_visc%val(:)=0.0
 
@@ -684,17 +692,29 @@ contains
               sgs_visc_val = 0.0
            else
               sgs_visc_val = topbit/q
-              if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
            end if
 
-           if(have_artificial_visc) then
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-           end if
+            ! Limiter stuff
 
-            ! Limiter
+            ! If free-surface, then according to Rudi & Nezu (1984), eddy
+            ! viscosity decreases near free surface.
+            ! Conservatively attentuated here.
+            if(have_top) then
+                if(dist_to_top%val(n)<1e-10 .and. sgs_visc_val > mu*1.e3) then
+                    sgs_visc_val = mu*1e3
+                end if
+            end if
+
+            ! Normal limiting everywhere else
             if(sgs_visc_val > mu*5e3) then
                 sgs_visc_val=0.
             end if
+
+            if(have_artificial_visc) then
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+            end if
+
+
 
            call set(sgs_visc, n,  sgs_visc_val)
         end do
