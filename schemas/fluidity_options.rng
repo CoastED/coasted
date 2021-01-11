@@ -3674,8 +3674,8 @@ normal_stress=0) we apply p=p_external (resp. normal_stress=p_external) where p_
           </optional>
           <optional>
             <element name="surface_stabilisation">
-              <a:documentation>This options adds a surface stabilisation term to the free surface. Works only for cg velocity so far. 
-Note: Once activated, the stabilisation term will occur in all free surface areas in the domain. 
+              <a:documentation>This options adds a surface stabilisation term to the free surface. 
+Note: Once activated, the stabilisation term will occur in all free surface areas in the domain. With implicit free surfaces, this becomes the relaxation factor, ie. (sf * old_value + (1-sf) * new value)
 IN DEVELOPMENT</a:documentation>
               <element name="scale_factor">
                 <a:documentation>Scale factor for the surface stabilisation.</a:documentation>

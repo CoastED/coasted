@@ -324,12 +324,12 @@ contains
     type(vector_field), pointer :: source_field
     type(vector_field), pointer :: positions
 
-    ! Benchmarking stuff
-    real (kind=8) :: t0, t1, project_dt, total_dt, percent_project
-    real (kind=8), save :: lastt
-    real (kind=8), external :: mpi_wtime
-
-    t0 = mpi_wtime()
+!    ! Benchmarking stuff
+!    real (kind=8) :: t0, t1, project_dt, total_dt, percent_project
+!    real (kind=8), save :: lastt
+!    real (kind=8), external :: mpi_wtime
+!
+!    t0 = mpi_wtime()
 
     source_field => vector_source_field(state, v_field)
     positions => extract_vector_field(state, "Coordinate")
@@ -344,20 +344,20 @@ contains
         FLAbort("Unrecognised mesh continuity")
     end select
 
-    t1 = mpi_wtime()
-
-    project_dt = t1-t0
-    if (lastt > 1e-10) then
-        total_dt = t1 - lastt
-        percent_project=  (project_dt/total_dt)*100.0
-    else
-        percent_project= 0.0
-    end if
-    lastt = t1
-
-    print*, "**** project: DG_time_spent_in:", project_dt
-    print*, "**** project: DG_time_since_last_call:", total_dt
-    print*, "**** project: DG_%_in:", percent_project
+!    t1 = mpi_wtime()
+!
+!    project_dt = t1-t0
+!    if (lastt > 1e-10) then
+!        total_dt = t1 - lastt
+!        percent_project=  (project_dt/total_dt)*100.0
+!    else
+!        percent_project= 0.0
+!    end if
+!    lastt = t1
+!
+!    print*, "**** project: DG_time_spent_in:", project_dt
+!    print*, "**** project: DG_time_since_last_call:", total_dt
+!    print*, "**** project: DG_%_in:", percent_project
     
   contains
   

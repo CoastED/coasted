@@ -2734,8 +2734,8 @@ velocity_boundary_conditions =
               element external_density {
                  real
               }?,
-              ## This options adds a surface stabilisation term to the free surface. Works only for cg velocity so far. 
-              ## Note: Once activated, the stabilisation term will occur in all free surface areas in the domain. 
+              ## This options adds a surface stabilisation term to the free surface. 
+              ## Note: Once activated, the stabilisation term will occur in all free surface areas in the domain. With implicit free surfaces, this becomes the relaxation factor, ie. (sf * old_value + (1-sf) * new value)
               ## IN DEVELOPMENT
               element surface_stabilisation {
                   ## Scale factor for the surface stabilisation.

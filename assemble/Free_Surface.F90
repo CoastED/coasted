@@ -2699,9 +2699,9 @@ contains
      type(scalar_field) :: p_min
      type(scalar_field), target :: p_capped
      character(len=FIELD_NAME_LEN):: bctype
-     real:: g, rho0, external_density, delta_rho, d0, p_atm 
+     real:: g, rho0, external_density, delta_rho, d0, p_atm, surf_relax
      integer:: i, j, sele, stat
-     logical :: have_wd
+     logical :: have_wd, have_stabilisation
 
      ! the prognostic free surface is calculated elsewhere (this is used
      ! in combination with the viscous free surface)
@@ -2727,6 +2727,7 @@ contains
        call scale(free_surface, 1./g)
        return
      end if
+
 
      !
      ! first we compute the right free surface values at the free surface
@@ -2762,6 +2763,14 @@ contains
            option_path=fs_option_path)
         if (bctype=="free_surface") then
 
+          ! Relaxation of free surface calculation
+          have_stabilisation = have_option(trim(fs_option_path)//"/type[0]/surface_stabilisation")
+          if(have_stabilisation) then
+            call get_option(trim(fs_option_path)//"/type[0]/surface_stabilisation/scale_factor", surf_relax)
+          else
+            surf_relax=0.0
+          end if
+
           call get_option(trim(fs_option_path)//"/type[0]/external_density", &
              external_density, default=0.0)
           delta_rho=rho0-external_density
@@ -2769,10 +2778,18 @@ contains
           face_loop: do j=1, size(surface_element_list)
 
             sele=surface_element_list(j)
-             
-            call set(free_surface, &
-               face_global_nodes(free_surface, sele), &
-               (face_val(p, sele)-p_atm)/delta_rho/g)
+
+            if(have_stabilisation) then
+                call set(free_surface, &
+                   face_global_nodes(free_surface, sele), &
+                   surf_relax * (face_val(free_surface, sele)) &
+                   + (1-surf_relax) * (face_val(p, sele)-p_atm)/delta_rho/g)
+            else
+                call set(free_surface, &
+                   face_global_nodes(free_surface, sele), &
+                   (face_val(p, sele)-p_atm)/delta_rho/g)
+            end if
+
             if (have_wd) then
               ! bound free surface from below by -orig_bottomdist+d0
               call set(free_surface, face_global_nodes(free_surface, sele), &
