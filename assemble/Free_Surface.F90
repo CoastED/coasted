@@ -189,7 +189,7 @@ contains
     type(scalar_field) :: original_bottomdist, original_bottomdist_remap
 
     if (.not. has_scalar_field(state, "OriginalDistanceToBottom")) then
-       ewrite(2, *), "Inserting OriginalDistanceToBottom field into state."   
+       ewrite(2, *) "Inserting OriginalDistanceToBottom field into state."   
        bottomdist => extract_scalar_field(state, "DistanceToBottom")
        call allocate(original_bottomdist, bottomdist%mesh, "OriginalDistanceToBottom")
        call zero(original_bottomdist)
@@ -198,7 +198,7 @@ contains
        call deallocate(original_bottomdist)
 
        ! We also cache  the OriginalDistanceToBottom on the pressure mesh
-       ewrite(2, *), "Inserting OriginalDistanceToBottomPressureMesh field into state."   
+       ewrite(2, *) "Inserting OriginalDistanceToBottomPressureMesh field into state."   
        p_mesh => extract_pressure_mesh(state)
        call allocate(original_bottomdist_remap, p_mesh, "OriginalDistanceToBottomPressureMesh")
        call remap_field(original_bottomdist, original_bottomdist_remap)
@@ -2699,9 +2699,9 @@ contains
      type(scalar_field) :: p_min
      type(scalar_field), target :: p_capped
      character(len=FIELD_NAME_LEN):: bctype
-     real:: g, rho0, external_density, delta_rho, d0, p_atm, surf_relax
+     real:: g, rho0, external_density, delta_rho, d0, p_atm
      integer:: i, j, sele, stat
-     logical :: have_wd, have_stabilisation
+     logical :: have_wd
 
      ! the prognostic free surface is calculated elsewhere (this is used
      ! in combination with the viscous free surface)
@@ -2763,13 +2763,6 @@ contains
            option_path=fs_option_path)
         if (bctype=="free_surface") then
 
-          ! Relaxation of free surface calculation
-          have_stabilisation = have_option(trim(fs_option_path)//"/type[0]/surface_stabilisation")
-          if(have_stabilisation) then
-            call get_option(trim(fs_option_path)//"/type[0]/surface_stabilisation/scale_factor", surf_relax)
-          else
-            surf_relax=0.0
-          end if
 
           call get_option(trim(fs_option_path)//"/type[0]/external_density", &
              external_density, default=0.0)
@@ -2779,16 +2772,9 @@ contains
 
             sele=surface_element_list(j)
 
-            if(have_stabilisation) then
-                call set(free_surface, &
-                   face_global_nodes(free_surface, sele), &
-                   surf_relax * (face_val(free_surface, sele)) &
-                   + (1-surf_relax) * (face_val(p, sele)-p_atm)/delta_rho/g)
-            else
-                call set(free_surface, &
-                   face_global_nodes(free_surface, sele), &
-                   (face_val(p, sele)-p_atm)/delta_rho/g)
-            end if
+            call set(free_surface, &
+                 face_global_nodes(free_surface, sele), &
+                 (face_val(p, sele)-p_atm)/delta_rho/g)
 
             if (have_wd) then
               ! bound free surface from below by -orig_bottomdist+d0
