@@ -523,6 +523,7 @@ contains
         type(scalar_field) :: u_cg, v_cg, w_cg
         type(tensor_field), pointer :: mviscosity
         type(vector_field) :: u_grad, v_grad, w_grad
+        type(scalar_field), pointer :: dist_to_top
 
         integer :: n, num_nodes
 
@@ -537,20 +538,20 @@ contains
         real (kind=8), external :: mpi_wtime
 
         logical :: have_reference_density, have_filter_field
-        logical :: have_artificial_visc
+        logical :: have_artificial_visc, have_top
 
         ! Reference density
         real :: rho, mu
 
         ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av
+        real :: sgs_visc_val, sgs_ele_av, sgs_limit
         integer :: i, j, k
 
         integer, allocatable :: u_cg_ele(:)
 
         ! QR stuff
         real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real, dimension(:, :), allocatable :: S, dudx_n, del_dudx
         real :: r, q, Cpoin, filter_geom_mean_sq, topbit ! filter_harm_sq,
         integer :: udim
 
@@ -558,7 +559,7 @@ contains
 
         t1=mpi_wtime()
 
-        allocate( B(opDim,opDim), S(opDim,opDim), &
+        allocate( S(opDim,opDim), &
                  dudx_n(opDim,opDim), &
                  del_dudx(opDim,opDim), &
                  dx(opDim) )
@@ -569,6 +570,13 @@ contains
 
         ! Velocity projected to continuous Galerkin
         vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
+        if (state_flag==0) then
+            have_top=.true.
+        else
+            have_top=.false.
+        end if
 
         udim = vel_cg%dim
 
@@ -586,7 +594,7 @@ contains
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
              stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
         end if
         sgs_visc%val(:)=0.0
 
@@ -612,6 +620,9 @@ contains
         else
             FLAbort("DG_LES: must have constant or normal viscosity field")
         end if
+
+        ! Maximum allowable value for SGS visocosity
+        sgs_limit = mu*5e3
 
 
         ! We only use the reference density. This assumes the variation in density will be
@@ -684,17 +695,27 @@ contains
               sgs_visc_val = 0.0
            else
               sgs_visc_val = topbit/q
-              if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
            end if
 
-           if(have_artificial_visc) then
+            ! Limiter stuff
+
+            ! If free-surface, then according to Rudi & Nezu (1984), eddy
+            ! viscosity decreases near free surface.
+            ! Conservatively attentuated here.
+!            if(have_top) then
+!                if(dist_to_top%val(n)<1e-10 .and. sgs_visc_val > mu*1.e3) then
+!                    sgs_visc_val = mu*1e3
+!                end if
+!            end if
+
+            ! Normal limiting everywhere else
+            sgs_visc_val = min(sgs_visc_val, sgs_limit)
+
+            if(have_artificial_visc) then
               sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-           end if
-
-            ! Limiter
-            if(sgs_visc_val > mu*5e3) then
-                sgs_visc_val=0.
             end if
+
+
 
            call set(sgs_visc, n,  sgs_visc_val)
         end do
@@ -705,7 +726,7 @@ contains
         call deallocate(u_grad)
         call deallocate(v_grad)
         call deallocate(w_grad)
-        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
+        deallocate( S, dudx_n, del_dudx, u_cg_ele, dx )
 
         deallocate(node_filter_lengths)
 
