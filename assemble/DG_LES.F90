@@ -702,11 +702,12 @@ contains
             ! If free-surface, then according to Rudi & Nezu (1984), eddy
             ! viscosity decreases near free surface.
             ! Conservatively attentuated here.
-!            if(have_top) then
-!                if(dist_to_top%val(n)<1e-10 .and. sgs_visc_val > mu*1.e3) then
-!                    sgs_visc_val = mu*1e3
-!                end if
-!            end if
+            if(have_top) then
+               if(dist_to_top%val(n)<1e-10 &
+                    .and. sgs_visc_val > 0.75*sgs_limit) then
+                  sgs_visc_val = 0.75*sgs_limit
+               end if
+            end if
 
             ! Normal limiting everywhere else
             sgs_visc_val = min(sgs_visc_val, sgs_limit)
