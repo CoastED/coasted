@@ -622,7 +622,7 @@ contains
         end if
 
         ! Maximum allowable value for SGS visocosity
-        sgs_limit = mu*5e3
+        sgs_limit = mu*1e4
 
 
         ! We only use the reference density. This assumes the variation in density will be
@@ -702,15 +702,21 @@ contains
             ! If free-surface, then according to Rudi & Nezu (1984), eddy
             ! viscosity decreases near free surface.
             ! Conservatively attentuated here.
-            if(have_top) then
-               if(dist_to_top%val(n)<1e-10 &
-                    .and. sgs_visc_val > 0.75*sgs_limit) then
-                  sgs_visc_val = 0.75*sgs_limit
+!            if(have_top) then
+!               if(dist_to_top%val(n)<1e-10 &
+!                    .and. sgs_visc_val > 0.75*sgs_limit) then
+!                  sgs_visc_val = 0.75*sgs_limit
+!               end if
+!            end if
+
+            ! Limiter
+            if(sgs_visc_val > sgs_limit) then
+               if(sgs_visc%val(n) < sgs_limit) then
+                  sgs_visc_val=sgs_visc%val(n)
+               else
+                  sgs_visc_val=0.
                end if
             end if
-
-            ! Normal limiting everywhere else
-            sgs_visc_val = min(sgs_visc_val, sgs_limit)
 
             if(have_artificial_visc) then
               sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
