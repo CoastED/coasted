@@ -704,8 +704,8 @@ contains
             ! Conservatively attentuated here.
             if(have_top) then
                if(dist_to_top%val(n)<1e-7 &
-                    .and. sgs_visc_val > 0.99*sgs_limit) then
-                  sgs_visc_val = 0.99*sgs_limit
+                    .and. sgs_visc_val > 0.9*sgs_limit) then
+                  sgs_visc_val = 0.9*sgs_limit
                end if
             end if
 
