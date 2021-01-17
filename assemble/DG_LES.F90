@@ -1442,7 +1442,7 @@ contains
             stpair=0.0
             maxdz=0.0
 
-            maxdz=abs(max(X_val(3,:))-min(X_val(3,:)))
+            maxdz=abs(maxval(X_val(3,:))-minval(X_val(3,:)))
 
             outer_loop: do n=1, opNloc
 
