@@ -702,12 +702,12 @@ contains
             ! If free-surface, then according to Rudi & Nezu (1984), eddy
             ! viscosity decreases near free surface.
             ! Conservatively attentuated here.
-            if(have_top) then
-               if(dist_to_top%val(n)<1e-7 &
-                    .and. sgs_visc_val > 0.9*sgs_limit) then
-                  sgs_visc_val = 0.9*sgs_limit
-               end if
-            end if
+!            if(have_top) then
+!               if(dist_to_top%val(n)<1e-7 &
+!                    .and. sgs_visc_val > 0.9*sgs_limit) then
+!                  sgs_visc_val = 0.9*sgs_limit
+!               end if
+!            end if
 
             ! Limiter
             if(sgs_visc_val > sgs_limit) then
@@ -1422,14 +1422,13 @@ contains
         real :: dx(pos%dim)
         
         real :: X_val(pos%dim, opNloc)
-        real :: X_mean(pos%dim), r, diffx, diffy, diffz
+        real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz
         real :: X_tri(pos%dim-1, 3)
         real :: area, a, b, c, s, tmplen
         integer :: i, n, m, trix
         integer :: stpair(2)
 
-        ! Not used for now. But will later need conditional to switch in/out
-        ! specialised extruded mesh case logic
+        ! Conditional to switch in/out specialised extruded mesh case logic
         logical :: extruded_mesh
 
         X_val=ele_val(pos, ele)
@@ -1440,13 +1439,19 @@ contains
             ! First look for two points vertically aligned. These two will provide
             ! dz metric. (There are always two in an extruded mesh)
 
-            stpair=0
+            stpair=0.0
+            maxdz=0.0
+
+            maxdz=abs(max(X_val(3,:))-min(X_val(3,:)))
+
             outer_loop: do n=1, opNloc
+
                 do m=1, opNloc
                     if ( n /= m ) then
                         diffx = abs(X_val(1, n)-X_val(1,m))
                         diffy = abs(X_val(2, n)-X_val(2,m))
 
+                        ! If two points share x and y, one must be atop the other.
                         if(diffx < 10e-10 .and. diffy < 10e-10) then
                             stpair(1)=n
                             stpair(2)=m
@@ -1454,8 +1459,12 @@ contains
                         end if
                     end if
                 end do
+
             end do outer_loop
             del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
+
+            ! Catch all. If somehow dz left zero, use this instead.
+            if(del(3) < 10e-10) del(3) = maxdz
 
             ! Find 2D points for horizontal triangle (easier/quicker than using
             ! Fluidity framework)
