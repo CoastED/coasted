@@ -704,7 +704,7 @@ contains
             ! Conservatively attentuated here.
             if(have_top) then
                if( dist_to_top%val(n)<1e-7 ) then
-                  sgs_visc_val = 0.8*sgs_limit
+                  sgs_visc_val = 0.825*sgs_limit
                end if
             end if
 
