@@ -555,6 +555,8 @@ contains
         real :: r, q, Cpoin, filter_geom_mean_sq, topbit ! filter_harm_sq,
         integer :: udim
 
+        real :: sgsalpha
+        
         print*, "In calc_dg_sgs_qr_viscosity()"
 
         t1=mpi_wtime()
@@ -703,8 +705,11 @@ contains
             ! viscosity decreases near free surface.
             ! Conservatively attentuated here.
             if(have_top) then
-               if( dist_to_top%val(n)<1e-7 ) then
-                  sgs_visc_val = 0.825*sgs_limit
+               ! scale over 0.5 m, so no sharp drops
+               if( dist_to_top%val(n)<0.5 ) then
+                  sgsalpha = 2.*dist_to_top%val(n)
+                  
+                  sgs_visc_val = ((1.-sgsalpha)*0.825 + sgsalpha*1.0)*sgs_visc_val
                end if
             end if
 
