@@ -2781,7 +2781,7 @@ contains
               call set(free_surface, face_global_nodes(free_surface, sele), &
                 max(face_val(free_surface, sele), -face_val(original_bottomdist_remap, sele)))
             end if
-             
+
           end do face_loop
              
         end if
@@ -2809,7 +2809,10 @@ contains
      call VerticalExtrapolation(free_surface, free_surface, x, &
        vertical_normal, surface_element_list=surface_element_list, &
        surface_name="DistanceToTop")
-       
+
+     ! Update the halo for free_surface, just in case.
+     call halo_update(free_surface)
+
      if (have_wd) then
        call deallocate(p_capped)
      end if
