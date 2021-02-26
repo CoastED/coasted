@@ -613,6 +613,11 @@ contains
         call grad(v_cg, x, v_grad)
         call grad(w_cg, x, w_grad)
 
+        ! Otherwise... problems
+        call halo_update(u_grad)
+        call halo_update(v_grad)
+        call halo_update(w_grad)
+        
         ! Molecular viscosity
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
 
