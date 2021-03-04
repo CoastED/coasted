@@ -181,6 +181,8 @@ module state_module
   public unique_mesh_count, sort_states_by_mesh, halo_update
   public aliased
 
+  public extract_create_scalar_field, extract_create_vector_field, extract_create_tensor_field
+
   !! Fields which exist only so that extract does not return null
   type(vector_field), save, target :: fake_vector_field
   type(scalar_field), save, target :: fake_scalar_field
@@ -1557,6 +1559,67 @@ contains
     end if
 
   end function extract_from_one_vector_field
+
+  ! We're assuming the pointer this ends up in will already have been allocated
+  function extract_create_scalar_field(state, mesh, name) result (field)
+    type(scalar_field), pointer :: field
+    type(scalar_field), target :: newfield
+    type(mesh_type), intent(in), target :: mesh
+    type(state_type), intent(in) :: state
+    character(len=*), intent(in) :: name
+    integer :: state_flag
+
+    field = extract_scalar_field(state, name, stat=state_flag)
+    if(state_flag /= 0) then
+        call allocate(newfield, mesh, name)
+        field = extract_scalar_field(state, name, stat=state_flag)
+    else
+        call incref(field)
+    endif
+
+  end function extract_create_scalar_field
+
+
+
+    ! We're assuming the pointer this ends up in will already have been allocated
+  function extract_create_vector_field(state, mesh, name) result (field)
+    type(vector_field), pointer :: field
+    type(vector_field), target :: newfield
+    type(mesh_type), intent(in), target :: mesh
+    type(state_type), intent(in) :: state
+    character(len=*), intent(in) :: name
+    integer :: state_flag
+
+    field = extract_vector_field(state, name, stat=state_flag)
+    if(state_flag /= 0) then
+        call allocate(newfield, mesh_dim(mesh), mesh, name)
+        field = extract_vector_field(state, name, stat=state_flag)
+    else
+        call incref(field)
+    endif
+
+  end function extract_create_vector_field
+
+  ! We're assuming the pointer this ends up in will already have been allocated
+  function extract_create_tensor_field(state, mesh, name) result (field)
+    type(tensor_field), pointer :: field
+    type(tensor_field), target :: newfield
+    type(mesh_type), intent(in), target :: mesh
+    type(state_type), intent(in) :: state
+    character(len=*), intent(in) :: name
+    integer :: state_flag
+
+    field = extract_tensor_field(state, name, stat=state_flag)
+    if(state_flag /= 0) then
+        call allocate(newfield, mesh, name)
+        field = extract_tensor_field(state, name, stat=state_flag)
+    else
+        call incref(field)
+    endif
+
+  end function extract_create_tensor_field
+
+
 
   function extract_from_one_scalar_field(state, name, stat, allocated) result (field)
     !!< Return a pointer to the scalar field with the correct name.
