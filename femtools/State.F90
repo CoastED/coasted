@@ -1569,13 +1569,17 @@ contains
     character(len=*), intent(in) :: name
     integer :: state_flag
 
+    print*, "extract_create_scalar_field():"
+
     field = extract_scalar_field(state, name, stat=state_flag)
     if(state_flag /= 0) then
+        print*, "Can't find cached "//trim(name)//", allocating"
         call allocate(newfield, mesh, name)
         field = extract_scalar_field(state, name, stat=state_flag)
     else
         call incref(field)
     endif
+    print*, "leaving extract_create_scalar_field"
 
   end function extract_create_scalar_field
 
@@ -1590,13 +1594,21 @@ contains
     character(len=*), intent(in) :: name
     integer :: state_flag
 
-    field = extract_vector_field(state, name, stat=state_flag)
+    print*, "extract_create_vector_field():"
+
+    field => extract_vector_field(state, trim(name), stat=state_flag)
     if(state_flag /= 0) then
+        print*, "Can't find cached "//trim(name)//", allocating"
         call allocate(newfield, mesh_dim(mesh), mesh, name)
-        field = extract_vector_field(state, name, stat=state_flag)
+        print*, " HERE"
+        field = newfield
+        print*, "extract state_flag:", state_flag
+        print*, " HERE"
     else
         call incref(field)
     endif
+
+    print*, "leaving extract_create_vector_field"
 
   end function extract_create_vector_field
 
@@ -1609,13 +1621,18 @@ contains
     character(len=*), intent(in) :: name
     integer :: state_flag
 
+    print*, "extract_create_tensor_field():"
+
     field = extract_tensor_field(state, name, stat=state_flag)
     if(state_flag /= 0) then
+        print*, "Can't find cached "//trim(name)//", allocating"
         call allocate(newfield, mesh, name)
         field = extract_tensor_field(state, name, stat=state_flag)
     else
         call incref(field)
     endif
+
+    print*, "leaving extract_create_tensor_field"
 
   end function extract_create_tensor_field
 
