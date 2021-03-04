@@ -151,21 +151,21 @@ implicit none
   
 
   type ScalarFieldEntry
-    integer :: id, refcount
+    integer :: id, refcount, nnodes
     character(len=OPTION_PATH_LEN) :: name
-    type(scalar_field) :: ptr
+    real, pointer :: val(:)
   end type
 
   type VectorFieldEntry
-    integer :: id, refcount
+    integer :: id, refcount, nnodes
     character(len=OPTION_PATH_LEN) :: name
-    type(vector_field) :: ptr
+    real, pointer :: val(:,:)
   end type
 
   type TensorFieldEntry
-    integer :: id, refcount
+    integer :: id, refcount, nnodes
     character(len=OPTION_PATH_LEN) :: name
-    type(tensor_field) :: ptr
+    real, pointer :: val(:,:,:)
   end type
 
 
@@ -266,18 +266,17 @@ contains
       lfield_type = FIELD_TYPE_NORMAL
     end if
 
-   ! Default is to assume the full allocation must be done.
+!   ! Default is to assume the full allocation must be done.
    do_alloc=.true.
-
-#ifdef NEW_FIELD_ALLOC
-    ! We can only cache fields that have names
+!
+!    ! We can only cache fields that have names
     if(present(name)) then
         call find_in_scalarfieldslist(name, lix)
         if(lix<0) then
-            FLExit("find_in_scalarfields() returned -1 for '"//trim(name)//". This should not happen.")
-        else
+            FLExit("find_in_scalarfields() returned -1 for '"//trim(name)//". This should not happen.")!        else
             ! Has this field already been allocated?
-            if(associated(scalarFieldsList(lix)%ptr%val)) then
+            if(allocated(scalarFieldsList(lix)%ptr%val) &
+                    .and. scalarFieldsList(lix)%nnodes == node_count(mesh)) then
                 field=scalarFieldsList(lix)%ptr
 
                 ! We can't reuse field data structures until the refcount is 0.
@@ -288,88 +287,83 @@ contains
             end if
         end if
     end if
-#endif
 
     field%mesh=mesh
     call incref(mesh)
 
-    if(do_alloc) then
-
-
-        if (present(name)) then
-           field%name=name
-        else
-           field%name=empty_name
-        end if
-
-        field%field_type = lfield_type
-        select case(lfield_type)
-        case(FIELD_TYPE_NORMAL)
-          allocate(field%val(node_count(mesh)))
-          field%py_dim = mesh_dim(mesh)
-          field%py_positions_shape => mesh%shape
-
-#ifdef HAVE_MEMORY_STATS
-          call register_allocation("scalar_field", "real", node_count(mesh), &
-            name=name)
-#endif
-        case(FIELD_TYPE_CONSTANT)
-          allocate(field%val(1))
-          field%py_dim = mesh_dim(mesh)
-          field%py_positions_shape => mesh%shape
-
-#ifdef HAVE_MEMORY_STATS
-          call register_allocation("scalar_field", "real", 1, name=name)
-#endif
-        case(FIELD_TYPE_DEFERRED)
-          allocate(field%val(0))
-          field%py_dim = mesh_dim(mesh)
-          field%py_positions_shape => mesh%shape
-        case(FIELD_TYPE_PYTHON)
-          if (present(py_func)) then
-            field%py_func = py_func
-          else
-            if (stat /= 0) then
-              FLAbort("Field specified as FIELD_TYPE_PYTHON, but no func passed!")
-            end if
-          end if
-
-          if (.not. present(py_positions)) then
-            FLAbort("Field specified as FIELD_TYPE_PYTHON but no positions field passed!")
-          end if
-          field%py_positions => py_positions
-          field%py_dim = py_positions%dim
-          field%py_positions_shape => py_positions%mesh%shape
-          call incref(field%py_positions_shape)
-          call incref(field%py_positions)
-
-          if (associated(py_positions%mesh%refcount, mesh%refcount)) then
-            field%py_positions_same_mesh = .true.
-          else
-            field%py_positions_same_mesh = .false.
-            allocate(field%py_locweight(mesh%shape%loc, py_positions%mesh%shape%loc))
-            do toloc=1,size(field%py_locweight,1)
-              do fromloc=1,size(field%py_locweight,2)
-                field%py_locweight(toloc,fromloc)=eval_shape(py_positions%mesh%shape, fromloc, &
-                  local_coords(toloc, mesh%shape))
-              end do
-            end do
-          end if
-
-          call add_nelist(field%mesh)
-        end select
-
-        field%wrapped=.false.
-        field%aliased=.false.
-        field%option_path=empty_path
-        allocate(field%bc)
-
-#ifdef NEW_FIELD_ALLOC
-        ! Now that we've created a field, copy the structure
-        scalarFieldsList(lix)%ptr=field
-#endif
-
+    if (present(name)) then
+       field%name=name
+    else
+       field%name=empty_name
     end if
+
+    field%field_type = lfield_type
+    select case(lfield_type)
+    case(FIELD_TYPE_NORMAL)
+      if(do_alloc) then
+        allocate(field%val(node_count(mesh)))
+        scalarFieldsList(lix)%val => field%val
+        scalarFieldsList(lix)%nnodes = node_count(mesh)
+      else
+        field%val => scalarFieldsList(lix)%val
+      end if
+      field%py_dim = mesh_dim(mesh)
+      field%py_positions_shape => mesh%shape
+
+#ifdef HAVE_MEMORY_STATS
+      call register_allocation("scalar_field", "real", node_count(mesh), &
+        name=name)
+#endif
+    case(FIELD_TYPE_CONSTANT)
+      allocate(field%val(1))
+      field%py_dim = mesh_dim(mesh)
+      field%py_positions_shape => mesh%shape
+
+#ifdef HAVE_MEMORY_STATS
+      call register_allocation("scalar_field", "real", 1, name=name)
+#endif
+    case(FIELD_TYPE_DEFERRED)
+      allocate(field%val(0))
+      field%py_dim = mesh_dim(mesh)
+      field%py_positions_shape => mesh%shape
+    case(FIELD_TYPE_PYTHON)
+      if (present(py_func)) then
+        field%py_func = py_func
+      else
+        if (stat /= 0) then
+          FLAbort("Field specified as FIELD_TYPE_PYTHON, but no func passed!")
+        end if
+      end if
+
+      if (.not. present(py_positions)) then
+        FLAbort("Field specified as FIELD_TYPE_PYTHON but no positions field passed!")
+      end if
+      field%py_positions => py_positions
+      field%py_dim = py_positions%dim
+      field%py_positions_shape => py_positions%mesh%shape
+      call incref(field%py_positions_shape)
+      call incref(field%py_positions)
+
+      if (associated(py_positions%mesh%refcount, mesh%refcount)) then
+        field%py_positions_same_mesh = .true.
+      else
+        field%py_positions_same_mesh = .false.
+        allocate(field%py_locweight(mesh%shape%loc, py_positions%mesh%shape%loc))
+        do toloc=1,size(field%py_locweight,1)
+          do fromloc=1,size(field%py_locweight,2)
+            field%py_locweight(toloc,fromloc)=eval_shape(py_positions%mesh%shape, fromloc, &
+              local_coords(toloc, mesh%shape))
+          end do
+        end do
+      end if
+
+      call add_nelist(field%mesh)
+    end select
+
+    field%wrapped=.false.
+    field%aliased=.false.
+    field%option_path=empty_path
+    allocate(field%bc)
 
     nullify(field%refcount) ! Hacks for gfortran component initialisation
     !                         bug.
@@ -404,28 +398,6 @@ contains
    ! Default is to assume the full allocation must be done.
    do_alloc=.true.
 
-#ifdef NEW_FIELD_ALLOC
-    ! We can only cache fields that have names
-    if(present(name)) then
-        call find_in_vectorfieldslist(name, lix)
-        if(lix<0) then
-            FLExit("find_in_vectorfields() returned -1 for '"//trim(name)//". This should not happen.")
-        else
-            ! Has this field already been allocated?
-            if(associated(vectorFieldsList(lix)%ptr%val)) then
-                field=vectorFieldsList(lix)%ptr
-
-                ! We can't reuse field data structures until the refcount is 0.
-                if(has_references(field)) then
-                    FLExit("Cannot allocate vector field '"//trim(name)//"' because it has references.")
-                end if
-                do_alloc=.false.
-            end if
-        end if
-    end if
-#endif
-    
-    print*, "do_alloc:", do_alloc
 
     field%dim=dim
     field%option_path=empty_path
@@ -467,10 +439,6 @@ contains
 
         allocate(field%picker)
 
-#ifdef NEW_FIELD_ALLOC
-        ! Now that we've created a field, copy the structure
-        vectorFieldsList(lix)%ptr=field
-#endif
     end if
     
     call addref(field)
@@ -501,26 +469,26 @@ contains
     ! Default is to assume the full allocation must be done.
     do_alloc=.true.
 
-#ifdef NEW_FIELD_ALLOC
-    ! We can only cache fields that have names
-    if(present(name)) then
-        call find_in_tensorfieldslist(name, lix)
-        if(lix<0) then
-            FLExit("find_in_tensorfields() returned -1 for '"//trim(name)//". This should not happen.")
-        else
-            ! Has this field already been allocated?
-            if(associated(tensorFieldsList(lix)%ptr%val)) then
-                field=tensorFieldsList(lix)%ptr
-
-                ! We can't reuse field data structures until the refcount is 0.
-                if(has_references(field)) then
-                    FLExit("Cannot allocate tensor field '"//trim(name)//"' because it has references.")
-                end if
-                do_alloc=.false.
-            end if
-        end if
-    end if
-#endif
+!#ifdef NEW_FIELD_ALLOC
+!    ! We can only cache fields that have names
+!    if(present(name)) then
+!        call find_in_tensorfieldslist(name, lix)
+!        if(lix<0) then
+!            FLExit("find_in_tensorfields() returned -1 for '"//trim(name)//". This should not happen.")
+!        else
+!            ! Has this field already been allocated?
+!            if(associated(tensorFieldsList(lix)%ptr%val)) then
+!                field=tensorFieldsList(lix)%ptr
+!
+!                ! We can't reuse field data structures until the refcount is 0.
+!                if(has_references(field)) then
+!                    FLExit("Cannot allocate tensor field '"//trim(name)//"' because it has references.")
+!                end if
+!                do_alloc=.false.
+!            end if
+!        end if
+!    end if
+!#endif
 
     if(do_alloc) then
         if(present(dim)) then
@@ -561,11 +529,6 @@ contains
 
         field%wrapped=.false.
         field%aliased=.false.
-#ifdef NEW_FIELD_ALLOC
-        ! Now that we've created a field, copy the structure
-        tensorFieldsList(lix)%ptr=field
-#endif
-
 
     end if
 
@@ -738,7 +701,10 @@ contains
 #ifdef DDEBUG
          field%val = ieee_value(0.0, ieee_quiet_nan)
 #endif
-         deallocate(field%val)
+
+        ! We no longer deallocate normal field values if they are the same size
+        ! as the cached version
+!         deallocate(field%val)
       end if
     case(FIELD_TYPE_CONSTANT)
 #ifdef HAVE_MEMORY_STATS
@@ -791,14 +757,7 @@ contains
     !!< deallocate it if the count drops to zero.
     type(vector_field), intent(inout) :: field
     
-#ifdef NEW_FIELD_ALLOC
-    ! If this still has a reference count, decref()
-    if (has_references(field)) then
-        call decref(field)
-    end if
 
-    ! Old code deallocates everything
-#else
     call decref(field)
 
     if (has_references(field)) then
@@ -832,8 +791,6 @@ contains
     deallocate(field%picker)
     nullify(field%picker)
 
-! ifdef NEW_FIELD_ALLOC
-#endif
     
   end subroutine deallocate_vector_field
  
@@ -858,14 +815,7 @@ contains
     !!< deallocate it if the count drops to zero.
     type(tensor_field), intent(inout) :: field
 
-#ifdef NEW_FIELD_ALLOC
-    ! If this still has a reference count, decref()
-    if (has_references(field)) then
-        call decref(field)
-    end if
 
-! Old code deallocates everything
-#else
     call decref(field)
     if (has_references(field)) then
        ! There are still references to this field so we don't deallocate.
@@ -890,8 +840,6 @@ contains
     end if
 
     call deallocate(field%mesh)
-! ifdef NEW_FIELD_ALLOC
-#endif
 
   end subroutine deallocate_tensor_field
   
