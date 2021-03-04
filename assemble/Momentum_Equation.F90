@@ -564,13 +564,19 @@
             if (implicit_prognostic_fs) then
                allocate(p_theta)
                ! allocate p_theta on the extended mesh:
-               call allocate(p_theta, p_mesh, "PressureAndFreeSurfaceTheta")
+               p_theta = extract_scalar_field(state, "PressureAndFreeSurfaceTheta", stat=state_flag)
+               if(state_flag /= 0 ) then
+                   call allocate(p_theta, p_mesh, "PressureAndFreeSurfaceTheta")
+               end if
                p_theta%option_path=p%option_path ! Use p's solver options
                call copy_to_extended_p(p, free_surface, theta_pg, p_theta)
             else if (use_theta_pg) then
                allocate(p_theta)
-               call allocate(p_theta, p_mesh, "PressureTheta")
-
+               ! allocate p_theta on the extended mesh:
+               p_theta = extract_scalar_field(state, "PressureTheta", stat=state_flag)
+               if(state_flag /= 0 ) then
+                   call allocate(p_theta, p_mesh, "PressureTheta")
+               end if
                ! p_theta = theta*p + (1-theta)*old_p
                call set(p_theta, p, old_p, theta_pg)
                p_theta%option_path=p%option_path ! Use p's solver options
