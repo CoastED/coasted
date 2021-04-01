@@ -523,7 +523,7 @@ contains
         type(scalar_field) :: u_cg, v_cg, w_cg
         type(tensor_field), pointer :: mviscosity
         type(vector_field) :: u_grad, v_grad, w_grad
-        type(scalar_field), pointer :: dist_to_top
+        type(scalar_field), pointer :: dist_to_top, dist_to_bottom
 
         integer :: n, num_nodes
 
@@ -552,11 +552,13 @@ contains
         ! QR stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_dudx
-        real :: r, q, Cpoin, filter_geom_mean_sq, topbit ! filter_harm_sq,
+        real :: r, q, Cpoin, Csmag, filter_geom_mean_sq, topbit ! filter_harm_sq,
+
+        real :: scale_depth
         integer :: udim
 
-        real :: sgsalpha
-        
+        real :: sgs_alpha, sgs_smag
+
         print*, "In calc_dg_sgs_qr_viscosity()"
 
         t1=mpi_wtime()
@@ -576,6 +578,7 @@ contains
         dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
         if (state_flag==0) then
             have_top=.true.
+            dist_to_bottom=>extract_scalar_field(state, "DistanceToBottom", stat=state_flag)
         else
             have_top=.false.
         end if
@@ -657,6 +660,14 @@ contains
             Cpoin=0.3
         end if
 
+        ! If we have a free surface, get Smagorinsky coefficient for surfafce
+        ! damping
+        if(have_top) then
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                    // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                    // "smagorinsky_coefficient", Csmag)
+        end if
+
         num_nodes = u_cg%mesh%nodes
 
         allocate(node_filter_lengths(opDim, num_nodes))
@@ -704,17 +715,19 @@ contains
               sgs_visc_val = topbit/q
            end if
 
-            ! Limiter stuff
 
-            ! If free-surface, then according to Rudi & Nezu (1984), eddy
-            ! viscosity decreases near free surface.
-            ! Conservatively attentuated here.
+            ! If free-surface, then we graduate to Smagorinsky near surface
+            ! for stability's sake (this suggested less anisotropic
+            ! (ie. 4:1) elements near surface.
+
             if(have_top) then
-               ! scale over 0.5 m, so no sharp drops
-               if( dist_to_top%val(n)<0.5 ) then
-                  sgsalpha = 2.*dist_to_top%val(n)
+               sgs_smag = Csmag * filter_geom_mean_sq * rho * norm2(2.*S)
+               ! scale over quarter depth
+               scale_depth = 0.25*(dist_to_top%val(n) + dist_to_bottom%val(n))
+               if( dist_to_top%val(n) < scale_depth ) then
+                  sgs_alpha = dist_to_top%val(n)/scale_depth
                   
-                  sgs_visc_val = ((1.-sgsalpha)*0.825 + sgsalpha*1.0)*sgs_visc_val
+                  sgs_visc_val = (1-sgs_alpha)*sgs_smag + sgs_alpha*sgs_visc_val
                end if
             end if
 
