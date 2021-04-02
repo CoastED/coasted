@@ -722,8 +722,8 @@ contains
 
             if(have_top) then
                sgs_smag = Csmag * filter_geom_mean_sq * rho * norm2(2.*S)
-               ! scale over quarter depth
-               scale_depth = 0.25*(dist_to_top%val(n) + dist_to_bottom%val(n))
+               ! scale over third depth
+               scale_depth = (1./3.)*(dist_to_top%val(n) + dist_to_bottom%val(n))
                if( dist_to_top%val(n) < scale_depth ) then
                   sgs_alpha = dist_to_top%val(n)/scale_depth
                   
