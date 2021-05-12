@@ -558,7 +558,7 @@ contains
         real :: stab_visc, stab_alpha
 
         ! These values are arbitrary and problem-dependent.
-        real, parameter :: stab_visc_max=1.8e-2, stab_mindx=15, stab_maxdx=1000
+        real, parameter :: stab_visc_max=1.8e-2, stab_mindx=10, stab_maxdx=1000
         real, parameter :: stab_range = (stab_maxdx-stab_mindx)
 
 
@@ -744,7 +744,7 @@ contains
             ! Stabilisation viscosity for really wide, thin elements
             ! Only need to compare dx x-comp and z-comp (y-comp is identical)
 
-            if(dx(1) > stab_mindx .and. dx(1)/dx(3) > 20) then
+            if(dx(1) > stab_mindx ) then
                 stab_alpha = (dx(1)-stab_mindx) / stab_range
                 stab_visc = stab_alpha * stab_visc_max
 
@@ -754,6 +754,18 @@ contains
                 stab_visc = 0
             end if
 
+! Switched off arbitrary artificial viscosity field
+!            
+!            if(have_artificial_visc) then
+!              if(artificial_visc%val(n) > stab_visc) stab_visc=0.0
+!              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
+!            else
+!                sgs_visc_val = sgs_visc_val + stab_visc
+!            end if
+
+            ! Just using element-size based stabilisation for now.
+            sgs_visc_val = sgs_visc_val + stab_visc
+
             ! Limiter
             if(sgs_visc_val > sgs_limit) then
                if(sgs_visc%val(n) < sgs_limit) then
@@ -762,15 +774,6 @@ contains
                   sgs_visc_val=0.
                end if
             end if
-
-            if(have_artificial_visc) then
-              if(stab_visc > artificial_visc%val(n)) stab_visc=0.0
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
-            else
-                sgs_visc_val = sgs_visc_val + stab_visc
-            end if
-
-
 
 
            call set(sgs_visc, n,  sgs_visc_val)
