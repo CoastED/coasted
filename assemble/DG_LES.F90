@@ -552,7 +552,15 @@ contains
         ! QR stuff
         real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: S, dudx_n, del_dudx
-        real :: r, q, Cpoin, Csmag, filter_geom_mean_sq, topbit ! filter_harm_sq,
+        real :: r, q, Cpoin, Csmag, topbit, filter_harm_sq ! filter_geom_mean_sq,
+
+        ! Stabilisation stuff for really wide, thin elements
+        real :: stab_visc, stab_alpha
+
+        ! These values are arbitrary and problem-dependent.
+        real, parameter :: stab_visc_max=1.8e-2, stab_mindx=15, stab_maxdx=1000
+        real, parameter :: stab_range = (stab_maxdx-stab_mindx)
+
 
         real :: scale_depth
         integer :: udim
@@ -685,9 +693,9 @@ contains
            dudx_n(:,3) = w_grad%val(:,n)
 
 !           ! Harmonic mean of individual filter lengths (Verstappen et al)
-           !filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
            ! According to Rozema et al, best choice for anisotropic grids
-           filter_geom_mean_sq = (dx(1) * dx(2) * dx(3))**(2/3)
+           ! filter_geom_mean_sq = (dx(1) * dx(2) * dx(3))**(2/3)
 
            S = 0.5 * (dudx_n + transpose(dudx_n))
 
@@ -704,8 +712,8 @@ contains
            q = 0.5 * q
            r = - r / 3.
 
-           ! topbit = Cpoin * filter_harm_sq * max(r, 0.0)
-           topbit = Cpoin * filter_geom_mean_sq * max(r, 0.0)
+           topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+           !topbit = Cpoin * filter_geom_mean_sq * max(r, 0.0)
 
            ! If the denominator is vanishing small, then set the SGS viscosity
            ! to zero
@@ -721,7 +729,8 @@ contains
             ! (ie. 4:1) elements near surface.
 
             if(have_top) then
-               sgs_smag = Csmag * filter_geom_mean_sq * rho * norm2(2.*S)
+               ! sgs_smag = Csmag * filter_geom_mean_sq * rho * norm2(2.*S)
+               sgs_smag = Csmag * filter_harm_sq * rho * norm2(2.*S)
                ! scale over third depth
                scale_depth = (1./3.)*(dist_to_top%val(n) + dist_to_bottom%val(n))
                if( dist_to_top%val(n) < scale_depth ) then
@@ -731,6 +740,16 @@ contains
                end if
             end if
 
+
+            ! Stabilisation viscosity for really wide, thin elements
+            ! Only need to compare dx x-comp and z-comp (y-comp is identical)
+            if(dx(1) > stab_mindx .and. dx(1)/dx(3) > 20) then
+                stab_alpha = (dx(1)-stab_mindx) / stab_range
+                stab_visc = stab_alpha * stab_visc_max
+
+                if(stab_visc > stab_visc_max) stab_visc=stab_visc_max
+
+            end if
             ! Limiter
             if(sgs_visc_val > sgs_limit) then
                if(sgs_visc%val(n) < sgs_limit) then
@@ -741,7 +760,8 @@ contains
             end if
 
             if(have_artificial_visc) then
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+              if(stab_visc > artificial_visc%val(n)) stab_visc=0.0
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
             end if
 
 
