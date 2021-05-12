@@ -743,13 +743,17 @@ contains
 
             ! Stabilisation viscosity for really wide, thin elements
             ! Only need to compare dx x-comp and z-comp (y-comp is identical)
+
             if(dx(1) > stab_mindx .and. dx(1)/dx(3) > 20) then
                 stab_alpha = (dx(1)-stab_mindx) / stab_range
                 stab_visc = stab_alpha * stab_visc_max
 
                 if(stab_visc > stab_visc_max) stab_visc=stab_visc_max
 
+            else
+                stab_visc = 0
             end if
+
             ! Limiter
             if(sgs_visc_val > sgs_limit) then
                if(sgs_visc%val(n) < sgs_limit) then
@@ -762,7 +766,10 @@ contains
             if(have_artificial_visc) then
               if(stab_visc > artificial_visc%val(n)) stab_visc=0.0
               sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
+            else
+                sgs_visc_val = sgs_visc_val + stab_visc
             end if
+
 
 
 
