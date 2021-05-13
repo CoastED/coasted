@@ -754,17 +754,18 @@ contains
                 stab_visc = 0
             end if
 
-! Switched off arbitrary artificial viscosity field
-!            
-!            if(have_artificial_visc) then
-!              if(artificial_visc%val(n) > stab_visc) stab_visc=0.0
-!              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
-!            else
-!                sgs_visc_val = sgs_visc_val + stab_visc
-!            end if
+
+            ! Combine any artificial viscosity field present with stabilisation
+            ! viscosity
+            if(have_artificial_visc) then
+              if(artificial_visc%val(n) > stab_visc) stab_visc=0.0
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
+            else
+                sgs_visc_val = sgs_visc_val + stab_visc
+            end if
 
             ! Just using element-size based stabilisation for now.
-            sgs_visc_val = sgs_visc_val + stab_visc
+!            sgs_visc_val = sgs_visc_val + stab_visc
 
             ! Limiter
             if(sgs_visc_val > sgs_limit) then
