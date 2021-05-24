@@ -558,7 +558,7 @@ contains
         real :: stab_visc, stab_alpha
 
         ! These values are arbitrary and problem-dependent.
-        real, parameter :: stab_visc_max=1.8e-2, stab_mindx=10, stab_maxdx=1000
+        real, parameter :: stab_visc_max=1.8e-3, stab_mindx=7.5, stab_maxdx=8000
         real, parameter :: stab_range = (stab_maxdx-stab_mindx)
 
 
@@ -755,11 +755,13 @@ contains
             end if
 
 
-            ! Combine any artificial viscosity field present with stabilisation
-            ! viscosity
+           
             if(have_artificial_visc) then
-              if(artificial_visc%val(n) > stab_visc) stab_visc=0.0
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n) + stab_visc
+              if(artificial_visc%val(n) > stab_visc) then
+                 sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+              else
+                 sgs_visc_val = sgs_visc_val + (artificial_visc%val(n) + stab_visc)/2.0
+              end if
             else
                 sgs_visc_val = sgs_visc_val + stab_visc
             end if
@@ -768,14 +770,7 @@ contains
 !            sgs_visc_val = sgs_visc_val + stab_visc
 
             ! Limiter
-            if(sgs_visc_val > sgs_limit) then
-               if(sgs_visc%val(n) < sgs_limit) then
-                  sgs_visc_val=sgs_visc%val(n)
-               else
-                  sgs_visc_val=0.
-               end if
-            end if
-
+            if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
 
            call set(sgs_visc, n,  sgs_visc_val)
         end do
