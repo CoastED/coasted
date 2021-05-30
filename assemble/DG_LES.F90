@@ -741,9 +741,9 @@ contains
                chan_depth_deep = 7.5
                chan_depth_shallow = 2.
 
-               if(chan_depth < chan_depth_deep) then
+               if(chan_depth > chan_depth_deep) then
                   sgs_depth_alpha = 0.
-               elseif(chan_depth > chan_depth_shallow) then
+               elseif(chan_depth < chan_depth_shallow) then
                   sgs_depth_alpha = 1.
                else
                   sgs_depth_alpha = (chan_depth_deep - chan_depth) &
