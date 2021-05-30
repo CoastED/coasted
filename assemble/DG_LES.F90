@@ -554,18 +554,20 @@ contains
         real, dimension(:, :), allocatable :: S, dudx_n, del_dudx
         real :: r, q, Cpoin, Csmag, topbit, filter_harm_sq ! filter_geom_mean_sq,
 
-        ! Stabilisation stuff for really wide, thin elements
-        real :: stab_visc, stab_alpha
+!        ! Stabilisation stuff for really wide, thin elements
+!        real :: stab_visc, stab_alpha
 
         ! These values are arbitrary and problem-dependent.
-        real, parameter :: stab_visc_max=1.8e-3, stab_mindx=7.5, stab_maxdx=8000
-        real, parameter :: stab_range = (stab_maxdx-stab_mindx)
+!        real, parameter :: stab_visc_max=0.25e-4, stab_mindx=7.5, stab_maxdx=8000
+!        real, parameter :: stab_range = (stab_maxdx-stab_mindx)
 
 
         real :: scale_depth
         integer :: udim
 
-        real :: sgs_alpha, sgs_smag
+        real :: chan_depth, chan_depth_deep, chan_depth_shallow, scale_to_surf
+        real :: sgs_surf_alpha, sgs_depth_alpha
+        real :: sgs_smag_alpha, sgs_smag
 
         print*, "In calc_dg_sgs_qr_viscosity()"
 
@@ -729,41 +731,75 @@ contains
             ! (ie. 4:1) elements near surface.
 
             if(have_top) then
-               ! sgs_smag = Csmag * filter_geom_mean_sq * rho * norm2(2.*S)
+               ! sgs_smag = Csmag*Csmag * filter_geom_mean_sq*rho * norm2(2.*S)
                sgs_smag = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
-               ! scale over third depth
-               scale_depth = (1./3.)*(dist_to_top%val(n) + dist_to_bottom%val(n))
-               if( dist_to_top%val(n) < scale_depth ) then
-                  sgs_alpha = dist_to_top%val(n)/scale_depth
-                  
-                  sgs_visc_val = (1-sgs_alpha)*sgs_smag + sgs_alpha*sgs_visc_val
+
+               chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+               
+               ! Switch to standard Smag in shallower waters (more stable)
+               chan_depth_deep = 7.5
+               chan_depth_shallow = 2.
+
+               if(chan_depth < chan_depth_deep) then
+                  sgs_depth_alpha = 0.
+               elseif(chan_depth > chan_depth_shallow) then
+                  sgs_depth_alpha = 1.
+               else
+                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
+                       / (chan_depth_deep - chan_depth_shallow)
                end if
+
+
+               ! Switch to Standard smag near surface (more stable)
+               ! scale over third depth
+               scale_to_surf = (1./3.)*chan_depth
+
+               sgs_surf_alpha = 0.
+               if( dist_to_top%val(n) < scale_to_surf ) then
+                  sgs_surf_alpha = dist_to_top%val(n)/scale_to_surf
+               end if
+
+               ! Pick which ever alpha blend is the highest
+               sgs_smag_alpha = 0.
+               if( sgs_surf_alpha > sgs_depth_alpha) then
+                  sgs_smag_alpha = sgs_surf_alpha
+               else
+                  sgs_smag_alpha = sgs_depth_alpha
+               end if
+                  
+               ! Blend QR LES and Smagorinsky LES
+               sgs_visc_val = (1-sgs_smag_alpha)*sgs_smag + sgs_smag_alpha*sgs_visc_val
+
+
             end if
 
 
             ! Stabilisation viscosity for really wide, thin elements
             ! Only need to compare dx x-comp and z-comp (y-comp is identical)
 
-            if(dx(1) > stab_mindx ) then
-                stab_alpha = (dx(1)-stab_mindx) / stab_range
-                stab_visc = stab_alpha * stab_visc_max
+            !if(dx(1) > stab_mindx ) then
+            !     stab_alpha = (dx(1)-stab_mindx) / stab_range
+            !     stab_visc = stab_alpha * stab_visc_max
 
-                if(stab_visc > stab_visc_max) stab_visc=stab_visc_max
+            !     if(stab_visc > stab_visc_max) stab_visc=stab_visc_max
 
-            else
-                stab_visc = 0
-            end if
+            ! else
+            !     stab_visc = 0
+            ! end if
 
+            ! stab_visc=0.0
 
            
             if(have_artificial_visc) then
-              if(artificial_visc%val(n) > stab_visc) then
-                 sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-              else
-                 sgs_visc_val = sgs_visc_val + (artificial_visc%val(n) + stab_visc)/2.0
-              end if
-            else
-                sgs_visc_val = sgs_visc_val + stab_visc
+                sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+!              if(artificial_visc%val(n) > stab_visc) then
+!                 sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+!              else
+!                 sgs_visc_val = sgs_visc_val + (artificial_visc%val(n) + stab_visc)/2.0
+!              end if
+!            else
+!                sgs_visc_val = sgs_visc_val + stab_visc
             end if
 
             ! Just using element-size based stabilisation for now.
