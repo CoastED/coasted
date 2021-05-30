@@ -757,7 +757,7 @@ contains
 
                sgs_surf_alpha = 0.
                if( dist_to_top%val(n) < scale_to_surf ) then
-                  sgs_surf_alpha = dist_to_top%val(n)/scale_to_surf
+                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
                end if
 
                ! Pick which ever alpha blend is the highest
@@ -769,7 +769,7 @@ contains
                end if
                   
                ! Blend QR LES and Smagorinsky LES
-               sgs_visc_val = (1-sgs_smag_alpha)*sgs_smag + sgs_smag_alpha*sgs_visc_val
+               sgs_visc_val = sgs_smag_alpha*sgs_smag + (1.-sgs_smag_alpha)*sgs_visc_val
 
 
             end if
