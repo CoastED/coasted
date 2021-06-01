@@ -565,7 +565,11 @@ contains
         real :: scale_depth
         integer :: udim
 
-        real :: chan_depth, chan_depth_deep, chan_depth_shallow, scale_to_surf
+        ! Switch Smagorinsky stuff for shallower waters (more stable)
+        ! When to switch it on? (blends gradually)
+        real, parameter :: chan_depth_shallow = 2.0, chan_depth_deep = 4.0
+
+        real :: chan_depth, scale_to_surf
         real :: sgs_surf_alpha, sgs_depth_alpha
         real :: sgs_smag_alpha, sgs_smag
 
@@ -682,7 +686,7 @@ contains
 
         allocate(node_filter_lengths(opDim, num_nodes))
         call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
-
+                          
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
@@ -737,10 +741,6 @@ contains
                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
 
                
-               ! Switch to standard Smag in shallower waters (more stable)
-               chan_depth_deep = 7.5
-               chan_depth_shallow = 2.
-
                if(chan_depth > chan_depth_deep) then
                   sgs_depth_alpha = 0.
                elseif(chan_depth < chan_depth_shallow) then
