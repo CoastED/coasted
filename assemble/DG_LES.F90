@@ -555,11 +555,14 @@ contains
         real :: r, q, Cpoin, Csmag, topbit, filter_harm_sq ! filter_geom_mean_sq,
 
 !        ! Stabilisation stuff for really wide, thin elements
-!        real :: stab_visc, stab_alpha
+        real :: stab_visc
 
         ! These values are arbitrary and problem-dependent.
-!        real, parameter :: stab_visc_max=0.25e-4, stab_mindx=7.5, stab_maxdx=8000
-!        real, parameter :: stab_range = (stab_maxdx-stab_mindx)
+        real, parameter :: stab_visc_max=0.0005, stab_mindx=7.5, stab_maxdx=25
+        real, parameter :: stab_min_depth=3, stab_max_depth=15
+        real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
+        real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
+        real :: stab_dx_alpha, stab_depth_alpha
 
 
         real :: scale_depth
@@ -775,35 +778,41 @@ contains
             end if
 
 
-            ! Stabilisation viscosity for really wide, thin elements
-            ! Only need to compare dx x-comp and z-comp (y-comp is identical)
+            ! Stabilisation viscosity for really wide, thin elements.
+            ! Peculiar to extruded tidal simulations.
 
-            !if(dx(1) > stab_mindx ) then
-            !     stab_alpha = (dx(1)-stab_mindx) / stab_range
-            !     stab_visc = stab_alpha * stab_visc_max
+            stab_visc=0.
 
-            !     if(stab_visc > stab_visc_max) stab_visc=stab_visc_max
+            if(have_top) then
+                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
 
-            ! else
-            !     stab_visc = 0
-            ! end if
+                stab_dx_alpha = 0.
+                if ( dx(1) > stab_maxdx) then
+                    stab_dx_alpha = 1.
+                elseif( dx(1) > stab_mindx ) then
+                    stab_dx_alpha = (dx(1)-stab_mindx) / stab_dx_range
+                end if
 
-            ! stab_visc=0.0
+                stab_depth_alpha=0.
+                if (chan_depth < stab_min_depth ) then
+                    stab_depth_alpha=1.
+                elseif( chan_depth < stab_max_depth ) then
+                    stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
+                end if
+
+                stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
+
+            else
+                 stab_visc = 0.
+            end if
 
            
             if(have_artificial_visc) then
                 sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-!              if(artificial_visc%val(n) > stab_visc) then
-!                 sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-!              else
-!                 sgs_visc_val = sgs_visc_val + (artificial_visc%val(n) + stab_visc)/2.0
-!              end if
-!            else
-!                sgs_visc_val = sgs_visc_val + stab_visc
             end if
 
-            ! Just using element-size based stabilisation for now.
-!            sgs_visc_val = sgs_visc_val + stab_visc
+            ! Just using element-size & depth based stabilisation for now.
+            sgs_visc_val = sgs_visc_val + stab_visc
 
             ! Limiter
             if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
