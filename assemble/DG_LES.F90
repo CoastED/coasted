@@ -781,8 +781,6 @@ contains
             ! Stabilisation viscosity for really wide, thin elements.
             ! Peculiar to extruded tidal simulations.
 
-            stab_visc=0.
-
             if(have_top) then
                 chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
 
@@ -800,6 +798,7 @@ contains
                     stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
                 end if
 
+                print*, "stab_dx_alpha:", stab_dx_alpha, "   stab_depth_alpha:", stab_depth_alpha
                 stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
 
             else
