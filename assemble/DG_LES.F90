@@ -558,8 +558,8 @@ contains
         real :: stab_visc
 
         ! These values are arbitrary and problem-dependent.
-        real, parameter :: stab_visc_max=0.0005, stab_mindx=7.5, stab_maxdx=25
-        real, parameter :: stab_min_depth=3, stab_max_depth=15
+        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=25
+        real, parameter :: stab_min_depth=3, stab_max_depth=20
         real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
         real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
         real :: stab_dx_alpha, stab_depth_alpha
@@ -570,7 +570,7 @@ contains
 
         ! Switch Smagorinsky stuff for shallower waters (more stable)
         ! When to switch it on? (blends gradually)
-        real, parameter :: chan_depth_shallow = 2.0, chan_depth_deep = 6.0
+        real, parameter :: chan_depth_shallow = 2.0, chan_depth_deep = 6.5
 
         real :: chan_depth, scale_to_surf
         real :: sgs_surf_alpha, sgs_depth_alpha
