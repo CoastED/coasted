@@ -558,8 +558,8 @@ contains
         real :: stab_visc
 
         ! These values are arbitrary and problem-dependent.
-        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=25
-        real, parameter :: stab_min_depth=3, stab_max_depth=20
+        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=20
+        real, parameter :: stab_min_depth=3, stab_max_depth=25
         real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
         real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
         real :: stab_dx_alpha, stab_depth_alpha
@@ -798,7 +798,6 @@ contains
                     stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
                 end if
 
-                print*, "stab_dx_alpha:", stab_dx_alpha, "   stab_depth_alpha:", stab_depth_alpha
                 stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
 
             else
