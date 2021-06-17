@@ -628,13 +628,15 @@
 
             ! Allocate the momentum RHS
 
-            if(momeq_first_run) then
+            if(.not. has_vector_Field(state(istate), "MomentumRHS")) then
                 call allocate(mom_rhs(istate), u%dim, u%mesh, "MomentumRHS")
                 call zero(mom_rhs(istate))
             end if
+
             ! Allocate the ct RHS
             call allocate(ct_rhs(istate), p_mesh, "DivergenceRHS")
             call zero(ct_rhs(istate))
+
             call profiler_toc(u, "assembly")
 
             if(has_scalar_field(state(istate), hp_name)) then
