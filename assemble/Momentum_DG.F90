@@ -1352,7 +1352,6 @@ contains
     ! There is an optimised version of this in Momentum_DG.F90
     ! limit_vb is only ever called from there
 
-#if USE_CTO
     subroutine limit_vb_opt(T)
         !Vertex-based (not Victoria Bitter) limiter from
         !Kuzmin, J. Comp. Appl. Math., 2010
@@ -1448,7 +1447,6 @@ contains
         end do
 
     end subroutine limit_vb_opt
-#endif
 
 end subroutine subcycle_momentum_dg
 
@@ -1591,7 +1589,7 @@ subroutine allocate_big_m_dg(state, big_m, u)
             end do
         end if
       
-        ! Added brackes around (.not. compact_stencil), check this
+        ! Added brackets around (.not. compact_stencil), check this
         if (have_viscosity .and. (.not. compact_stencil)) then
             ! traverse the second order neighbours
             do i=1, size(neighbours)
@@ -1658,7 +1656,7 @@ subroutine allocate_big_m_dg(state, big_m, u)
         call allocate(big_m, nonods, nonods, &
             dnnz, onnz, (/ u%dim, u%dim /), "BIG_m", halo=halo)
     end if
-      
+
 end subroutine allocate_big_m_dg
 
 subroutine correct_velocity_dg(U, inverse_mass, CT, delta_P)

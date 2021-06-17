@@ -75,8 +75,16 @@
       use multiphase_module
       use pressure_dirichlet_bcs_cv
       use shallow_water_equations
+      use global_parameters, only: new_mesh_connectivity
 
       implicit none
+
+      ! Momentum LHS
+      type(petsc_csr_matrix), dimension(:), allocatable, target :: big_m
+      ! Momentum RHS
+      type(vector_field), dimension(:), allocatable :: mom_rhs
+
+      logical :: momeq_first_run
 
       private
       public :: solve_momentum, momentum_equation_check_options
@@ -171,8 +179,7 @@
          type(csr_sparsity), pointer :: u_sparsity
 
          !! Locally allocated matrices:
-         ! Momentum LHS
-         type(petsc_csr_matrix), dimension(:), allocatable, target :: big_m
+
          ! Matrix for split explicit advection
          type(block_csr_matrix), dimension(:), allocatable :: subcycle_m
          ! Pointer to matrix for full projection solve:
@@ -197,8 +204,7 @@
          ! For DG:
          type(block_csr_matrix), dimension(1:size(state)):: inverse_mass
 
-         ! Momentum RHS
-         type(vector_field), dimension(1:size(state)):: mom_rhs
+
          ! Projection RHS
          type(scalar_field), save :: projec_rhs
          type(scalar_field), dimension(1:size(state)):: ct_rhs
@@ -363,7 +369,17 @@
          call get_pressure_options(p)
 
          ! Allocate arrays for the N states/phases
-         allocate(big_m(size(state)))
+         if(.not. allocated(big_m)) then
+            allocate(big_m(size(state)))
+            momeq_first_run = .true.
+         else
+            momeq_first_run = .false.
+         end if
+
+         if(momeq_first_run) then
+            allocate(mom_rhs(size(state)))
+         end if
+
          allocate(ct_m(size(state)))
          allocate(ctp_m(size(state)))
          allocate(subcycle_m(size(state)))
@@ -582,7 +598,10 @@
             call profiler_tic(u, "assembly")
             ! Allocation of big_m
             if(dg(istate)) then
-               call allocate_big_m_dg(state(istate), big_m(istate), u)
+               if(new_mesh_connectivity) then
+                    if(.not. momeq_first_run) call deallocate(big_m(istate))
+                    call allocate_big_m_dg(state(istate), big_m(istate), u)
+               end if
 
                if(subcycle(istate)) then
                   u_sparsity => get_csr_sparsity_firstorder(state, u%mesh, u%mesh)
@@ -601,15 +620,18 @@
             ! Initialise the big_m, ct_m and ctp_m matrices
             call zero(big_m(istate))
             if(reassemble_ct_m) then
-               call zero(ct_m(istate)%ptr)         
+               call zero(ct_m(istate)%ptr)
                if (.not.(compressible_eos .or. shallow_water_projection) .and. cg_pressure_cv_test_continuity) then
                   call zero(ctp_m(istate)%ptr)
                end if
             end if
 
             ! Allocate the momentum RHS
-            call allocate(mom_rhs(istate), u%dim, u%mesh, "MomentumRHS")
-            call zero(mom_rhs(istate))
+
+            if(momeq_first_run) then
+                call allocate(mom_rhs(istate), u%dim, u%mesh, "MomentumRHS")
+                call zero(mom_rhs(istate))
+            end if
             ! Allocate the ct RHS
             call allocate(ct_rhs(istate), p_mesh, "DivergenceRHS")
             call zero(ct_rhs(istate))
@@ -1273,7 +1295,7 @@
          end if
 
          ! Deallocate arrays of matricies/fields/pointers
-         deallocate(big_m)
+         ! deallocate(big_m)
          deallocate(ct_m)
          deallocate(ctp_m)
          deallocate(subcycle_m)
@@ -2020,9 +2042,9 @@
             call deallocate_cg_mass(mass(istate), inverse_masslump(istate))
          end if
 
-         call deallocate(mom_rhs(istate))
+         ! call deallocate(mom_rhs(istate))
          call deallocate(ct_rhs(istate))
-         call deallocate(big_m(istate))
+         ! call deallocate(big_m(istate))
          if(subcycle(istate)) then
             call deallocate(subcycle_m(istate))
          end if

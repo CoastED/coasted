@@ -47,7 +47,7 @@ module sparse_tools_petsc
   
   type petsc_csr_matrix
      !! the matrix in PETSc format
-     Mat :: M
+     type(Mat) :: M
      !! petsc numbering for rows and columns
      type(petsc_numbering_type) :: row_numbering, column_numbering
      
@@ -374,7 +374,8 @@ contains
          nprows*blocks(1), npcols*blocks(2), &
          urows, ucols, &
          PETSC_NULL_INTEGER, dnnz, PETSC_NULL_INTEGER, onnz, matrix%M, ierr)
-    
+      ! Some preallocation magic.
+      ! call MatMPIAIJSetPreallocation(matrix%M, dnz, PETSC_NULL_INTEGER, onz, PETSC_NULL_INTEGER, ierr)
     else if (.not. IsParallel()) then
 
       assert( size(dnnz)==urows )
@@ -391,7 +392,8 @@ contains
       call MatCreateMPIAIJ(MPI_COMM_FEMTOOLS, nprows*blocks(1), npcols*blocks(2), &
          urows, ucols, &
          PETSC_NULL_INTEGER, dnnz, PETSC_NULL_INTEGER, onnz, matrix%M, ierr)
-      
+      ! Some preallocation magic.
+      ! call MatMPIAIJSetPreallocation(matrix%M, dnz, PETSC_NULL_INTEGER, onz, onnz, PETSC_NULL_INTEGER)
     endif
     
     if (.not. use_element_blocks) then
@@ -403,6 +405,9 @@ contains
 
     ! Necessary for local assembly: we don't want to communicate non-local dofs
     call MatSetOption(matrix%M, MAT_IGNORE_OFF_PROC_ENTRIES, PETSC_TRUE, ierr)
+
+    ! Use hash tables to speed up assembly
+    call MatSetOption(matrix%M, MAT_USE_HASH_TABLE, PETSC_TRUE, ierr)
 
     ! to make sure we're not underestimating the number of nonzeros ever, make
     ! petsc fail if new allocations are necessary. If uncommenting the setting of this
@@ -449,7 +454,7 @@ contains
     !!< through the petsc_csr_matrix interface, but only if all nonzero
     !!< entries have been preallocated.
     type(petsc_csr_matrix), intent(out):: matrix
-    Mat, intent(in):: M
+    type(Mat), intent(in):: M
     type(petsc_numbering_type), intent(in):: row_numbering, column_numbering
     character(len=*), intent(in):: name
     !! petsc's inodes don't work with certain preconditioners ("mg" and "eisenstat")
