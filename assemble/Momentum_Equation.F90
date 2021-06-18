@@ -200,16 +200,16 @@
          ! Momentum RHS
          type(vector_field), dimension(1:size(state)):: mom_rhs
          ! Projection RHS
-         type(scalar_field) :: projec_rhs
+         type(scalar_field), save :: projec_rhs
          type(scalar_field), dimension(1:size(state)):: ct_rhs
 
          ! Do we want to assemble the KMK stabilisation matrix?
          logical :: assemble_kmk
 
          ! Change in pressure
-         type(scalar_field) :: delta_p
+         type(scalar_field), save :: delta_p
          ! Change in velocity
-         type(vector_field) :: delta_u
+         type(vector_field), save :: delta_u
 
          ! Dummy fields
          type(scalar_field), pointer :: dummyscalar, dummydensity, dummypressure
@@ -564,19 +564,13 @@
             if (implicit_prognostic_fs) then
                allocate(p_theta)
                ! allocate p_theta on the extended mesh:
-               p_theta = extract_scalar_field(state, "PressureAndFreeSurfaceTheta", stat=state_flag)
-               if(state_flag /= 0 ) then
-                   call allocate(p_theta, p_mesh, "PressureAndFreeSurfaceTheta")
-               end if
+               call allocate(p_theta, p_mesh, "PressureAndFreeSurfaceTheta")
                p_theta%option_path=p%option_path ! Use p's solver options
                call copy_to_extended_p(p, free_surface, theta_pg, p_theta)
             else if (use_theta_pg) then
                allocate(p_theta)
-               ! allocate p_theta on the extended mesh:
-               p_theta = extract_scalar_field(state, "PressureTheta", stat=state_flag)
-               if(state_flag /= 0 ) then
-                   call allocate(p_theta, p_mesh, "PressureTheta")
-               end if
+               call allocate(p_theta, p_mesh, "PressureTheta")
+
                ! p_theta = theta*p + (1-theta)*old_p
                call set(p_theta, p, old_p, theta_pg)
                p_theta%option_path=p%option_path ! Use p's solver options
@@ -1020,7 +1014,7 @@
 
 
             ! Allocate RHS for pressure correction step
-            call allocate(projec_rhs, p_mesh, "ProjectionRHS")
+            if(.not. associated(projec_rhs%val)) call allocate(projec_rhs, p_mesh, "ProjectionRHS")
             call zero(projec_rhs)
 
             call profiler_toc(p, "assembly")
@@ -1114,7 +1108,7 @@
                                     cmc_m, ct_m, ctp_m, projec_rhs, inner_m, full_projection_preconditioner, &
                                     schur_auxiliary_matrix, stiff_nodes_list)
 
-               call deallocate(projec_rhs)
+               !call deallocate(projec_rhs)
                call profiler_toc(p, "assembly")
             end if
 
@@ -1172,7 +1166,7 @@
                call profiler_toc("velocity_correction_loop")
 
                !! Deallocate some memory reserved for the pressure solve
-               call deallocate(delta_p)
+               ! call deallocate(delta_p)
 
                if(assemble_schur_auxiliary_matrix) then
                   ! Deallocate schur_auxiliary_matrix:
@@ -1211,7 +1205,7 @@
                   delta_p%option_path = trim(p%option_path)
                   call zero(delta_p)
 
-                  call allocate(delta_u, u%dim, u%mesh, "DeltaU")
+                  if(.not. associated(delta_u%val)) call allocate(delta_u, u%dim, u%mesh, "DeltaUReduced")
                   delta_u%option_path = trim(u%option_path)
                   call zero(delta_u)
 
@@ -1233,8 +1227,8 @@
                      call addto(p, delta_p, dt)
                   endif
 
-                  call deallocate(delta_p)
-                  call deallocate(delta_u)
+                  ! call deallocate(delta_p)
+                  ! call deallocate(delta_u)
 
                end if ! prognostic velocity
 
@@ -1555,6 +1549,7 @@
       end subroutine solve_poisson_pressure
 
 
+
       subroutine advance_velocity(state, istate, x, u, p_theta, big_m, ct_m, mom_rhs, subcycle_m, inverse_mass)
          !!< Solve momentum equation using pressure guess and advance velocity from u^{n} to u^{*}
 
@@ -1581,7 +1576,7 @@
          !! Local variables
          ! Change in velocity
 
-         type(vector_field) :: delta_u
+         type(vector_field), save :: delta_u
          real :: umin, umax, vmin, vmax, wmin, wmax
 
          integer :: i
@@ -1589,7 +1584,7 @@
 
          ! Fields for the subtract_out_reference_profile option under the Velocity field
          type(scalar_field), pointer :: hb_pressure
-         type(scalar_field) :: combined_p
+         type(scalar_field), save :: combined_p
          integer :: stat
 
          ewrite(1,*) 'Entering advance_velocity'
@@ -1597,7 +1592,10 @@
 
          ! Allocate the momentum solution vector
          call profiler_tic(u, "assembly")
-         call allocate(delta_u, u%dim, u%mesh, "DeltaU")
+         if(.not. associated(delta_u%val)) then
+            call allocate(delta_u, u%dim, u%mesh, "DeltaU")
+         end if
+
          delta_u%option_path = trim(u%option_path)
 
          ! Apply advection subcycling
@@ -1625,11 +1623,14 @@
                   FLExit("When using the subtract_out_reference_profile option, please set a (prescribed) HydrostaticReferencePressure field.")
                   ewrite(-1,*) 'The HydrostaticReferencePressure field, defining the hydrostatic component of the pressure field, needs to be set.'
                end if
-               call allocate(combined_p,p_theta%mesh, "PressurePerturbation")
+               if(.not. associated(combined_p%val)) &
+                    call allocate(combined_p,p_theta%mesh, "PressurePerturbation")
+
                call set(combined_p, p_theta)
                call addto(combined_p, hb_pressure, scale=-1.0)
                call mult_T(delta_u, ct_m(istate)%ptr, combined_p)
-               call deallocate(combined_p)
+
+               ! call deallocate(combined_p)
             else
                call mult_T(delta_u, ct_m(istate)%ptr, p_theta)
             end if
@@ -1686,7 +1687,8 @@
 
          ewrite_minmax(u)
 
-         call deallocate(delta_u)
+
+         !call deallocate(delta_u)
          call profiler_toc(u, "assembly")
 
       end subroutine advance_velocity
@@ -1718,8 +1720,8 @@
          real, intent(in) :: theta_divergence
 
          ! Local variables
-         type(scalar_field) :: kmk_rhs, temp_projec_rhs, compress_projec_rhs
-         type(vector_field) :: delta_u
+         type(scalar_field), save :: kmk_rhs, temp_projec_rhs, compress_projec_rhs
+         type(vector_field), save :: delta_u
          integer :: stat
 
          ewrite(1,*) 'Entering assemble_projection'
@@ -1733,7 +1735,9 @@
          ! Despite multiplying velocity by a nonlocal operator
          ! a halo_update isn't necessary as this is just a rhs
          ! contribution
-         call allocate(temp_projec_rhs, p_theta%mesh, "TempProjectionRHS")
+
+         if(.not. associated(temp_projec_rhs%val)) &
+            call allocate(temp_projec_rhs, p_theta%mesh, "TempProjectionRHS")
          call zero(temp_projec_rhs)
 
          if (.not. use_theta_divergence) then
@@ -1742,7 +1746,10 @@
          else
             ! Evaluate continuity at n+theta_divergence
             ! compute theta_divergence*u+(1-theta_divergence)*old_u
-            call allocate(delta_u, u%dim, u%mesh, "VelocityTheta")
+
+            if(.not. associated(delta_u%val)) &
+                call allocate(delta_u, u%dim, u%mesh, "VelocityTheta")
+
             if (have_rotated_bcs(u)) then
                if (dg(istate)) then
                   call zero_non_owned(old_u)
@@ -1757,11 +1764,12 @@
             end if
             call set(delta_u, u, old_u, theta_divergence)
             call mult(temp_projec_rhs, ctp_m(istate)%ptr, delta_u)
-            call deallocate(delta_u)
+
+            !call deallocate(delta_u)
          end if
 
          ! Allocate the RHS
-         call allocate(kmk_rhs, p_theta%mesh, "KMKRHS")
+         if(.not. associated(kmk_rhs%val)) call allocate(kmk_rhs, p_theta%mesh, "KMKRHS")
          call zero(kmk_rhs)
 
          if (apply_kmk) then
@@ -1774,13 +1782,15 @@
          call addto(temp_projec_rhs, ct_rhs(istate))
          ewrite_minmax(temp_projec_rhs)
 
-         call deallocate(kmk_rhs)
+
+         !call deallocate(kmk_rhs)
 
          cmc_m => extract_csr_matrix(state(istate), "PressurePoissonMatrix", stat)
          
          if((compressible_eos .and. have_option(trim(state(istate)%option_path)//'/equation_of_state/compressible')) &
            .or. shallow_water_projection) then
-            call allocate(compress_projec_rhs, p_theta%mesh, "CompressibleProjectionRHS")
+            if(.not. associated(compress_projec_rhs%val)) &
+                call allocate(compress_projec_rhs, p_theta%mesh, "CompressibleProjectionRHS")
 
             if (shallow_water_projection) then
                assert(istate==1)
@@ -1799,7 +1809,7 @@
 
             call addto(temp_projec_rhs, compress_projec_rhs)
 
-            call deallocate(compress_projec_rhs)
+            !call deallocate(compress_projec_rhs)
          end if
 
          !! Add individual phase CMC matrix to 'global' CMC matrix
@@ -1817,7 +1827,8 @@
          call addto(projec_rhs, temp_projec_rhs)
          ewrite_minmax(projec_rhs)
 
-         call deallocate(temp_projec_rhs)
+
+         !call deallocate(temp_projec_rhs)
 
          call profiler_toc(p, "assembly")
 
@@ -1876,7 +1887,8 @@
          call impose_reference_pressure_node(cmc_m, projec_rhs, positions, trim(p%option_path))
 
          ! Allocate the change in pressure field
-         call allocate(delta_p, p_theta%mesh, "DeltaP")
+         if(.not. associated(delta_p%val)) call allocate(delta_p, p_theta%mesh, "DeltaP")
+
          delta_p%option_path = trim(p%option_path)
          call zero(delta_p)
 
