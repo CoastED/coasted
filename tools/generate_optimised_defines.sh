@@ -25,7 +25,7 @@ opt_compile="yes"
 opt_dimension=`strings "$opt_flml_file" | grep -A 2 dimension\> | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 opt_quad_degree=`strings "$opt_flml_file" |grep -A 3 quadrature\> | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'|head -1`
 opt_surface_degree="`strings "$opt_flml_file" |grep -A 2 surface_degree\> | grep integer_value | sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`"
-viscosity_scheme=`strings "$opt_flml_file" |grep -A 1 \<viscosity_scheme\> | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | sed 's/[<>]//g' | awk '{print $1}'`
+viscosity_scheme=`strings "$opt_flml_file" |grep -A 1 \<viscosity_scheme\> | tail -n 1 | sed 's/<\(.*\)\/>/\1/g' | sed 's/[<>]//g' | sed 's/\/.*//g' | awk '{print $1}'`
 
 
 # This isn't always needed in a simulation, but needs to be set.
@@ -96,7 +96,7 @@ case "$viscosity_scheme" in
     "compact_discontinuous_galerkin" ) opt_visc_scheme="SCHEME_CDG" ;;
     "bassi_rebay" ) opt_visc_scheme="SCHEME_BASSI" ;;
     "interior_penalty" ) opt_visc_scheme="SCHEME_IP" ;;
-    * ) >&2 echo "Warning. Unrecognised scheme '$viscosity_scheme'."; opt_visc_scheme="NO_VISCOSITY_SCHEME" # Not needed for CG discretisation
+    * ) >&2 echo "Error. Unrecognised scheme '$viscosity_scheme'."; opt_visc_scheme="NO_VISCOSITY_SCHEME"; exit 1 # Not needed for CG discretisation (which we don't use anyway)
 esac
 
 
