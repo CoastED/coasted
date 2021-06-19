@@ -1,0 +1,11 @@
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+A few handy files for running CoastED on your own systems.
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+flresub.slurm	   : SLURM submission script. Picks up from last checkpoint,
+		     and writes the slurm batch file before submitting it.
+
+local-fluidity-gcc : Environmental module file for using bespoke PETSc, etc.
+		     libraries. Sets appropriate compile flags.

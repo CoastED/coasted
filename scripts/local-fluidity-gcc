@@ -1,0 +1,216 @@
+#%Module
+#
+# Local module for compiling/running Fluidity with bespoke versions of
+# OpenBLAS, PETSc, Zoltan, NetCDF and tcmalloc.
+#
+# Edit to suit your own system.
+#
+# in MODULEPATH
+#
+#
+#############################################################################
+# Modules to load
+global env
+
+module unload intel
+module unload impi
+
+module unload compiler
+module unload mpi
+
+# module load openmpi/4.0.3-GNU7 
+# module load openmpi/2.0.4-GNU7
+# module load openblas/0.3.6-GNU7-nothread
+module load vtk/5.10.1-GNU7
+module load cmake/3.17.2
+
+module load gnu7/7.3.0
+module load mvapich2
+
+
+append-path PATH $env(HOME)/tidetools
+setenv FLUIDITY_DIR $env(HOME)/fluidity
+setenv FLUIDITY_HOME $env(FLUIDITY_DIR) 
+
+##############################################################
+
+# Root directory for contributed software
+
+setenv CONTRIB_DIR  $env(HOME)/contrib/gcc73
+
+
+######################################################################
+
+setenv CC "gcc"
+setenv MPICC "mpicc"
+setenv I_MPI_CC "$env(CC)"
+
+setenv CXX "g++"
+setenv MPICXX "mpicxx"
+setenv I_MPI_CXX "$env(CXX)"
+
+setenv FC "gfortran"
+setenv MPIFC "mpif90"
+setenv I_MPI_FC "$env(FC)"
+
+setenv F77 "$env(FC)"
+setenv MPIF77 "mpif90"
+setenv I_MPI_F77 "$env(FC)"
+
+setenv F90 "$env(FC)"
+setenv MPIF90 "mpif90"
+setenv I_MPI_F90 "$env(FC)"
+
+######################################################################
+# Python bits missed out of module runtimes/python/2.7.6
+
+setenv PYTHONHOME /home/software/python2/2.7.13/
+
+setenv PYTHON_INCLUDES -I$env(PYTHONHOME)/include/
+setenv PYTHON_LIB_DIR $env(PYTHONHOME)/lib
+setenv PYTHON_SITE_PACKAGES $env(PYTHONHOME)/lib/python2.7/site-packages
+
+######################################################################
+
+setenv BLAS_DIR $env(CONTRIB_DIR)/openblas
+# setenv BLAS_DIR /home/software/openblas/0.3.6/GNU7
+
+setenv BLAS_INCLUDES -I$env(BLAS_DIR)/include
+setenv BLAS_LIB_DIR $env(BLAS_DIR)/lib
+setenv OPENBLAS_NUM_THREADS 1
+setenv LAPACK_LIB_DIR $env(BLAS_DIR)/lib
+
+# setenv BLAS_DIR $env(CONTRIB_DIR)/blis/
+# setenv LAPACK_DIR $env(CONTRIB_DIR)/lapack
+# setenv BLAS_INCLUDES "-I$env(BLAS_DIR)/include/blis -I$env(LAPACK_DIR)/include"
+# 
+# setenv BLAS_LIB_DIR $env(BLAS_DIR)/lib
+# setenv LAPACK_LIB_DIR $env(LAPACK_DIR)/lib64
+
+setenv BLAS_LINK_OPTS ""
+
+######################################################################
+# Fluidity parameters
+
+set FLUIDITY_LEVEL 4.1.12
+set FLUIDITY_CURPATH $env(HOME)/fluidity
+
+######################################################################
+# 
+# OpenMPI / MPICHfirst
+#               
+
+# setenv MPI_HOME $env(CONTRIB_DIR)/openmpi/$OPENMPI_VER
+# setenv MPI_INCLUDE_OPTS -I$env(MPI_HOME)/include
+# setenv MPI_LIB_DIR $env(MPI_HOME)/lib
+# setenv MPI_LINK_OPTS -L$env(MPI_HOME)/lib
+
+setenv MPI_HOME ""
+setenv MPI_INCLUDE_OPTS ""
+setenv MPI_LIB_DIR ""
+setenv MPI_LINK_OPTS ""
+
+######################################################################
+
+# tcmalloc?
+#
+setenv USE_TCMALLOC "yes"
+
+prepend-path PATH $env(PYTHONHOME)/bin
+
+prepend-path PATH $env(PYTHONHOME)/bin
+prepend-path PATH $env(CONTRIB_DIR)/base/default/bin
+append-path PATH $env(MPI_HOME)/bin
+append-path PATH $env(HOME)/fluidity/bin
+
+
+prepend-path PYTHONPATH $env(PYTHONHOME)/lib/python2.7/site-packages/
+prepend-path PYTHONPATH $env(PYTHONHOME)/lib/python2.7
+
+append-path PYTHONPATH $FLUIDITY_CURPATH/python
+append-path PYTHONPATH $env(HOME)/tidetools
+append-path PYTHONPATH $env(CONTRIB_DIR)/base/default/lib/python2.7/site-packages/
+append-path PYTHONPATH $env(CONTRIB_DIR)/base/default/lib64/python2.7/site-packages/
+
+######################################################################
+
+setenv NETCDF_PREFIX $env(CONTRIB_DIR)/base/default
+
+setenv ZOLTAN_DIR $env(CONTRIB_DIR)/zoltan/3.8-openmpi
+
+setenv ZOLTAN_INCLUDE_OPTS -I$env(ZOLTAN_DIR)/include
+setenv ZOLTAN_LIB_OPTS -L$env(ZOLTAN_DIR)/lib
+
+setenv PETSC_DIR $env(CONTRIB_DIR)/petsc/3.6.4-openmpi
+setenv PETSC_ARCH arch-linux2-c-opt
+
+# set hypreLibDir  $env(CONTRIB_DIR)/hypre/lib
+set hypreLibDir  $env(PETSC_DIR)/lib
+set petscDirVar  $env(PETSC_DIR)
+
+# setenv PETSC_INCLUDE_OPTS "-I$petscDirVar/include -I$env(CONTRIB_DIR)/hypre/include" 
+setenv PETSC_INCLUDE_OPTS "-I$petscDirVar/include" 
+setenv PETSC_LIB_DIR $petscDirVar/lib
+
+
+setenv VTK_DIR /home/software/vtk/5.10.1-GNU7/
+# setenv VTK_DIR $env(CONTRIB_DIR)/vtk/5.10.1
+
+setenv VTK_INCLUDE_OPTS -I$env(VTK_DIR)/include/vtk-5.10
+setenv VTK_LIB_DIR $env(VTK_DIR)/lib/vtk-5.10
+
+######################################################################
+
+
+
+setenv CPPFLAGS "$env(MPI_INCLUDE_OPTS) -I$env(CONTRIB_DIR)/base/default/include $env(ZOLTAN_INCLUDE_OPTS) $env(PETSC_INCLUDE_OPTS) $env(PYTHON_INCLUDES) $env(BLAS_INCLUDES) $env(VTK_INCLUDE_OPTS)"
+
+set xflags "-O2 -ffast-math -march=native -funroll-loops -fpic -mpreferred-stack-boundary=4 -DMPICH_IGNORE_CXX_SEEK"
+# set xflags "-O2 -ffast-math -march=native -funroll-loops -fpic -DMPICH_IGNORE_CXX_SEEK"
+# set xflags "-O2 -ffast-math -march=native -funroll-loops -fpic -DMPICH_IGNORE_CXX_SEEK"
+# set xflags "-O2 -ffast-math -march=native -funroll-loops -fpic -DMPICH_IGNORE_CXX_SEEK"
+# set xflags "-Ofast -ffast-math -fopenmp -march=native -funroll-loops -fpic -DMPICH_IGNORE_CXX_SEEK"
+
+setenv CFLAGS "$xflags $env(CPPFLAGS)"
+setenv CXXFLAGS "$xflags $env(CPPFLAGS)"
+setenv FFLAGS "$xflags $env(CPPFLAGS)"
+setenv FCFLAGS "$xflags $env(CPPFLAGS)"
+setenv F90FLAGS "$xflags$env(CPPFLAGS)"
+
+setenv OMPI_CFLAGS "$env(CFLAGS)"
+setenv OMPI_CXXFLAGS "$env(CXXFLAGS)"
+setenv OMPI_FFLAGS "$env(FFLAGS)"
+setenv OMPI_FCFLAGS "$env(FCFLAGS)"
+
+
+setenv LIBS "-L$env(VTK_LIB_DIR) -L$env(CONTRIB_DIR)/base/default/lib $env(ZOLTAN_LIB_OPTS) -L$petscDirVar/lib $env(MPI_LINK_OPTS) -L$env(BLAS_LIB_DIR) -L$env(PYTHON_LIB_DIR) -L$hypreLibDir $env(BLAS_LINK_OPTS) -lm"
+
+
+setenv LDFLAGS "-L$env(CONTRIB_DIR)/python/2.7.17/lib $env(LIBS) -L$env(BLAS_LIB_DIR) -L$env(LAPACK_LIB_DIR) $env(BLAS_LINK_OPTS) -lm"
+
+# prepend-path LD_LIBRARY_PATH /home/software/psm2/11.2.78/usr/lib64/
+
+prepend-path LD_LIBRARY_PATH $env(MPI_LIB_DIR)
+append-path LD_LIBRARY_PATH $env(CONTRIB_DIR)/base/default/lib
+# append-path LD_LIBRARY_PATH $env(CONTRIB_DIR)/paraview/default/client/lib
+# append-path LD_LIBRARY_PATH $env(CONTRIB_DIR)/hypre/lib
+append-path LD_LIBRARY_PATH $petscDirVar/lib
+append-path LD_LIBRARY_PATH $env(CONTRIB_DIR)/zoltan/3.8/lib
+append-path LD_LIBRARY_PATH $hypreLibDir
+append-path LD_LIBRARY_PATH $env(BLAS_LIB_DIR)
+append-path LD_LIBRARY_PATH $env(LAPACK_LIB_DIR)
+append-path LD_LIBRARY_PATH $env(VTK_LIB_DIR)
+
+prepend-path LIBRARY_PATH $env(PYTHON_LIB_DIR)
+prepend-path LIBRARY_PATH $env(MPI_LIB_DIR)
+append-path LIBRARY_PATH $env(CONTRIB_DIR)/base/1.0/lib
+append-path LIBRARY_PATH $petscDirVar/lib
+append-path LIBRARY_PATH $env(CONTRIB_DIR)/zoltan/3.8/lib
+append-path LIBRARY_PATH $env(BLAS_LIB_DIR)
+append-path LIBRARY_PATH $env(LAPACK_LIB_DIR)
+append-path LIBRARY_PATH $env(VTK_LIB_DIR)
+
+
+append-path MANPATH $env(CONTRIB_DIR)/base/default/share/man
+
+##############################################################
