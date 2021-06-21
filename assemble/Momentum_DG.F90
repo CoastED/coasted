@@ -227,7 +227,7 @@ module momentum_DG
 
     real, allocatable, dimension(:) :: matmul_dim_tmp
     real, allocatable, dimension(:,:) :: matmul_dimdim_tmp
-    real :: dotprod_tmp
+    real :: dotprod_tmp, detwei_sum
 
     ! =======================================================================
     ! Make assembly arrays private to each OpenMP thread
@@ -307,6 +307,7 @@ module momentum_DG
     !$OMP THREADPRIVATE(matmul_dim_tmp)
     !$OMP THREADPRIVATE(matmul_dimdim_tmp)
     !$OMP THREADPRIVATE(dotprod_tmp)
+    !$OMP THREADPRIVATE(detwei_sum)
 
     
 contains

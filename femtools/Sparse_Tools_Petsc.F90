@@ -413,7 +413,8 @@ contains
     call MatSetOption(matrix%M, MAT_ROW_ORIENTED, PETSC_FALSE, ierr)
     
     ! Use hash tables to speed up assembly
-    call MatSetOption(matrix%M, MAT_USE_HASH_TABLE, PETSC_TRUE, ierr)
+    ! Not supported in PETSc 3.6.4
+    !    call MatSetOption(matrix%M, MAT_USE_HASH_TABLE, PETSC_TRUE, ierr)
 
 if (.not. (present_and_true(use_inodes) .or. use_element_blocks)) then
       call MatSetOption(matrix%M, MAT_USE_INODES, PETSC_FALSE, ierr)

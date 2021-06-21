@@ -982,6 +982,27 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             !                        du_t, detwei)
 
             ! Optimised (unrolled)
+            ! Special optimisations for linear velocity elements
+#if opVelDeg == 1
+            detwei_sum = sum(detwei)
+
+            do idim=1, opDim
+                sh_dt_temp = 0.0
+
+                do iLoc=1, opNloc
+                    matmul_dim_tmp = matmul(du_t(iloc,1,:), visc_ele_quad(:,:,1))
+                    do jLoc=1, opNloc
+                        dotprod_tmp = dot_product( matmul_dim_tmp, &
+                            du_t(jloc,1,:))
+
+                        sh_dt_temp (iloc,jloc)=sh_dt_temp (iloc,jloc) &
+                            + dotprod_tmp*detwei_sum
+                    end do
+                end do
+                Viscosity_mat(idim,idim,:opNloc,:opNloc) = sh_dt_temp
+            end do
+
+#else
             do idim=1, opDim
                 sh_dt_temp = 0.0
 
@@ -995,8 +1016,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                     Viscosity_mat(idim,idim,:opNloc,:opNloc) = sh_dt_temp
                 end do
             end do
-
-!            end if
+#endif
 
             if(partial_stress) then
                                 ! This is where to stick the partial stress stuff for LES
@@ -1090,6 +1110,51 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 ! Ugly but faster in-lined version
 
                 ! dshape_tensor_outer_dshape
+            ! Special optimisations for linear velocity elements
+#if opVelDeg == 1
+               sh_tensout=0.0
+
+               sh_to_temp= matmul(visc_ele_quad(:,:,1) ,transpose(du_t(:,1,:)))
+
+               detwei_sum = sum(detwei)
+!GCC unroll opNloc
+               do iloc=1, opNloc
+!GCC unroll opNloc
+                    do jloc=1, opNloc
+!GCC unroll opDim
+                        do idim=1, opDim
+                          sh_tensout(:,idim,iloc,jloc)=sh_tensout(:,idim,iloc,jloc) &
+                               + sh_to_temp(:,jloc)*du_t(iloc,1,idim)*detwei_sum
+                        end do
+                    end do
+               end do
+
+
+                ! dshape_outer_tensor_dshape
+                sh_outtens=0.0
+
+                sh_ot_temp = matmul(du_t(:,1,:), visc_ele_quad(:,:,1)) ! * detwei(gi)
+
+
+!GCC unroll opNloc
+                do iloc=1, opNloc
+!GCC unroll opNloc
+                    do jloc=1, opNloc
+!GCC unroll opDim
+                        do idim=1, opDim
+                            sh_outtens(:,idim,iloc,jloc)=sh_outtens(:,idim,iloc,jloc) &
+                                +du_t(jloc,1,:)*sh_ot_temp(iloc,idim)*detwei_sum
+                        end do
+                    end do
+                end do
+
+                Viscosity_mat(:,:,:opNloc,:opNloc) = &
+                    Viscosity_mat(:,:,:opNloc,:opNloc) &
+                    + 0.5*( sh_tensout + sh_outtens)
+
+
+                ! Unoptimised version for elements of any degree
+#else
                 sh_tensout=0.0
 
                 do gi=1,opNgi
@@ -1116,7 +1181,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 Viscosity_mat(:,:,:opNloc,:opNloc) = &
                     Viscosity_mat(:,:,:opNloc,:opNloc) &
                     + 0.5*( sh_tensout + sh_outtens)
-
+#endif
             else
                 ! Tensor form
                 do gi=1, opNgi
