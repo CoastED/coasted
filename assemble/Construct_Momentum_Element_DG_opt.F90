@@ -2377,19 +2377,13 @@ contains
                     !   end do
                     !end do
 
-                    do cdg_dim1 = 1, opDim
-                        do cdg_dim2 = 1, opDim
-
-                            matmul_dimdim_tmp = matmul( &
-                                                transpose(cdg_R_mat(cdg_dim1,:,:)), &
-                                                matmul( kappa_mat(cdg_dim1,cdg_dim2,:,:), cdg_R_mat(cdg_dim2,:,:)) &
-                                                )
-
-                            do cdg_face1 = 1, 2
-                                do cdg_face2 = 1, 2
+                    do cdg_face1 = 1, 2
+                        do cdg_face2 = 1, 2
+                            do cdg_dim1 = 1, opDim
+                                do cdg_dim2 = 1, opDim
                                     cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
-                                            (-1.)**(cdg_face1+cdg_face2) * matmul_dimdim_tmp
-
+                                        &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
+                                        &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
                                 end do
                             end do
                         end do
@@ -2399,17 +2393,13 @@ contains
             else if(CDG_switch_in) then
                 ! interior case
                 ! R(\tau,u) = -\int_e \tau.n^+(u^+ - u^-) dS
-                do cdg_dim1 = 1, opDim
-                    do cdg_dim2 = 1, opDim
-
-                        matmul_dimdim_tmp = matmul( &
-                                            transpose(cdg_R_mat(cdg_dim1,:,:)), &
-                                                matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
-
-                        do cdg_face1 = 1, 2
-                            do cdg_face2 = 1, 2
+                do cdg_face1 = 1, 2
+                    do cdg_face2 = 1, 2
+                        do cdg_dim1 = 1, opDim
+                            do cdg_dim2 = 1, opDim
                                 cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
-                                    (-1.)**(cdg_face1+cdg_face2) * matmul_dimdim_tmp
+                                    &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
+                                    &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
                             end do
                         end do
                     end do
