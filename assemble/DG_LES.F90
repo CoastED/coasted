@@ -570,11 +570,11 @@ contains
 
         ! Switch Smagorinsky stuff for shallower waters (more stable)
         ! When to switch it on? (blends gradually)
-        real, parameter :: chan_depth_shallow = 3.0, chan_depth_deep = 7.5
+        real, parameter :: chan_depth_shallow = 3.0, chan_depth_deep = 7.0
 
         real :: chan_depth, scale_to_surf
         real :: sgs_surf_alpha, sgs_depth_alpha
-        real :: sgs_smag_surf, sgs_smag_depth
+        real :: sgs_smag_alpha, sgs_smag
 
         print*, "In calc_dg_sgs_qr_viscosity()"
 
@@ -738,8 +738,11 @@ contains
             ! (ie. 4:1) elements near surface.
 
             if(have_top) then
+               ! sgs_smag = Csmag*Csmag * filter_geom_mean_sq*rho * norm2(2.*S)
+               sgs_smag = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
 
                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
                
                if(chan_depth > chan_depth_deep) then
                   sgs_depth_alpha = 0.
@@ -760,16 +763,16 @@ contains
                   sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
                end if
 
-
-               ! sgs_smag = Csmag*Csmag * filter_geom_mean_sq*rho * norm2(2.*S)
-               sgs_smag_surf = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
-               sgs_smag_depth = sgs_smag_surf
-
+               ! Pick which ever alpha blend is the highest
+               sgs_smag_alpha = 0.
+               if( sgs_surf_alpha > sgs_depth_alpha) then
+                  sgs_smag_alpha = sgs_surf_alpha
+               else
+                  sgs_smag_alpha = sgs_depth_alpha
+               end if
                   
                ! Blend QR LES and Smagorinsky LES
-               sgs_visc_val = sgs_surf_alpha * sgs_smag_surf &
-                    + (1.-sgs_surf_alpha)*sgs_visc_val &
-                    + sgs_depth_alpha * sgs_smag_depth
+               sgs_visc_val = sgs_smag_alpha*sgs_smag + (1.-sgs_smag_alpha)*sgs_visc_val
 
 
             end if
