@@ -769,7 +769,7 @@ contains
                sgs_smag = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
 
                ! Blend QR LES and Smagorinsky LES
-               sgs_visc_val = sgs_smag_alpha * sgs_smag_surf &
+               sgs_visc_val = sgs_smag_alpha * sgs_smag &
                     + (1.-sgs_smag_alpha)*sgs_visc_val &
 
             end if
