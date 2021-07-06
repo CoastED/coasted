@@ -770,7 +770,7 @@ contains
 
                ! Blend QR LES and Smagorinsky LES
                sgs_visc_val = sgs_smag_alpha * sgs_smag &
-                    + (1.-sgs_smag_alpha)*sgs_visc_val &
+                    + (1.-sgs_smag_alpha)*sgs_visc_val
 
             end if
 
