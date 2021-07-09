@@ -982,50 +982,19 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             !                        du_t, detwei)
 
             ! Optimised (unrolled)
-!            do idim=1, opDim
-!                sh_dt_temp = 0.0
-!
-!                do gi=1,opNgi
-!                    do concurrent(iloc=1:opNloc, jloc=1:opNloc)
-!                        sh_dt_temp (iloc,jloc)=sh_dt_temp (iloc,jloc) &
-!                            + dot_product( &
-!                            matmul(du_t(iloc,gi,:), visc_ele_quad(:,:,gi)), &
-!                            du_t(jloc,gi,:))*detwei(gi)
-!                    end do
-!                    Viscosity_mat(idim,idim,:opNloc,:opNloc) = sh_dt_temp
-!                end do
-!            end do
-
-
-
-            ! Faster (?) way of doing things?
-
             do idim=1, opDim
                 sh_dt_temp = 0.0
 
-                do iloc=1, opNloc
-
-#if opVelDeg == 1
-                    ! Optimisation for linear elements
-                    matmul_dut_visc = matmul(du_t(iloc,1,:), visc_ele_quad(:,:,1))
-#endif
-                    do gi=1, opNgi
-#if opVelDeg > 1
-                        ! For higher-order elements
-                        matmul_dut_visc = matmul(du_t(iloc,gi,:), visc_ele_quad(:,:,gi))
-#endif
-                        do jloc=1, opNloc
-                            sh_dt_temp (iloc,jloc)=sh_dt_temp (iloc,jloc) &
-                                + dot_product( &
-                                matmul_dut_visc, &
-                                du_t(jloc,gi,:))*detwei(gi)
-                        end do
+                do gi=1,opNgi
+                    do concurrent(iloc=1:opNloc, jloc=1:opNloc)
+                        sh_dt_temp (iloc,jloc)=sh_dt_temp (iloc,jloc) &
+                            + dot_product( &
+                            matmul(du_t(iloc,gi,:), visc_ele_quad(:,:,gi)), &
+                            du_t(jloc,gi,:))*detwei(gi)
                     end do
                 end do
-
                 Viscosity_mat(idim,idim,:opNloc,:opNloc) = sh_dt_temp
-            end do
-
+             end do
 
 
 !            do idim = 1 , opDim

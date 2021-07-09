@@ -570,7 +570,7 @@ contains
 
         ! Switch Smagorinsky stuff for shallower waters (more stable)
         ! When to switch it on? (blends gradually)
-        real, parameter :: chan_depth_shallow = 3.0, chan_depth_deep = 6.5
+        real, parameter :: chan_depth_shallow = 3.0, chan_depth_deep = 7.5
 
         real :: chan_depth, scale_to_surf
         real :: sgs_surf_alpha, sgs_depth_alpha
