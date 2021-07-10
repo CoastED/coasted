@@ -72,7 +72,6 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! Bilinear forms.
 
     real :: visc_dot_prod
-    real :: matmul_dut_visc(opDim)
 
     ! Local variables.
 
