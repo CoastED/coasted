@@ -573,8 +573,8 @@ contains
         real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
 
         real :: chan_depth, scale_to_surf
-        real :: sgs_surf_alpha, sgs_depth_alpha, sgs_smag_alpha
-        real :: sgs_smag
+        real :: sgs_surf_alpha, sgs_depth_alpha !, sgs_smag_alpha
+        real :: sgs_smag_def, sgs_smag_depth, sgs_smag_surf
 
         print*, "In calc_dg_sgs_qr_viscosity()"
 
@@ -750,6 +750,8 @@ contains
                        / (chan_depth_deep - chan_depth_shallow)
                end if
 
+
+
                ! Switch to Standard smag near surface (more stable)
                ! scale over third depth
                scale_to_surf = (1./3.)*chan_depth
@@ -759,18 +761,21 @@ contains
                   sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
                end if
 
-               ! Which to use for blending
-               if(sgs_depth_alpha > sgs_surf_alpha) then
-                    sgs_smag_alpha = sgs_depth_alpha
-               else
-                    sgs_smag_alpha = sgs_surf_alpha
-               end if
+!               ! Which to use for blending
+!               if(sgs_depth_alpha > sgs_surf_alpha) then
+!                    sgs_smag_alpha = sgs_depth_alpha
+!               else
+!                    sgs_smag_alpha = sgs_surf_alpha
+!               end if
 
-               sgs_smag = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
+               sgs_smag_def = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
+
+               sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
 
                ! Blend QR LES and Smagorinsky LES
-               sgs_visc_val = sgs_smag_alpha * sgs_smag &
-                    + (1.-sgs_smag_alpha)*sgs_visc_val
+               sgs_visc_val = sgs_surf_alpha * sgs_smag_def &
+                    + (1.-sgs_surf_alpha) * sgs_visc_val &
+                    + sgs_smag_depth
 
             end if
 
