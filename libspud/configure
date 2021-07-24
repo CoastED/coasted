@@ -22543,7 +22543,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 if test "$extended_source_flag" != happy ; then
 if test "$extended_source_flag" = none ; then
-  FFLAGS="-extend_source"
+  FFLAGS="-extend-source"
   cat > conftest.$ac_ext <<_ACEOF
       program main
 

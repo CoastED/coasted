@@ -123,7 +123,7 @@ AC_TRY_COMPILE([],
 
 if test "$extended_source_flag" != happy ; then
 if test "$extended_source_flag" = none ; then
-  FFLAGS="-extend_source"
+  FFLAGS="-extend-source"
   AC_TRY_COMPILE([],
   [
        PRINT*, "hello world                                                                                      "],
