@@ -4,7 +4,7 @@ CC = mpicc
 
 
 # What optimization level to use
-OPTFLAGS = -O2 -fPIC -ffast-math -funroll-loops -march=native
+OPTFLAGS = -O2 -fPIC -ffast-math -funroll-loops
 
 # Include directories for the compiler
 INCDIR = -I/opt/local/include
