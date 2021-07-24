@@ -417,7 +417,7 @@ AC_COMPILE_IFELSE(
 
 if test "$extended_source_flag" != happy ; then
     if test "$extended_source_flag" = none ; then
-        FFLAGS="-extend_source"
+        FFLAGS="-extend-source"
         AC_COMPILE_IFELSE(
             [AC_LANG_PROGRAM(,[[
       PRINT*, "hello world                                                                                 "
