@@ -624,7 +624,7 @@ EOF
     OPTIMISATION_FLAGS="$OPTIMISATION_FLAGS -O2"
     if test "$fcompiler" = "ifort" ; then
       # add inlining and cpu-specific optimisations for intel
-      OPTIMISATION_FLAGS="$OPTIMISATION_FLAGS -ip"
+      OPTIMISATION_FLAGS="$OPTIMISATION_FLAGS"
     fi
 
     AC_CHECK_LIB(tcmalloc,malloc,,AC_MSG_WARN([No tcmalloc support available.]))
