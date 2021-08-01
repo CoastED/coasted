@@ -2391,6 +2391,8 @@ contains
         real, dimension(opDim, opNloc, opFloc) :: cdg_R_mat
         real, dimension(2,2, opFloc, opFloc) :: cdg_add_mat
 
+        real, dimension(opFloc, opFloc) :: rmat_matmul
+
         ! cdg_U_face_loc=face_local_nodes(U, face)
 
         cdg_R_mat = 0.
@@ -2402,6 +2404,7 @@ contains
         do cdg_outer_dim=1, opDim
 
             cdg_add_mat = 0.0
+
             if(face_boundary) then
                 if (face_dirichlet(cdg_outer_dim)) then
                     !Boundary case
@@ -2417,34 +2420,85 @@ contains
                     !   end do
                     !end do
 
-                    do cdg_face1 = 1, 2
-                        do cdg_face2 = 1, 2
-                            do cdg_dim1 = 1, opDim
-                                do cdg_dim2 = 1, opDim
+!                    ! Original code
+!
+!                    do cdg_face1 = 1, 2
+!                        do cdg_face2 = 1, 2
+!                            do cdg_dim1 = 1, opDim
+!                                do cdg_dim2 = 1, opDim
+!                                    cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
+!                                        &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
+!                                        &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+!                                end do
+!                            end do
+!                        end do
+!                    end do
+
+                    ! Faster way of doing things?
+
+                    do cdg_dim1 = 1, opDim
+                        do cdg_dim2 = 1, opDim
+                            rmat_matmul = matmul( &
+                                transpose(cdg_R_mat(cdg_dim1,:,:)), &
+                                matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+                            do cdg_face1 = 1, 2
+                                do cdg_face2 = 1, 2
                                     cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
-                                        &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
-                                        &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+                                        (-1.)**(cdg_face1+cdg_face2) * rmat_matmul
                                 end do
                             end do
                         end do
                     end do
 
+
                 end if
             else if(CDG_switch_in) then
                 ! interior case
                 ! R(\tau,u) = -\int_e \tau.n^+(u^+ - u^-) dS
-                do cdg_face1 = 1, 2
-                    do cdg_face2 = 1, 2
-                        do cdg_dim1 = 1, opDim
-                            do cdg_dim2 = 1, opDim
+
+!                ! Original code
+!
+!                do cdg_face1 = 1, 2
+!                    do cdg_face2 = 1, 2
+!                        do cdg_dim1 = 1, opDim
+!                            do cdg_dim2 = 1, opDim
+!                                cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
+!                                    &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
+!                                    &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+!                            end do
+!                        end do
+!                    end do
+!                end do
+
+                ! Faster way of doing things?
+
+                do cdg_dim1 = 1, opDim
+                    do cdg_dim2 = 1, opDim
+                        rmat_matmul = matmul( &
+                                transpose(cdg_R_mat(cdg_dim1,:,:)), &
+                                matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+
+                        do cdg_face1 = 1, 2
+                            do cdg_face2 = 1, 2
                                 cdg_add_mat(cdg_face1,cdg_face2,:,:) = cdg_add_mat(cdg_face1,cdg_face2,:,:) + &
-                                    &(-1.)**(cdg_face1+cdg_face2)*matmul(transpose(cdg_R_mat(cdg_dim1,:,:)), &
-                                    &matmul(kappa_mat(cdg_dim1,cdg_dim2,:,:),cdg_R_mat(cdg_dim2,:,:)))
+                                    &(-1.)**(cdg_face1+cdg_face2) * rmat_matmul
                             end do
                         end do
                     end do
                 end do
+
             end if
+
+            ! Comparing original code with faster code.
+
+!            tent_err = sum( &
+!                        reshape( (cdg_add_mat-tent_cdg_add)**2, (/opNloc*opNloc/) ) &
+!                     )
+!
+!            if(tent_err > 10e-7) then
+!                FLAbort("tent_err > 10e-7")
+!                print*, "tent_err: ", tent_err
+!            end if
 
             !cdg_face1 = 1, cdg_face2 = 1
 
