@@ -544,7 +544,7 @@ contains
         real :: rho, mu
 
         ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av, sgs_limit
+        real :: sgs_qr_val, sgs_visc_val, sgs_ele_av, sgs_limit, sgs_diff
         integer :: i, j, k
 
         integer, allocatable :: u_cg_ele(:)
@@ -564,7 +564,6 @@ contains
         real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
         real :: stab_dx_alpha, stab_depth_alpha
 
-
         real :: scale_depth
         integer :: udim
 
@@ -572,9 +571,13 @@ contains
         ! When to switch it on? (blends gradually)
         real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
 
-        real :: chan_depth, scale_to_surf
-        real :: sgs_surf_alpha, sgs_depth_alpha !, sgs_smag_alpha
-        real :: sgs_smag_def, sgs_smag_depth, sgs_smag_surf
+        real :: chan_depth !, scale_to_surf
+        ! real :: sgs_surf_alpha,
+        real :: sgs_depth_alpha !, sgs_smag_alpha
+        real :: sgs_smag_def, sgs_smag_depth
+
+        real, parameter :: abs_rel_change_max = 2
+        real :: rel_change, rel_change_lim
 
         print*, "In calc_dg_sgs_qr_viscosity()"
 
@@ -618,7 +621,9 @@ contains
         if (state_flag /= 0) then
             FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
         end if
-        sgs_visc%val(:)=0.0
+
+
+        ! sgs_visc%val(:)=0.0
 
         ! We can use this in areas of insufficient resolution
         have_artificial_visc = .false.
@@ -692,7 +697,7 @@ contains
                           
 
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
+        ! sgs_visc%val(:)=0.0
 
         do n=1, num_nodes
            dx(:)=node_filter_lengths(:,n)
@@ -727,9 +732,9 @@ contains
            ! If the denominator is vanishing small, then set the SGS viscosity
            ! to zero
            if(q < 10e-10) then
-              sgs_visc_val = 0.0
+              sgs_qr_val = 0.0
            else
-              sgs_visc_val = topbit/q
+              sgs_qr_val = topbit/q
            end if
 
 
@@ -754,12 +759,12 @@ contains
 
                ! Switch to Standard smag near surface (more stable)
                ! scale over third depth
-               scale_to_surf = (1./3.)*chan_depth
+!               scale_to_surf = (1./3.)*chan_depth
 
-               sgs_surf_alpha = 0.
-               if( dist_to_top%val(n) < scale_to_surf ) then
-                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
-               end if
+!               sgs_surf_alpha = 0.
+!               if( dist_to_top%val(n) < scale_to_surf ) then
+!                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
+!               end if
 
 !               ! Which to use for blending
 !               if(sgs_depth_alpha > sgs_surf_alpha) then
@@ -773,10 +778,10 @@ contains
                sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
 
                ! Blend QR LES and Smagorinsky LES
-               sgs_visc_val = sgs_surf_alpha * sgs_smag_def &
-                    + (1.-sgs_surf_alpha) * sgs_visc_val &
-                    + sgs_smag_depth
-
+!               sgs_visc_val = sgs_surf_alpha * sgs_smag_def &
+!                    + (1.-sgs_surf_alpha) * sgs_visc_val &
+!                    + sgs_smag_depth
+               sgs_visc_val = sgs_qr_val + sgs_smag_depth
             end if
 
 
@@ -814,8 +819,23 @@ contains
             ! Just using element-size & depth based stabilisation for now.
             sgs_visc_val = sgs_visc_val + stab_visc
 
-            ! Limiter
+            ! Limiters
             if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
+
+            ! Checking relative change
+            if(sgs_visc%val(n) < 10e-10) then
+                rel_change=0.0
+            else
+                rel_change = (sgs_visc_val-sgs_visc%val(n)) / sgs_visc%val(n)
+            end if
+
+!            print*, "n:", n, "   sgs_visc_val:", sgs_visc_val, "   sgs_visc_old:", sgs_visc%val(n), "   rel_change:", rel_change
+            if(abs(rel_change) > abs_rel_change_max) then
+                rel_change_lim = sign(abs_rel_change_max, rel_change)
+                sgs_visc_val = sgs_visc%val(n) * (rel_change_lim+1)
+!                print*, "limited: ", sgs_visc_val
+!                print*, ""
+            end if
 
            call set(sgs_visc, n,  sgs_visc_val)
         end do
