@@ -4,7 +4,7 @@
 #   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
 #   Free Software Foundation, Inc.
 
-timestamp='2009-11-20'
+timestamp='2021-08-04'
 
 # This file is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -158,6 +158,7 @@ case "${UNAME_MACHINE}:${UNAME_SYSTEM}:${UNAME_RELEASE}:${UNAME_VERSION}" in
 	    /usr/sbin/$sysctl 2>/dev/null || echo unknown)`
 	case "${UNAME_MACHINE_ARCH}" in
 	    armeb) machine=armeb-unknown ;;
+	    aarch*) machine=aarch-unknown ;;
 	    arm*) machine=arm-unknown ;;
 	    sh3el) machine=shl-unknown ;;
 	    sh3eb) machine=sh-unknown ;;
@@ -167,7 +168,7 @@ case "${UNAME_MACHINE}:${UNAME_SYSTEM}:${UNAME_RELEASE}:${UNAME_VERSION}" in
 	# The Operating System including object format, if it has switched
 	# to ELF recently, or will in the future.
 	case "${UNAME_MACHINE_ARCH}" in
-	    arm*|i386|m68k|ns32k|sh3*|sparc|vax)
+	    aarch*|arm*|i386|m68k|ns32k|sh3*|sparc|vax)
 		eval $set_cc_for_build
 		if echo __ELF__ | $CC_FOR_BUILD -E - 2>/dev/null \
 			| grep -q __ELF__
@@ -872,6 +873,16 @@ EOF
 	echo ${UNAME_MACHINE}-unknown-linux-gnu${LIBC}
 	exit ;;
     arm*:Linux:*:*)
+	eval $set_cc_for_build
+	if echo __ARM_EABI__ | $CC_FOR_BUILD -E - 2>/dev/null \
+	    | grep -q __ARM_EABI__
+	then
+	    echo ${UNAME_MACHINE}-unknown-linux-gnu
+	else
+	    echo ${UNAME_MACHINE}-unknown-linux-gnueabi
+	fi
+	exit ;;
+    aarch*:Linux:*:*)
 	eval $set_cc_for_build
 	if echo __ARM_EABI__ | $CC_FOR_BUILD -E - 2>/dev/null \
 	    | grep -q __ARM_EABI__
