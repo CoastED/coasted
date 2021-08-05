@@ -92,5 +92,5 @@ echo " Building Fluidity"
 echo "------------------------------------"
 
 cd ~/fluidity
-bash ~/store/fluidity-build-gcc.sh cto=/path/to/example-sim.flml
+bash ~/store/coasted-build-gcc.sh cto=/path/to/example-sim.flml
 cd ..
