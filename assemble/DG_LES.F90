@@ -575,7 +575,7 @@ contains
         real :: sgs_surf_alpha, sgs_depth_alpha, sgs_smag_alpha
         real :: sgs_smag_def !, sgs_smag_depth
 
-        real, parameter :: abs_rel_change_max = 1.5
+        real, parameter :: abs_rel_change_max = 1.0
         real :: rel_change, rel_change_lim
 
         print*, "In calc_dg_sgs_qr_viscosity()"
