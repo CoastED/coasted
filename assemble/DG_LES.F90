@@ -575,7 +575,7 @@ contains
         real :: sgs_surf_alpha, sgs_depth_alpha, sgs_smag_alpha
         real :: sgs_smag_def !, sgs_smag_depth
 
-        real, parameter :: abs_rel_change_max = 1.0
+        real, parameter :: abs_rel_change_max = 0.75
         real :: rel_change, rel_change_lim
 
         print*, "In calc_dg_sgs_qr_viscosity()"
@@ -829,9 +829,10 @@ contains
             end if
 
 !            print*, "n:", n, "   sgs_visc_val:", sgs_visc_val, "   sgs_visc_old:", sgs_visc%val(n), "   rel_change:", rel_change
-            if(abs(rel_change) > abs_rel_change_max) then
-                rel_change_lim = sign(abs_rel_change_max, rel_change)
-                sgs_visc_val = sgs_visc%val(n) * (rel_change_lim+1)
+            ! Only worry about positive increases
+            if(rel_change > abs_rel_change_max) then
+!                rel_change_lim = sign(abs_rel_change_max, rel_change)
+                sgs_visc_val = sgs_visc%val(n) * (abs_rel_chang_max+1.0)
 !                print*, "limited: ", sgs_visc_val
 !                print*, ""
             end if
