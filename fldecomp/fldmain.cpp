@@ -106,17 +106,19 @@ int main(int argc, char **argv){
   */
   int optionIndex = 0;
   
-  optarg = NULL;  
+  optarg = NULL;
   char c;
+  int chint;
+  
   map<char, string> flArgs;
+  
   while (true){
-#ifndef _AIX
-    c = getopt_long(argc, argv, "c:df:hkn:rt::s::vm:", longOptions, &optionIndex);
-#else
-    c = getopt(argc, argv, "c:df:hkn:rt::s::vm:");
-#endif
-    if (c == -1) break;
+    chint = getopt(argc, argv, "c:df:hkn:rt::s::vm:");
 
+    if (chint == -1) break;
+
+    c=(char)chint;
+    
     if (c != '?'){
       if(c == 't')
         flArgs[c] = (optarg == NULL) ? "1" : optarg;
