@@ -757,8 +757,8 @@ contains
 
 
                ! Switch to Standard smag near surface (more stable)
-               ! scale over third depth
-               scale_to_surf = (1./3.)*chan_depth
+               ! scale over quarter depth
+               scale_to_surf = (1./4.)*chan_depth
 
                sgs_surf_alpha = 0.
                if( dist_to_top%val(n) < scale_to_surf ) then
