@@ -1453,9 +1453,6 @@ Optional Features:
                           compiler version)
   --enable-dp=flag        compile with 64 bit floating point numbers (default)
   --enable-profiling      enable gprof profiling
-  --enable-spatialindex-version
-                          Select required version of spatialindex library:
-                          1.8.0
   --enable-vtk            Only use to disable vtk
   --enable-2d-adaptivity  Link against 2D adaptivity library (GPL license)
   --enable-mba3d          Enabled libmba3d 3D adaptivity library
@@ -1517,6 +1514,11 @@ Report bugs to the package provider.
 _ACEOF
 ac_status=$?
 fi
+
+#  --enable-spatialindex-version
+#                          Select required version of spatialindex library:
+#                          1.8.0
+
 
 if test "$ac_init_help" = "recursive"; then
   # If there are subdirs, report their specific --help.
@@ -13838,18 +13840,18 @@ fi
 
 #*************SpatialIndex******
 # Check whether --enable-spatialindex-version was given.
-if test "${enable_spatialindex_version+set}" = set; then :
-  enableval=$enable_spatialindex_version;
-fi
+#if test "${enable_spatialindex_version+set}" = set; then :
+#  enableval=$enable_spatialindex_version;
+#fi
 
 
-if test "x$enable_spatialindex_version" != "x"
-then
-  SPATIALINDEXDIR="spatialindex-$enable_spatialindex_version"
-else
+# if test "x$enable_spatialindex_version" != "x"
+# then
+#  SPATIALINDEXDIR="spatialindex-$enable_spatialindex_version"
+#else
   enable_spatialindex_version="1.8.0"
   SPATIALINDEXDIR="spatialindex-1.8.0"
-fi
+#fi
 
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" >&5
