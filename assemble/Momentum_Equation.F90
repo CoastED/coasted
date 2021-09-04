@@ -1587,12 +1587,8 @@
          type(scalar_field), save :: combined_p
          integer :: stat
 
-         ! Seabed bottom stuff
-         logical :: have_bottom
-         type(scalar_field), pointer :: dist_to_bottom
-
-         
          ewrite(1,*) 'Entering advance_velocity'
+
 
          ! Allocate the momentum solution vector
          call profiler_tic(u, "assembly")
@@ -1667,15 +1663,6 @@
          ! Apply change to velocity field (Note that this gets stored in state)
          call addto(u, delta_u, dt)
 
-         ! Seabed bottom stuff
-         dist_to_bottom=>extract_scalar_field(state, "DistanceToBottom", stat=stat)
-         ! Do we have a seabed bottom?
-         if(stat==0) then
-            have_bottom = .true.
-         else
-            have_bottom = .false.
-         end if
-         
          ! Hard-limit calculated velocity field.
          if(have_option(trim(u%option_path)//"/prognostic/hard_limiter")) then
             print*, "Using hard limiter for velocity"
@@ -1688,25 +1675,12 @@
             call get_option(trim(u%option_path)//"/prognostic/hard_limiter/w_max", wmax)
 
             do i=1, u%mesh%nodes
-               ! Restrict values near seabed (if there is one) to half of
-               ! umin, umax, etc.
-               ! This needs to be replaced with proper log law of wall
-               ! condition
-               if(have_bottom .and. dist_to_bottom%val(i) < 0.01) then
-                  u%val(1,i) = max(0.5*umin, u%val(1,i))
-                  u%val(1,i) = min(0.5*umax, u%val(1,i))
-                  u%val(2,i) = max(0.5*vmin, u%val(2,i))
-                  u%val(2,i) = min(0.5*vmax, u%val(2,i))
-                  u%val(3,i) = max(0.5*wmin, u%val(3,i))
-                  u%val(3,i) = min(0.5*wmax, u%val(3,i))
-               else
-                  u%val(1,i) = max(umin, u%val(1,i))
-                  u%val(1,i) = min(umax, u%val(1,i))
-                  u%val(2,i) = max(vmin, u%val(2,i))
-                  u%val(2,i) = min(vmax, u%val(2,i))
-                  u%val(3,i) = max(wmin, u%val(3,i))
-                  u%val(3,i) = min(wmax, u%val(3,i))
-               end if
+                u%val(1,i) = max(umin, u%val(1,i))
+                u%val(1,i) = min(umax, u%val(1,i))
+                u%val(2,i) = max(vmin, u%val(2,i))
+                u%val(2,i) = min(vmax, u%val(2,i))
+                u%val(3,i) = max(wmin, u%val(3,i))
+                u%val(3,i) = min(wmax, u%val(3,i))
             end do
 
          end if
