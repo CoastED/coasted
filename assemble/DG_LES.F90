@@ -776,9 +776,15 @@ contains
 
                ! sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
 
+               ! Trim back QR LES values a little at seabed.
+               if( dist_to_bot%val(n)<0.025 ) then
+                  sgs_qr_val = 0.1 * sgs_qr_val
+               endif
+
                ! Blend QR LES and Smagorinsky LES
                sgs_visc_val = sgs_smag_alpha * sgs_smag_def &
                     + (1.-sgs_smag_alpha) * sgs_qr_val
+               
 !                    + sgs_smag_depth
 !               sgs_visc_val = sgs_qr_val + sgs_smag_depth
             end if
