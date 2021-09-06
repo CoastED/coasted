@@ -1,7 +1,11 @@
-			README for CoastED
+
+				README for CoastED
+
+-=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=-
 
 CoastED is a fork of the Fluidity software. Fluidity was developed by the
-Applied Modelling and Computation Group at Imperial College London. 
+Applied Modelling and Computation Group at Imperial College London. It is
+licensed under GPLv2.
 
 Parts of CoastED still follows the file and code structure of Fluidity, but
 this will change with time. The original notes are retained for acknowledgement
@@ -17,5 +21,13 @@ executables and libraries:
 Executable: coasted
 Library: libcoasted.a
 
-
 See legacy-notes/ for further information on Fluidity.
+
+
+If you have any enquiries regarding CoastED, please direct your questions to:
+
+	  Dr. Angus Creech <a.creech@hw.ac.uk>
+	  School of Engineering and Physical Sciences
+	  Heriot-Watt University
+
+-=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=--=-=-=-
