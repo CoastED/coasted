@@ -1,8 +1,3 @@
-			README for CoastED
-
-CoastED is a fork of the Fluidity software. Fluidity was developed by the
-Applied Modelling and Computation Group at Imperial College London. 
-
 Parts of CoastED still follows the file and code structure of Fluidity, but
 this will change with time. The original notes are retained for acknowledgement
 and legacy purposes.
