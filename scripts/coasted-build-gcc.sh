@@ -1,8 +1,8 @@
 #!/bin/bash --login
 
-module load local-fluidity-gcc
+module load local-coasted-gcc
 
-cd ~/fluidity
+cd ~/coasted
 
 debuggingConfig=""
 precisionFlag=""
@@ -93,9 +93,9 @@ then
 fi
 
 
-if [ "$1" == "debug" ] && [ -f $HOME/fluidity/bin/fluidity ]
+if [ "$1" == "debug" ] && [ -f $HOME/coasted/bin/coasted ]
 then
     echo "Generating structure file with hpcstruct"
-    hpcstruct -I$HOME/fluidity/+ -o $HOME/fluidity/bin/fluidity.hpcstruct \
-	$HOME/fluidity/bin/fluidity
+    hpcstruct -I$HOME/coasted/+ -o $HOME/coasted/bin/coasted.hpcstruct \
+	$HOME/coasted/bin/coasted
 fi

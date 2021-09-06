@@ -43,8 +43,8 @@ ARFLAGS = @ARFLAGS@
 
 LINKER  = @LINKER@ @LDFLAGS@
 
-LIB_FLUIDITY = ../lib/libfluidity.a
-LIBS    = -L. -loldmetis -L../lib $(LIB_FLUIDITY)  @LIB_FEMDEM@ \
+LIB_COASTED = ../lib/libcoasted.a
+LIBS    = -L. -loldmetis -L../lib $(LIB_COASTED)  @LIB_FEMDEM@ \
 	../lib/libadaptivity.a ../lib/libvtkfortran.a \
 	../lib/libspatialindex.a ../lib/libspud.a @LIBS@ @BLAS_LIBS@
 

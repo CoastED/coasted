@@ -129,7 +129,7 @@
       call petsc_solve_core(y, A, b, ksp, petsc_numbering, solver_option_path, lstartfromzero, &
            literations, sfield=x, x0=x%val, nomatrixdump=.true.)
 
-      ewrite(2,*) 'Copying PETSc solution vector into designated Fluidity array'
+      ewrite(2,*) 'Copying PETSc solution vector into designated coasted array'
       ! Copy back the result into the fluidity solution array (x) using the PETSc numbering:
       call petsc2field(y, petsc_numbering, x, rhs)
       

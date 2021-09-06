@@ -400,10 +400,10 @@ contains
             if (.not. verify_consistent_local_element_numbering(position%mesh)) then
               ewrite(-1,*) "The local element ordering is not the same between processes"
               ewrite(-1,*) "that see the same element. This is a necessary condition on the"
-              ewrite(-1,*) "decomposed input meshes for fluidity. The fact that you've"
+              ewrite(-1,*) "decomposed input meshes for coasted. The fact that you've"
               ewrite(-1,*) "obtained such meshes is likely a bug in fldecomp or the"
-              ewrite(-1,*) "checkpointing code. Please report to the fluidity mailing"
-              ewrite(-1,*) "list and state exactly how you've obtained your input files."
+              ewrite(-1,*) "checkpointing code. Please report to the coasted developers"
+              ewrite(-1,*) "and state exactly how you've obtained your input files."
               FLAbort("Inconsistent local element ordering")
             end if
             mesh = position%mesh

@@ -339,7 +339,7 @@ contains
     deallocate(failcenter_it);deallocate(failgradient_it);deallocate(acc_crit_2);
     START=0
 #else
-    ewrite(-1,*) "You've compiled fluidity with single precision: re-configure without the --enable-dp=no option"
+    ewrite(-1,*) "You've compiled coasted with single precision: re-configure without the --enable-dp=no option"
     FLExit("Operation not supported in single precision.")
 #endif
   end subroutine explicit_ale

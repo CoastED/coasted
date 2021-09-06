@@ -28,13 +28,13 @@ SHELL = @SHELL@
 
 PACKAGE_NAME = @PACKAGE_NAME@
 
-FLUIDITY = $(PACKAGE_NAME)
+COASTED = $(PACKAGE_NAME)
 
-PROGRAM	 = ./bin/$(FLUIDITY)
+PROGRAM	 = ./bin/$(COASTED)
 FLDECOMP = ./bin/fldecomp
 
-LIB_FLUIDITY = ./lib/lib$(FLUIDITY).a
-SLIB_FLUIDITY = ./lib/lib$(FLUIDITY).so
+LIB_COASTED = ./lib/lib$(COASTED).a
+SLIB_COASTED = ./lib/lib$(COASTED).so
 
 # Follow: www.gnu.org/prep/standards/html_node/Directory-Variables.html
 PACKAGE_NAME = @PACKAGE_NAME@
@@ -67,7 +67,7 @@ FLLINKER = @FLLINKER@ @LDFLAGS@ $(FCFLAGS)
 EXTLIBS  = @LIB_FEMDEM@ ./lib/libadaptivity.a \
            ./lib/libvtkfortran.a ./lib/libspatialindex.a ./lib/libspud.a ./lib/libjudy.a \
            @LIBS@ @BLAS_LIBS@
-LIBS    = -L./lib -l$(FLUIDITY) $(EXTLIBS)
+LIBS    = -L./lib -l$(COASTED) $(EXTLIBS)
 
 OBJS = $(shell find . -mindepth 2 -maxdepth 2 -name '*.c' -o -name '*.cpp' -o -name '*.[fF]' -o -name '*.F90' | grep -v ^./lib | xargs)
 MAKE = @MAKE@ -s
@@ -113,7 +113,7 @@ endif
 	@echo "        CXX $<"
 	$(CXX) $(CXXFLAGS) -c $<
 
-default: bin/$(FLUIDITY)
+default: bin/$(COASTED)
 
 sub_system: $(LIBMBA2D) $(LIBMBA3D) @LIB_FEMDEM@ \
 	lib/libadaptivity.a lib/libvtkfortran.a lib/libspatialindex.a \
@@ -181,8 +181,8 @@ version-info:
 
 .PHONY: version-info
 
-bin/$(FLUIDITY): main.o lib/lib$(FLUIDITY).a
-	@echo "BUILD fluidity"
+bin/$(COASTED): main.o lib/lib$(COASTED).a
+	@echo "BUILD coasted"
 	@echo "    MKDIR bin"
 	@mkdir -p bin
 	@echo "    LD $(PROGRAM)"
@@ -192,7 +192,7 @@ sw: bin/shallow_water
 be: bin/burgers_equation
 hh: bin/hybridized_helmholtz_solver
 
-bin/shallow_water: fluidity_library bin/hybridized_helmholtz_solver main/Shallow_Water.F90
+bin/shallow_water: coasted_library bin/hybridized_helmholtz_solver main/Shallow_Water.F90
 	@cd main; $(MAKE) Shallow_Water.o
 	@echo "BUILD shallow_water"
 	@echo "    MKDIR bin"
@@ -201,7 +201,7 @@ bin/shallow_water: fluidity_library bin/hybridized_helmholtz_solver main/Shallow
 	@$(EVAL) $(FLLINKER) -o bin/hybridized_helmholtz_solver main/Hybridized_Helmholtz_Solver.o $(LIBS)
 	@$(EVAL) $(FLLINKER) -o bin/shallow_water main/Shallow_Water.o $(LIBS)
 
-bin/hybridized_helmholtz_solver: fluidity_library main/Hybridized_Helmholtz_Solver.F90
+bin/hybridized_helmholtz_solver: coasted_library main/Hybridized_Helmholtz_Solver.F90
 	@cd main; $(MAKE) Hybridized_Helmholtz_Solver.o
 	@echo "BUILD hybridized_helmholtz_solver"
 	@echo "    MKDIR bin"
@@ -209,7 +209,7 @@ bin/hybridized_helmholtz_solver: fluidity_library main/Hybridized_Helmholtz_Solv
 	@echo "    LD hybridized_helmholtz_solver"
 	@$(EVAL) $(FLLINKER) -o bin/hybridized_helmholtz_solver main/Hybridized_Helmholtz_Solver.o $(LIBS)
 
-bin/burgers_equation: fluidity_library main/Burgers_Equation.F90
+bin/burgers_equation: coasted_library main/Burgers_Equation.F90
 	@cd main; $(MAKE) Burgers_Equation.o
 	@echo "BUILD burgers_equation"
 	@echo "    MKDIR bin"
@@ -219,7 +219,7 @@ bin/burgers_equation: fluidity_library main/Burgers_Equation.F90
 
 ifeq (@ENABLE_PSMILE@,yes)
 LIBPSMILE=@FLPSMILE_PATH@/lib/libpsmile_oa4.MPI1.a @FLPSMILE_PATH@/lib/libcommon_oa4.a @FLPSMILE_PATH@/lib/libmpp_io.a -lxml2
-bin/test_coupler: fluidity_library main/test_coupler.F90
+bin/test_coupler: coasted_library main/test_coupler.F90
 	@cd main; $(MAKE) test_coupler.o
 	@echo "BUILD test_coupler"
 	@echo "    MKDIR bin"
@@ -233,7 +233,7 @@ bin/test_coupler:
 	exit 1
 endif
 
-bin/form_pod_basis: fluidity_library reduced_modelling/Form_Pod_Basis_Main.F90
+bin/form_pod_basis: coasted_library reduced_modelling/Form_Pod_Basis_Main.F90
 	@cd reduced_modelling; $(MAKE) Form_Pod_Basis_Main.o
 	@echo "BUILD Form_Pod_Basis"
 	@echo "    MKDIR bin"
@@ -242,10 +242,10 @@ bin/form_pod_basis: fluidity_library reduced_modelling/Form_Pod_Basis_Main.F90
 	@$(EVAL) $(LINKER) -o bin/form_pod_basis reduced_modelling/Form_Pod_Basis_Main.o $(LIBS)
 
 
-static: fluidity_library
+static: coasted_library
 
-patcompat: main.o lib/lib$(FLUIDITY).a
-	@echo "BUILD pat-compatible fluidity"
+patcompat: main.o lib/lib$(COASTED).a
+	@echo "BUILD pat-compatible coasted"
 	@echo "    MKDIR bin"
 	@mkdir -p bin
 	@echo "    LD $(PROGRAM)"
@@ -268,16 +268,16 @@ adjoint/*.o \
 main/*.o \
 $(EXTLIBS)
 
-shared: $(SLIB_FLUIDITY) main.o 
-	@echo "BUILD shared library fluidity"
+shared: $(SLIB_COASTED) main.o 
+	@echo "BUILD shared library coasted"
 	@echo "    MKDIR bin"
 	@mkdir -p bin
 	@echo "    LD $(PROGRAM)"
 	@$(EVAL) $(LINKER) -o $(PROGRAM) main.o $(LIBS)
 
 
-$(SLIB_FLUIDITY): $(OBJS) python_build sub_system scripts
-	@echo "BUILD shared libfluidity"
+$(SLIB_COASTED): $(OBJS) python_build sub_system scripts
+	@echo "BUILD shared libcoasted"
 	@echo "    MKDIR lib"
 	@mkdir -p lib
 	@echo "    MAKE debug"
@@ -322,8 +322,8 @@ endif
 	@echo "    MAKE register_diagnostics"
 	@./tools/make_register_diagnostics.py
 	@cd preprocessor; $(MAKE) register_diagnostics.o
-	@echo "    BUILDING fluidity_library"
-	$(EVAL) $(LINKER) -Llib -shared -Wl,-soname,$(SLIB_FLUIDITY) -o $(SLIB_FLUIDITY) \
+	@echo "    BUILDING coasted_library"
+	$(EVAL) $(LINKER) -Llib -shared -Wl,-soname,$(SLIB_COASTED) -o $(SLIB_COASTED) \
 debug/*.o \
 libwm/*.o \
 femtools/*.o \
@@ -342,9 +342,9 @@ adjoint/*.o \
 main/*.o \
 -lvtkfortran -lnetcdf_c++ -lnetcdff -lnetcdf
 
-fltools: fluidity_library
+fltools: coasted_library
 	@$(MAKE) fldecomp
-	@echo "BUILD fluidity tools"
+	@echo "BUILD coasted tools"
 	@cd tools; $(MAKE)
 	@echo "    MAKE climatology"
 	@cd climatology; $(MAKE)
@@ -372,9 +372,9 @@ scripts:
 	@echo "INSTALL local scripts"
 	@cd tools ; $(MAKE) scripts
 
-fluidity_library: lib/lib$(FLUIDITY).a
-lib/lib$(FLUIDITY).a: $(OBJS) python_build sub_system scripts
-	@echo "BUILD libfluidity"
+coasted_library: lib/lib$(COASTED).a
+lib/lib$(COASTED).a: $(OBJS) python_build sub_system scripts
+	@echo "BUILD libcoasted"
 	@echo "    MKDIR lib"
 	@mkdir -p lib
 	@echo "    MAKE debug"
@@ -419,8 +419,8 @@ endif
 	@echo "    MAKE register_diagnostics"
 	@./tools/make_register_diagnostics.py
 	@cd preprocessor; $(MAKE) register_diagnostics.o
-	@echo "    BUILDING fluidity_library"
-	@$(AR) $(ARFLAGS) lib/libfluidity.a \
+	@echo "    BUILDING coasted_library"
+	@$(AR) $(ARFLAGS) lib/libcoasted.a \
 debug/*.o \
 libwm/*.o \
 femtools/*.o \
@@ -438,12 +438,12 @@ reduced_modelling/*.o \
 adjoint/*.o \
 main/*.o
 ifeq (@HYPERLIGHT@,yes)
-	@$(AR) $(ARFLAGS) lib/libfluidity.a hyperlight/*.o
+	@$(AR) $(ARFLAGS) lib/libcoasted.a hyperlight/*.o
 endif
 
 
 
-fldecomp: fluidity_library 
+fldecomp: coasted_library 
 	@echo "BUILD fldecomp"
 	@echo "    MKDIR bin"
 	@mkdir -p bin
@@ -536,7 +536,7 @@ clean: clean-light clean-test python_clean clean-debian
 
 clean-debian:
 	@echo "    CLEAN debian"
-	@cd debian; rm -rf files tmp fluidity python-fluidity *.substvars *.debhelper* 
+	@cd debian; rm -rf files tmp coasted python-fluidity *.substvars *.debhelper* 
 
 clean-test:      
 	@echo "    CLEAN tests"
@@ -591,10 +591,10 @@ distclean: clean
 
 test: serialtest
 
-serialtest: fltools bin/$(FLUIDITY) bin/shallow_water
+serialtest: fltools bin/$(COASTED) bin/shallow_water
 	@cd tests; ../bin/testharness -l short $(EXCLUDE_TAGS) -n $(THREADS)
 
-mediumtest: fltools bin/$(FLUIDITY) manual bin/burgers_equation bin/shallow_water spudtools
+mediumtest: fltools bin/$(COASTED) manual bin/burgers_equation bin/shallow_water spudtools
 	@cd tests; ../bin/testharness -l medium $(EXCLUDE_TAGS) -n $(THREADS)
 
 .PHONY: spudtools
@@ -611,7 +611,7 @@ setuputs:
 	@mkdir -p bin/tests
 	@ln -sf ../../tests/data bin/tests/data
 
-build_unittest: fluidity_library libfemtools setuputs
+build_unittest: coasted_library libfemtools setuputs
 	@echo "    UNITTEST libspud"
 	@cd libspud/src/tests; $(MAKE) test-binaries; find bin/* -maxdepth 1 -type f -exec ln -sf ../../libspud/src/tests/{} ../../../bin/tests \; 
 	@echo "    UNITTEST error_measures"
@@ -724,5 +724,5 @@ install-diamond:
 
 install-user-schemata:
 	mkdir -p $(HOME)/.diamond/schemata/
-	echo "Fluidity Markup Language" > $(HOME)/.diamond/schemata/flml
+	echo "CoastED Markup Language" > $(HOME)/.diamond/schemata/flml
 	echo "$(PWD)/schemas/fluidity_options.rng" >> $(HOME)/.diamond/schemata/flml

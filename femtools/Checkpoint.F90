@@ -866,7 +866,7 @@ contains
     ewrite(2, *) "Checking checkpointing options"
 
 #ifndef HAVE_VTK
-    ewrite(0, *) "Warning: Checkpointing is enabled, but Fluidity has been compiled without VTK support"
+    ewrite(0, *) "Warning: Checkpointing is enabled, but CoastED has been compiled without VTK support"
 #endif
 
     call get_option("/io/checkpointing/checkpoint_period_in_dumps", cp_period, stat)

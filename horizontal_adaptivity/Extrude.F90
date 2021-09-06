@@ -598,7 +598,7 @@ module hadapt_extrude
           ewrite(-1,*) "You are using region ids to specify mesh extrusion"
           ewrite(-1,*) "However in your adaptivity settings you have not selected " // &
             & "/mesh_adaptivity/hr_adaptivity/preserve_mesh_regions"
-          ewrite(-1,*) "This means fluidity will not be able to extrude your mesh again after the adapt."
+          ewrite(-1,*) "This means coasted will not be able to extrude your mesh again after the adapt."
           FLExit("Missing /mesh_adaptivity/hr_adaptivity/preserve_mesh_regions option")
         end if
       end if   

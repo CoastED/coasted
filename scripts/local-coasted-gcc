@@ -1,6 +1,6 @@
 #%Module
 #
-# Local module for compiling/running Fluidity with bespoke versions of
+# Local module for compiling/running CoastED with bespoke versions of
 # OpenBLAS, PETSc, Zoltan, NetCDF and tcmalloc.
 #
 # Edit to suit your own system.
@@ -29,7 +29,7 @@ module load mvapich2
 
 
 append-path PATH $env(HOME)/tidetools
-setenv FLUIDITY_DIR $env(HOME)/fluidity
+setenv FLUIDITY_DIR $env(HOME)/coasted
 setenv FLUIDITY_HOME $env(FLUIDITY_DIR) 
 
 ##############################################################
@@ -93,7 +93,7 @@ setenv BLAS_LINK_OPTS ""
 # Fluidity parameters
 
 set FLUIDITY_LEVEL 4.1.12
-set FLUIDITY_CURPATH $env(HOME)/fluidity
+set FLUIDITY_CURPATH $env(HOME)/coasted
 
 ######################################################################
 # 
@@ -121,7 +121,7 @@ prepend-path PATH $env(PYTHONHOME)/bin
 prepend-path PATH $env(PYTHONHOME)/bin
 prepend-path PATH $env(CONTRIB_DIR)/base/default/bin
 append-path PATH $env(MPI_HOME)/bin
-append-path PATH $env(HOME)/fluidity/bin
+append-path PATH $env(HOME)/coasted/bin
 
 
 prepend-path PYTHONPATH $env(PYTHONHOME)/lib/python2.7/site-packages/
