@@ -29,6 +29,10 @@
 #include "Usage.h"
 #include "spud"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 using namespace std;
 
 using namespace Spud;
@@ -173,7 +177,7 @@ void print_environment(){
     
   int no_relevant_variables=1;
   
-  cout<<"Environment variables relevant for fluidity:\n";
+  cout<<"Environment variables relevant for coasted:\n";
   for(int i=0; i<1; i++) {
     char *env=getenv(relevant_variables[i]);
     if(env!=NULL) {
@@ -300,8 +304,16 @@ void ParseArguments(int argc, char** argv){
   // What to do with stdout/stderr?
   if(fl_command_line_options.count("log")){
     ostringstream debug_file, err_file;
-    debug_file << "fluidity.log";
-    err_file << "fluidity.err";
+
+    // Test for logs/ directory and create it doesn't exist
+    {
+    	struct stat st = {0};
+    	if (stat("logs", &st) == -1) {
+    	    mkdir("logs", 0700);
+    	}
+    }
+    debug_file << "logs/coasted.log";
+    err_file << "logs/coasted.err";
 #ifdef HAVE_MPI
     if(MPI::Is_initialized()){
       int MyRank = MPI::COMM_WORLD.Get_rank();

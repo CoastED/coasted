@@ -78,7 +78,7 @@ contains
 #ifdef HAVE_MPI
     CALL MPI_INITIALIZED(UsingMPI, IERR)
 #endif
-    ewrite(-1,FMT='(A)') "*** FLUIDITY ERROR ***"
+    ewrite(-1,FMT='(A)') "*** CoastED error ***"
     ewrite(-1,FMT='(3A,I5,A)') "Source location: (",FromFile,",",LineNumber,")"
     ewrite(-1,FMT='(2A)') "Error message: ",ErrorStr
     ewrite(-1,FMT='(A)') "Backtrace will follow if it is available:"
