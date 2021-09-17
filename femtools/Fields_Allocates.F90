@@ -608,6 +608,13 @@ contains
     call remove_boundary_conditions(field)
     deallocate(field%bc)
     
+    if(associated(field%numbering_cache%halo)) deallocate(field%numbering_cache%halo)
+    if(associated(field%numbering_cache%gnn2unn)) deallocate(field%numbering_cache%gnn2unn)
+    if(associated(field%numbering_cache%ghost_nodes)) deallocate(field%numbering_cache%ghost_nodes)
+    if(associated(field%numbering_cache%ghost2unn)) deallocate(field%numbering_cache%ghost2unn)
+    if(allocated(field%numbering_cache%ghost_marker)) deallocate(field%numbering_cache%ghost_marker)
+
+
   end subroutine deallocate_scalar_field
     
   subroutine remove_boundary_conditions_scalar(field)
@@ -662,7 +669,13 @@ contains
     call remove_picker(field)
     deallocate(field%picker)
     nullify(field%picker)
-    
+
+    if(associated(field%numbering_cache%halo)) deallocate(field%numbering_cache%halo)
+    if(associated(field%numbering_cache%gnn2unn)) deallocate(field%numbering_cache%gnn2unn)
+    if(associated(field%numbering_cache%ghost_nodes)) deallocate(field%numbering_cache%ghost_nodes)
+    if(associated(field%numbering_cache%ghost2unn)) deallocate(field%numbering_cache%ghost2unn)
+    if(allocated(field%numbering_cache%ghost_marker)) deallocate(field%numbering_cache%ghost_marker)
+
   end subroutine deallocate_vector_field
  
   subroutine remove_boundary_conditions_vector(field)
@@ -710,6 +723,12 @@ contains
     end if
 
     call deallocate(field%mesh)
+
+    if(associated(field%numbering_cache%halo)) deallocate(field%numbering_cache%halo)
+    if(associated(field%numbering_cache%gnn2unn)) deallocate(field%numbering_cache%gnn2unn)
+    if(associated(field%numbering_cache%ghost_nodes)) deallocate(field%numbering_cache%ghost_nodes)
+    if(associated(field%numbering_cache%ghost2unn)) deallocate(field%numbering_cache%ghost2unn)
+    if(allocated(field%numbering_cache%ghost_marker)) deallocate(field%numbering_cache%ghost_marker)
 
   end subroutine deallocate_tensor_field
   

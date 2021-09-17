@@ -42,12 +42,31 @@ module fields_data_types
      mesh_type, mesh_faces, mesh_subdomain_mesh, scalar_field, vector_field, tensor_field, &
      mesh_pointer, scalar_field_pointer, vector_field_pointer, tensor_field_pointer, &
      scalar_boundary_condition, vector_boundary_condition, &
-     scalar_boundary_conditions_ptr, vector_boundary_conditions_ptr
+     scalar_boundary_conditions_ptr, vector_boundary_conditions_ptr, &
+     petsc_numbering_cache
 
   !! Types of different halo associated with a field:
   integer, public, parameter :: HALO_TYPES=2
   !! Available sources of data for fields:
   integer, public, parameter :: FIELD_TYPE_NORMAL=0, FIELD_TYPE_CONSTANT=1, FIELD_TYPE_PYTHON=2, FIELD_TYPE_DEFERRED=3
+
+
+
+
+  ! Special type for cacheing petsc_numbering data
+  type petsc_numbering_cache
+     type(halo_type), pointer :: halo => null()
+     integer, dimension(:,:), pointer:: gnn2unn => null()
+     integer, dimension(:), pointer:: ghost_nodes => null()
+     integer, dimension(:,:), pointer:: ghost2unn => null()
+     ! We can make this allocatable. For internal use
+     ! in allocate_petsc_numbering_cache only.
+     integer, dimension(:), allocatable :: ghost_marker
+     integer :: universal_length
+  end type petsc_numbering_cache
+
+
+
 
   type adjacency_cache
     type(csr_sparsity), pointer :: nnlist => null()
@@ -101,6 +120,7 @@ module fields_data_types
      !! (does not tell you how periodic it is... i.e. true if
      !! any surface is periodic)
      logical :: periodic=.false.
+
   end type mesh_type
 
   type mesh_faces
@@ -156,6 +176,7 @@ module fields_data_types
      integer, dimension(:), pointer :: node_list
   end type mesh_subdomain_mesh
 
+
   type scalar_field 
      !! Field value at points.
      real, dimension(:), pointer :: val
@@ -186,6 +207,8 @@ module fields_data_types
      logical :: py_positions_same_mesh
      integer :: py_dim
      type(element_type), pointer :: py_positions_shape => null()
+
+     type(petsc_numbering_cache) :: numbering_cache
   end type scalar_field
 
   type vector_field
@@ -213,6 +236,8 @@ module fields_data_types
      !! Picker used for spatial indexing (pointer to a pointer to ensure
      !! correct handling on assignment)
      type(picker_ptr), pointer :: picker => null()
+
+     type(petsc_numbering_cache) :: numbering_cache
   end type vector_field
 
   type tensor_field
@@ -235,6 +260,8 @@ module fields_data_types
      type(refcount_type), pointer :: refcount=>null()
      !! Indicator for whether this is an alias to another field.
      logical :: aliased=.false.
+
+     type(petsc_numbering_cache) :: numbering_cache
   end type tensor_field
 
   type mesh_pointer

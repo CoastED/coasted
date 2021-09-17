@@ -52,15 +52,15 @@ module solvers
 
   ! stuff used in the PETSc monitor (see petsc_solve_callback_setup() below)
   integer :: petsc_monitor_iteration = 0
-  Vec :: petsc_monitor_x
+  type(Vec) :: petsc_monitor_x
   !
   ! if .true. the code will compare with the provided exact answer, and
   ! give the error convergence each iteration:
   logical, save:: petsc_monitor_has_exact=.false.
   ! this requires the following:
-  Vec :: petsc_monitor_exact
+  type(Vec) :: petsc_monitor_exact
   real, dimension(:), pointer :: petsc_monitor_error => null()
-  PetscLogDouble, dimension(:), pointer :: petsc_monitor_flops => null()
+  type(PetscLogDouble), dimension(:), pointer :: petsc_monitor_flops => null()
   type(scalar_field), save:: petsc_monitor_exact_sfield
   type(vector_field), save:: petsc_monitor_exact_vfield
   character(len=FIELD_NAME_LEN), save:: petsc_monitor_error_filename=""
@@ -134,6 +134,17 @@ subroutine petsc_solve_scalar(x, matrix, rhs, option_path, &
   integer literations
   logical lstartfromzero
   
+
+  real(kind=8) :: t1, t2, ta, tb, tc, td, te
+  real(kind=8), external :: mpi_wtime
+
+  real :: iter_dt, percen
+  real, save :: lastt
+
+  t1 = mpi_wtime()
+
+  print*, "petsc_solve_scalar():"
+
   assert(size(x%val)==size(rhs%val))
   assert(size(x%val)==size(matrix,2))
 #ifdef DDEBUG
@@ -151,6 +162,7 @@ subroutine petsc_solve_scalar(x, matrix, rhs, option_path, &
   end if
 #endif
   
+  ta = mpi_wtime()
   ! setup PETSc object and petsc_numbering from options and 
   call petsc_solve_setup(y, A, b, ksp, petsc_numbering, &
         solver_option_path, lstartfromzero, &
@@ -161,15 +173,25 @@ subroutine petsc_solve_scalar(x, matrix, rhs, option_path, &
         prolongators=prolongators, surface_node_list=surface_node_list, &
         internal_smoothing_option=internal_smoothing_option)
  
+  tb = mpi_wtime()
+  print*, "**** petsc_solve_setup time: ", tb-ta
+
   ! copy array into PETSc vecs
   call petsc_solve_copy_vectors_from_scalar_fields(y, b, x, &
        & matrix, rhs, petsc_numbering, lstartfromzero)
-     
+
+  tc = mpi_wtime()
+  print*, "**** petsc_solve_copy_vectors time: ", tc-tb
+
   ! the solve and convergence check
   call petsc_solve_core(y, A, b, ksp, petsc_numbering, &
         solver_option_path, lstartfromzero, literations, &
         sfield=x, x0=x%val)
-  
+
+  td = mpi_wtime()
+
+  print*, "**** petsc_solve_core time: ", td-tc
+
   ! set the optional variable passed out of this procedure 
   ! for the number of petsc iterations taken
   if (present(iterations_taken)) iterations_taken = literations
@@ -177,9 +199,29 @@ subroutine petsc_solve_scalar(x, matrix, rhs, option_path, &
   ! Copy back the result using the petsc numbering:
   call petsc2field(y, petsc_numbering, x, rhs)
   
+  te = mpi_wtime()
+  print*, "**** petsc2field time: ", te-td
+
   ! destroy all PETSc objects and the petsc_numbering
   call petsc_solve_destroy(y, A, b, ksp, petsc_numbering, &
        & solver_option_path)
+
+  t2 = mpi_wtime()
+
+  if(lastt > 10e-10) then
+     iter_dt = t2-lastt
+     percen = (t2-t1)/iter_dt
+  else
+     iter_dt = 0.
+     percen = 0.
+  end if
+
+  lastt = t2
+
+  print*, "**** petsc_solve_scalar_time: ", t2-t1
+
+  print*, "end petsc_solve_scalar"
+
   
 end subroutine petsc_solve_scalar
 
@@ -645,7 +687,7 @@ Vec, intent(out):: b
 !! Solver object
 Mat, intent(out):: ksp
 !! numbering from local (i.e. fluidity speak: global) to PETSc (fluidity: universal) numbering
-type(petsc_numbering_type), intent(out):: petsc_numbering
+type(petsc_numbering_type), intent(inout):: petsc_numbering
 !! returns the option path to solver/ block for new options, otherwise ""
 character(len=*), intent(out):: solver_option_path
 !! whether to start with zero initial guess
@@ -657,7 +699,7 @@ logical, intent(out):: startfromzero
 type(csr_matrix), target, optional, intent(in):: matrix
 type(block_csr_matrix), target, optional, intent(in):: block_matrix
 !! provide either a scalar field or vector field to be solved for
-type(scalar_field), optional, intent(in):: sfield
+type(scalar_field), optional, intent(inout):: sfield
 type(vector_field), optional, intent(in):: vfield
 type(tensor_field), optional, intent(in):: tfield
   
@@ -688,6 +730,7 @@ type(vector_field), intent(in), optional :: positions
   type(halo_type), pointer ::  halo
   integer i, j
   KSP, pointer:: ksp_pointer
+
 
   ! Initialise profiler
   if(present(sfield)) then
@@ -795,11 +838,36 @@ type(vector_field), intent(in), optional :: positions
 
      ! set up numbering used in PETSc objects:
      ! NOTE: we use size(matrix,2) here as halo rows may be absent
-     call allocate(petsc_numbering, &
-        nnodes=size(matrix,2), nfields=1, &
-        halo=matrix%sparsity%column_halo, &
-        ghost_nodes=ghost_nodes)
-
+     ! if(present(sfield)) then
+     !     print*, "@@@@ sfield%name: ", trim(sfield%name)
+     !     call allocate_petsc_numbering_cache(petsc_numbering, &
+     !        nnodes=size(matrix,2), nfields=1, &
+     !        halo=matrix%sparsity%column_halo, &
+     !        ghost_nodes=ghost_nodes, &
+     !        pnc=sfield%numbering_cache)
+     !    print*, "@@@@ solver: petsc_numbering%own_pointers: ", petsc_numbering%own_pointers
+     ! elseif(present(vfield)) then
+     !     print*, "@@@@ vfield%name: ", trim(vfield%name)
+     !     call allocate_petsc_numbering_cache(petsc_numbering, &
+     !        nnodes=size(matrix,2), nfields=1, &
+     !        halo=matrix%sparsity%column_halo, &
+     !        ghost_nodes=ghost_nodes, &
+     !        pnc=vfield%numbering_cache)
+     !    print*, "@@@@ solver: petsc_numbering%own_pointers: ", petsc_numbering%own_pointers
+     ! elseif(present(tfield)) then
+     !     print*, "@@@@ tfield%name: ", trim(tfield%name)
+     !     call allocate_petsc_numbering_cache(petsc_numbering, &
+     !        nnodes=size(matrix,2), nfields=1, &
+     !        halo=matrix%sparsity%column_halo, &
+     !        ghost_nodes=ghost_nodes, &
+     !        pnc=tfield%numbering_cache)
+     !    print*, "@@@@ solver: petsc_numbering%own_pointers: ", petsc_numbering%own_pointers
+     ! else
+         call allocate(petsc_numbering, &
+            nnodes=size(matrix,2), nfields=1, &
+            halo=matrix%sparsity%column_halo, &
+            ghost_nodes=ghost_nodes)
+     ! end if
      if (use_reordering) then
         call reorder(petsc_numbering, matrix%sparsity, ordering_type)
      end if
@@ -925,6 +993,8 @@ type(vector_field), intent(in), optional :: positions
      call profiler_toc(tfield, "petsc_setup")
   end if
   
+
+
 end subroutine petsc_solve_setup
   
 subroutine petsc_solve_setup_petsc_csr(y, b, ksp, &

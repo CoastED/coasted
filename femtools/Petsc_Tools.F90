@@ -31,12 +31,14 @@ module Petsc_Tools
   use parallel_tools
   use fields_base
   use fields_manipulation
+  use fields_data_types
   use halo_data_types
   use halos_base
   use halos_communications
   use halos_numbering
   use Reference_Counting
   use profiler
+  use global_parameters, only: new_mesh_connectivity
 #ifdef HAVE_PETSC_MODULES
   use petsc 
 #endif
@@ -79,6 +81,8 @@ module Petsc_Tools
      !! Reference counting
      type(refcount_type), pointer :: refcount => null()
      character(len=FIELD_NAME_LEN):: name=""
+
+     logical :: own_pointers = .true.
   end type petsc_numbering_type
   
   interface allocate
@@ -105,6 +109,8 @@ module Petsc_Tools
 
   private
 
+  public allocate_petsc_numbering_cache
+
   public reorder, DumpMatrixEquation, Initialize_Petsc
   public csr2petsc, petsc2csr, block_csr2petsc, petsc2array, array2petsc
   public field2petsc, petsc2field, petsc_numbering_create_is
@@ -121,6 +127,7 @@ module Petsc_Tools
 #endif
 #if PETSC_VERSION_MINOR<5
   public mykspgetoperators
+
 #endif
 contains
 
@@ -141,6 +148,234 @@ contains
   ! a local block of values per node in memory, but will always be referred to
   ! as group to avoid confusion with the above definition.
   
+
+
+  subroutine allocate_petsc_numbering_cache(petsc_numbering, &
+       nnodes, nfields, halo, ghost_nodes, pnc)
+    !!< Set ups the 'universal'(what most people call global)
+    !!< numbering used in PETSc. In serial this is trivial
+    !!< but could still be used for reordering schemes.
+    !! the numbering object created:
+    type(petsc_numbering_type), intent(inout):: petsc_numbering
+    !! number of nodes and fields:
+    !! (here nfields counts each scalar component of vector fields, so
+    !!  e.g. for nphases velocity fields in 3 dimensions nfields=3*nphases)
+    integer, intent(in):: nnodes, nfields
+    !! for parallel: halo information
+    type(halo_type), pointer, optional :: halo
+    !! If supplied number these as -1, so they'll be skipped by Petsc
+    integer, dimension(:), optional, intent(in):: ghost_nodes
+    type(petsc_numbering_cache) :: pnc
+
+    ! integer, dimension(:), allocatable :: ghost_marker
+    integer i, g, f, start, offset
+    integer nuniversalnodes, ngroups, lgroup_size, ierr
+
+    logical :: refresh_cache = .false.
+
+    print*, "@@@@ allocate_petsc_numbering_cache()"
+
+    if(.not. associated(pnc%gnn2unn)) then
+        allocate(pnc%gnn2unn(1:nnodes, 1:nfields))
+
+        print*, "@@@@ not associated(pnc%gnn2unn)"
+        refresh_cache = .true.
+    else
+        if( new_mesh_connectivity ) then
+            deallocate(pnc%gnn2unn)
+            allocate(pnc%gnn2unn(1:nnodes, 1:nfields))
+            print*, "@@@@ new_mesh_connectivity"
+            refresh_cache = .true.
+        end if
+    end if
+
+    print*, "refresh_cache: ", refresh_cache
+
+    petsc_numbering%gnn2unn => pnc%gnn2unn
+    petsc_numbering%own_pointers = .false.
+
+    !    allocate( petsc_numbering%gnn2unn(1:nnodes, 1:nfields) )
+
+    if (present(halo)) then
+       if (associated(halo)) then
+
+          if(.not. associated(pnc%halo) ) then
+              allocate(pnc%halo)
+          elseif( new_mesh_connectivity ) then
+              deallocate(pnc%halo)
+              allocate(pnc%halo)
+          end if
+
+          petsc_numbering%halo => pnc%halo
+
+          ! allocate(petsc_numbering%halo)
+          petsc_numbering%halo=halo
+          call incref(petsc_numbering%halo)
+
+       end if
+    end if
+
+    ngroups=nfields
+
+    ! first we set up the petsc numbering for the first entry of each group only:
+
+    if (.not.associated(petsc_numbering%halo)) then
+
+       ! *** Serial case *or* parallel without halo
+
+       if(refresh_cache) then
+           ! standard, trivial numbering, starting at 0:
+           start=0 ! start of each field -1
+           do g=1, nfields
+              pnc%gnn2unn(:, g )= &
+                   (/ ( start+i, i=0, nnodes-1 ) /)
+              start=start+nnodes
+           end do
+       end if
+
+       if (isParallel()) then
+
+          ! universal numbering can now be worked out trivially
+          ! by calculating the offset (start of the universal number
+          ! range for each process)
+
+          if(refresh_cache) then
+              call mpi_scan(nnodes, offset, 1, MPI_INTEGER, &
+                   MPI_SUM, MPI_COMM_FEMTOOLS, ierr)
+              offset=offset-nnodes
+              pnc%gnn2unn=pnc%gnn2unn+offset
+          end if
+       end if
+
+       petsc_numbering%nprivatenodes=nnodes
+
+       ! the offset is the first universal number assigned to this process
+       ! in the standard petsc numbering the universal number is equal to
+       ! offset+local number
+       petsc_numbering%offset=petsc_numbering%gnn2unn(1,1)
+
+    else
+       ! print*, "Parallel case with halo"
+
+       ! *** Parallel case with halo:
+
+       if(refresh_cache) then
+            ! get 'universal' numbering
+            call get_universal_numbering(halo, pnc%gnn2unn)
+            pnc%gnn2unn = pnc%gnn2unn-1
+       end if
+
+       ! petsc uses base 0
+
+       petsc_numbering%nprivatenodes=halo_nowned_nodes(halo)
+
+       petsc_numbering%offset=halo%my_owned_nodes_unn_base*nfields
+
+    end if
+
+    if (isParallel()) then
+       if(refresh_cache) then
+           ! work out the length of global(universal) vector
+           call mpi_allreduce(petsc_numbering%nprivatenodes, nuniversalnodes, 1, MPI_INTEGER, &
+               MPI_SUM, MPI_COMM_FEMTOOLS, ierr)
+
+           pnc%universal_length = nuniversalnodes*nfields
+       end if
+
+       petsc_numbering%universal_length = pnc%universal_length
+
+       ! Old pre-cache code
+       ! petsc_numbering%universal_length=nuniversalnodes*nfields
+    else
+       ! trivial in serial case:
+       petsc_numbering%universal_length=nnodes*nfields
+    end if
+
+    if (present(ghost_nodes)) then
+       if (associated(pnc%halo)) then
+          ! check whether any of the halo nodes have been marked as
+          ! ghost nodes by the owner of that node
+
+          ! allocate( ghost_marker( 1:nnodes ) )
+
+          if(.not. allocated(pnc%ghost_marker)) then
+                allocate(pnc%ghost_marker(1:nnodes))
+          elseif( new_mesh_connectivity ) then
+                deallocate(pnc%ghost_marker)
+                allocate(pnc%ghost_marker(1:nnodes))
+          end if
+
+          if(refresh_cache) then
+              pnc%ghost_marker = 0
+              pnc%ghost_marker( ghost_nodes ) = 1
+              call halo_update( petsc_numbering%halo, pnc%ghost_marker )
+
+              ! fill in ghost_nodes list, now including halo nodes
+              g=count(pnc%ghost_marker/=0)
+
+              if(.not. associated(pnc%ghost_nodes)) then
+                  allocate( pnc%ghost_nodes(1:g) )
+                  allocate( pnc%ghost2unn(1:g, 1:nfields) )
+              elseif( new_mesh_connectivity ) then
+                  deallocate( pnc%ghost_nodes )
+                  allocate( pnc%ghost_nodes(1:g) )
+
+                  deallocate( pnc%ghost2unn )
+                  allocate( pnc%ghost2unn(1:g, 1:nfields) )
+              end if
+
+!              allocate( petsc_numbering%ghost_nodes(1:g) )
+!              allocate( petsc_numbering%ghost2unn(1:g, 1:nfields) )
+              g=0
+              do i=1, nnodes
+                if (pnc%ghost_marker(i)/=0) then
+                  g=g+1
+                  pnc%ghost_nodes(g)=i
+                  ! store the original universal number seperately
+                  pnc%ghost2unn(g,:)=pnc%gnn2unn(i,:)
+                  ! mask it out with -1 in gnn2unn
+                  pnc%gnn2unn(i,:)=-1
+                end if
+              end do
+              assert(g == size(petsc_numbering%ghost_nodes))
+           end if
+
+           petsc_numbering%halo => pnc%halo
+           petsc_numbering%ghost_nodes => pnc%ghost_nodes
+           petsc_numbering%ghost2unn => pnc%ghost2unn
+
+       else
+          ! serial case, or no halo in parallel
+          g=size(ghost_nodes)
+          allocate( petsc_numbering%ghost_nodes(1:g), &
+             petsc_numbering%ghost2unn(1:g, 1:nfields) )
+          petsc_numbering%ghost_nodes=ghost_nodes
+          do g=1, size(ghost_nodes)
+             i=ghost_nodes(g)
+             ! store the original universal number seperately
+             petsc_numbering%ghost2unn(g,:)=petsc_numbering%gnn2unn(i,:)
+             ! mask it out with -1 in gnn2unn
+             petsc_numbering%gnn2unn(i,:)=-1
+          end do
+       end if
+
+    else
+       nullify( petsc_numbering%ghost_nodes )
+       nullify( petsc_numbering%ghost2unn )
+    end if
+
+    nullify(petsc_numbering%refcount) ! Hack for gfortran component initialisation
+    !                         bug.
+    call addref(petsc_numbering)
+
+    print*, "@@@@ end allocate_petsc_numbering_cache"
+
+
+  end subroutine allocate_petsc_numbering_cache
+
+
+
+
   subroutine allocate_petsc_numbering(petsc_numbering, &
        nnodes, nfields, halo, ghost_nodes)
     !!< Set ups the 'universal'(what most people call global)
@@ -155,12 +390,17 @@ contains
     !! for parallel: halo information
     type(halo_type), pointer, optional :: halo
     !! If supplied number these as -1, so they'll be skipped by Petsc
-    integer, dimension(:), optional, intent(in):: ghost_nodes 
+    integer, dimension(:), optional, intent(in):: ghost_nodes
+
     integer, dimension(:), allocatable:: ghost_marker
     integer i, g, f, start, offset
     integer nuniversalnodes, ngroups, lgroup_size, ierr
 
     allocate( petsc_numbering%gnn2unn(1:nnodes, 1:nfields) )
+
+    ! This tells deallocate() that yes, we can deallocate the pointers
+    ! in petsc_numbering
+    petsc_numbering%own_pointers = .true.
 
     if (present(halo)) then
        if (associated(halo)) then
@@ -284,24 +524,42 @@ contains
 
   end subroutine allocate_petsc_numbering
   
+
+
   subroutine deallocate_petsc_numbering(petsc_numbering)
   !!< Deallocate the petsc_numbering object
   type(petsc_numbering_type), intent(inout):: petsc_numbering
   
+    print*, "@@@@ deallocate_petsc_numbering()"
+
     call decref(petsc_numbering)
     if (has_references(petsc_numbering)) return
-    
-    deallocate(petsc_numbering%gnn2unn)
-    if (associated(petsc_numbering%ghost_nodes)) then
-      deallocate(petsc_numbering%ghost_nodes)
-      deallocate(petsc_numbering%ghost2unn)
-    end if
-    
-    if (associated(petsc_numbering%halo)) then
-      call deallocate(petsc_numbering%halo)
-      deallocate(petsc_numbering%halo)
-    end if
-    
+
+    print*, "@@@@ own_pointers:", petsc_numbering%own_pointers
+    ! If we own the pointers, or rather, the memory pointed to: dealloc
+    if(petsc_numbering%own_pointers) then
+        if(associated(petsc_numbering%gnn2unn)) then
+            print*, "@@@@ deallocating gnn2unn"
+            deallocate(petsc_numbering%gnn2unn)
+        end if
+
+        if (associated(petsc_numbering%ghost_nodes)) then
+          print*, "@@@@ deallocating ghost_nodes, ghost2unn"
+          deallocate(petsc_numbering%ghost_nodes)
+          deallocate(petsc_numbering%ghost2unn)
+        end if
+
+        if (associated(petsc_numbering%halo)) then
+          print*, "@@@@ deallocating halo"
+              call deallocate(petsc_numbering%halo)
+              deallocate(petsc_numbering%halo)
+        end if
+  end if
+
+  print*, "@@@@ end deallocate_petsc_numbering"
+
+
+
   end subroutine deallocate_petsc_numbering
   
   subroutine reorder(petsc_numbering, sparsity, ordering_type)
