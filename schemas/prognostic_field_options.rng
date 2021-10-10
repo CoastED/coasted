@@ -1147,6 +1147,16 @@ central-difference methods.</a:documentation>
                     </element>
                   </optional>
                 </element>
+                <element name="amd_new">
+                  <a:documentation>NEW version of AMD LES. (In testing)</a:documentation>
+                  <optional>
+                    <element name="poincare_constant">
+                      <a:documentation>Poincare constant. By default 0.3, which is used for second-order
+central-difference methods.</a:documentation>
+                      <ref name="real"/>
+                    </element>
+                  </optional>
+                </element>
               </choice>
               <optional>
                 <element name="zero_subgrid_stress_boundaries">

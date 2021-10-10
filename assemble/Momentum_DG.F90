@@ -841,6 +841,13 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/amd")
 
+                    if(.not. have_amd_les) then
+                       have_amd_les = &
+                            have_option(trim(u%option_path)//&
+                            &"/prognostic/spatial_discretisation"//&
+                            &"/discontinuous_galerkin/les_model"//&
+                            &"/amd_new")
+                    end if
 
 ! Will eventually use partial_stress as an indicator
 !                    if(partial_stress) then

@@ -938,6 +938,12 @@ prognostic_velocity_field =
 		     	     ## Poincare constant. By default 0.3, which is used for second-order
 			     ## central-difference methods.
 		     	     element poincare_constant { real }?
+		     } |
+		     ## NEW version of AMD LES. (In testing)
+                     element amd_new {
+		     	     ## Poincare constant. By default 0.3, which is used for second-order
+			     ## central-difference methods.
+		     	     element poincare_constant { real }?
 		     }
 		  ),
 
