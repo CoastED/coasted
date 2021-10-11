@@ -1444,9 +1444,9 @@ contains
 
 !        call calc_dg_sgs_amd_viscosity_node(state, x, u)
         ! Calling QR for now, see how it does.
-!        call calc_dg_sgs_qr_viscosity(state, x, u)
+        call calc_dg_sgs_qr_viscosity(state, x, u)
 
-        call calc_dg_sgs_amd_viscosity_new(state, x, u)
+!        call calc_dg_sgs_amd_viscosity_new(state, x, u)
 
     end subroutine calc_dg_sgs_amd_viscosity
 
