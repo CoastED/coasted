@@ -572,11 +572,11 @@ contains
 
         ! Switch Smagorinsky stuff for shallower waters (more stable)
         ! When to switch it on? (blends gradually)
-        ! real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
+        real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
 
         real :: chan_depth, scale_to_surf
-        real :: sgs_surf_alpha, sgs_smag_alpha !, sgs_depth_alpha
-        real :: sgs_smag_def !, sgs_smag_depth
+        real :: sgs_surf_alpha, sgs_smag_alpha, sgs_depth_alpha
+        real :: sgs_smag_def, sgs_smag_depth
 
         real, parameter :: abs_rel_change_max = 1.5
         real :: rel_change, rel_change_lim
@@ -753,17 +753,17 @@ contains
             if(have_top) then
 
                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
-!
-!               if(chan_depth > chan_depth_deep) then
-!                  sgs_depth_alpha = 0.
-!               elseif(chan_depth < chan_depth_shallow) then
-!                  sgs_depth_alpha = 1.
-!               else
-!                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
-!                       / (chan_depth_deep - chan_depth_shallow)
-!               end if
-!
-!
+
+               if(chan_depth > chan_depth_deep) then
+                  sgs_depth_alpha = 0.
+               elseif(chan_depth < chan_depth_shallow) then
+                  sgs_depth_alpha = 1.
+               else
+                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
+                       / (chan_depth_deep - chan_depth_shallow)
+               end if
+
+
 
                ! Switch to Standard smag near surface (more stable)
                ! scale over quarter depth
@@ -775,23 +775,21 @@ contains
                end if
 
                ! Which to use for blending
-!               if(sgs_depth_alpha > sgs_surf_alpha) then
-!                  sgs_smag_alpha = sgs_depth_alpha
-!               else
-                  sgs_smag_alpha = sgs_surf_alpha
-!               end if
+               if(sgs_depth_alpha > sgs_surf_alpha) then
+                  sgs_smag_alpha = sgs_depth_alpha
+               else
+                 sgs_smag_alpha = sgs_surf_alpha
+               end if
 
                sgs_smag_def = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
 
                ! sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
 
 
-               ! Blend QR LES and Smagorinsky LES
+               ! Blend AMD LES and Smagorinsky LES
                sgs_visc_val = sgs_smag_alpha * sgs_smag_def &
                     + (1.-sgs_smag_alpha) * sgs_amd_val
 
-!                    + sgs_smag_depth
-!               sgs_visc_val = sgs_qr_val + sgs_smag_depth
             end if
 
 
