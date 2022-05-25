@@ -1048,6 +1048,8 @@ void real_vector_from_python(char* function, int* function_len,
                              int* stat)
 {
 #ifndef HAVE_PYTHON
+  int i;
+
   strncpy(function, "No Python support!\n", (size_t) *function_len);
   for (i=0; i < *function_len; i++)
   {
@@ -1173,6 +1175,8 @@ void integer_vector_from_python(char* function, int* function_len,
                              int* stat)
 {
 #ifndef HAVE_PYTHON
+  int i;
+  
   strncpy(function, "No Python support!\n", (size_t) *function_len);
   for (i=0; i < *function_len; i++)
   {
