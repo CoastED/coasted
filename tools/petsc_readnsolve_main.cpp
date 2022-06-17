@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string.h>
 #include <sstream>
+#include <unistd.h>
 
 #ifdef HAVE_MPI
 #include <mpi.h>
