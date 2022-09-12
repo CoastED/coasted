@@ -930,32 +930,33 @@ prognostic_velocity_field =
                   ## In adaptive simulations you may want to prescribe a filter width to use throught the domain
                   (
                      element isotropic { empty } |
-                     element anisotropic { empty } |
-		     ## Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.
-		     element vorticity_anisotropic_grid {empty} | 
-		     ## Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015).
-                     element amd {
-		     	     ## Poincare constant. By default 0.3, which is used for second-order
-			     ## central-difference methods.
-		     	     element poincare_constant { real }?
-		     } |
-		     ## NEW version of AMD LES. (In testing)
-                     element amd_new {
-		     	     ## Poincare constant. By default 0.3, which is used for second-order
-			     ## central-difference methods.
-		     	     element poincare_constant { real }?
-		     }
-		  ),
+		     
+				     ## See Roman et al. Deals with highly anisotropic grids by splitting up
+				     ## viscosity into horizontal and vertical components. (C_s becomes C_horz)
+				     ## Uses tensor SGS field.
+                     element roman {
+		     	     ## Vertical Smagorinsky coefficient.
+		     	     element smagorinsky_coefficient_vertical { real }
+			     } |
+		     
+			     ## Vreman et al LES for anisotropic grids. Uses scalar SGS field.
+	                     element vreman { empty } |
+			     
+			     ## Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.
+			     ## CURRENT NOT WORKING.
+			     element vorticity_anisotropic_grid {empty} |
+				     
+			     ## Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015). Uses scalar SGS field.
+                 element amd {
+	     	     	## Poincare constant. By default 0.3, which is used for second-order
+		   		 	## central-difference methods.
+	     	     	element poincare_constant { real }
+	     		}
+			  ),
 
                   ## The boundaries that must satisfy the nu_sgs=0 condition (eg. no-slip)
                   element zero_subgrid_stress_boundaries {
                      integer_vector
-                  }?,
-
-
-                  ## Vertical Cs. Only used in anisotropic cases - experimental
-                  element smagorinsky_coefficient_vertical {
-                     real
                   }?,
 
                   element scalar_field {

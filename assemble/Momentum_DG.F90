@@ -447,6 +447,8 @@ contains
         ! LES - sp911
         logical :: have_les = .false., have_isotropic_les=.false.
         logical :: have_amd_les=.false.
+        logical :: have_vreman_les=.false.
+        logical :: have_roman_les=.false.
         logical :: have_van_driest = .false., have_vel_cg=.false.
         real :: smagorinsky_coefficient
         type(scalar_field), pointer :: eddy_visc, prescribed_filter_width, distance_to_wall, &
@@ -841,19 +843,27 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/amd")
 
-                    if(.not. have_amd_les) then
-                       have_amd_les = &
-                            have_option(trim(u%option_path)//&
-                            &"/prognostic/spatial_discretisation"//&
-                            &"/discontinuous_galerkin/les_model"//&
-                            &"/amd_new")
-                    end if
 
-! Will eventually use partial_stress as an indicator
-!                    if(partial_stress) then
+                    have_vreman_les = &
+                        have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/vreman")
 
-                    ! Extract scalar or vector eddy field
-                    if(have_isotropic_les .or. have_amd_les ) then
+                    have_roman_les = &
+                        have_option(trim(u%option_path)//&
+                        &"/prognostic/spatial_discretisation"//&
+                        &"/discontinuous_galerkin/les_model"//&
+                        &"/roman")
+
+
+
+                    ! Will eventually use partial_stress as an indicator
+                    !                    if(partial_stress) then
+
+                    ! Extract scalar or tensor eddy field
+                    if(have_isotropic_les .or. have_amd_les &
+                         .or. have_vreman_les) then
                       
                         ewrite(1,*) "*** Scalar-based DG LES"
                         ! les eddy visc field - needs to be nullified if non-existent
@@ -865,8 +875,22 @@ contains
                             FLAbort("Can't do scalar DG LES without a ScalarEddyViscosity field")
                         else
                             ewrite(1,*) "Found ScalarEddyViscosity field"
-                        end if
+                         end if
 
+                      else
+                         
+                        ewrite(1,*) "*** Tensor-based DG LES"
+                        ! les eddy visc field - needs to be nullified if non-existent
+                        nullify(eddy_visc)
+                        tensor_eddy_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=stat)
+                        ! Theoretically it should always work - unless someone
+                        ! deletes the field in a checkpoint FLML
+                        if (stat/=0) then
+                            FLAbort("Can't do tensor DG LES without a ScalarEddyViscosity field")
+                        else
+                            ewrite(1,*) "Found TensorEddyViscosity field"
+                        end if
+                        
                     end if
 
                     ! Options not specific to either isotropic or anisotropic LES
@@ -1006,8 +1030,16 @@ contains
                 if(have_les) then
                     if(have_isotropic_les) then
                        call calc_dg_sgs_scalar_viscosity(state, x, u)
+                       
                     elseif(have_amd_les) then
                        call calc_dg_sgs_amd_viscosity(state, x, u)
+                       
+                    elseif(have_vreman_les) then
+                       call calc_dg_sgs_vreman_viscosity(state, x, u)
+                       
+                    elseif(have_roman_les) then
+                       call calc_dg_sgs_roman_viscosity(state, x, u)
+                       
                     else
                         FLExit("Error: unsupported LES model (choose standard Smagorinsky or AMD")
                     end if
@@ -1046,10 +1078,6 @@ contains
                     end do
                 end if
 
-                u_shape=>ele_shape(U, 1)
-                p_shape=>ele_shape(P, 1)
-                q_shape=>ele_shape(q_mesh, 1)
-
 
                 if(U%dim==opDim .and. P%mesh%shape%degree==opPresDeg &
                     .and. have_viscosity .and. viscosity_scheme==CDG &
@@ -1073,7 +1101,6 @@ contains
                         call construct_momentum_elements_dg_opt( &
                              ele, big_m, rhs, &
                              X, U, advecting_velocity, U_mesh, X_old, X_new, &
-                             u_shape, p_shape, q_shape, &
                              Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, Viscosity, &
                              swe_bottom_drag, swe_u_nl, &
                              P, old_pressure, Rho, surfacetension, q_mesh, &
@@ -1086,6 +1113,8 @@ contains
                              mass=mass, subcycle_m=subcycle_m, partial_stress=partial_stress, &
                              have_les=have_les, have_isotropic_les=have_isotropic_les, &
                              have_amd_les=have_amd_les, &
+                             have_vreman_les=have_vreman_les, &
+                             have_roman_les=have_roman_les, &
                              smagorinsky_coefficient=smagorinsky_coefficient, &
                              eddy_visc=eddy_visc, tensor_eddy_visc=tensor_eddy_visc, &
                              prescribed_filter_width=prescribed_filter_width, &

@@ -6,7 +6,6 @@
 
 subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &X, U, U_nl, U_mesh, X_old, X_new, &
-    & u_shape, p_shape, q_shape, &
     & Source, Buoyancy, hb_density, hb_pressure, gravity, Abs, &
     &Viscosity, swe_bottom_drag, swe_u_nl, P, old_pressure, Rho, surfacetension, q_mesh, &
     &velocity_bc, velocity_bc_type, &
@@ -14,7 +13,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     &turbine_conn_mesh, on_sphere, depth, have_wd_abs, alpha_u_field, Abs_wd, &
     &vvr_sf, ib_min_grad, nvfrac, &
     &inverse_mass, inverse_masslump, mass, subcycle_m, partial_stress, &
-    have_les, have_isotropic_les, have_amd_les, &
+    have_les, have_isotropic_les, have_amd_les, have_vreman_les, have_roman_les, &
     smagorinsky_coefficient, eddy_visc, tensor_eddy_visc, &
     prescribed_filter_width, distance_to_wall, &
     y_plus_debug, les_filter_width_debug, &
@@ -90,7 +89,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     ! JRM: Can you avoid using pointers?
     ! integer, dimension(:), pointer :: u_ele, p_ele
     integer, dimension(opNloc ):: u_ele, p_ele, x_ele
-    type(element_type), intent(in), pointer :: u_shape, p_shape, q_shape
+    type(element_type), pointer :: u_shape, p_shape, q_shape
     !    type(element_type), pointer :: u_face_shape, p_face_shape, q_face_shape
 
     type(element_type), pointer :: rho_shape
@@ -172,7 +171,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     logical, intent(in) :: partial_stress
 
     ! LES - sp911
-    logical, intent(inout) :: have_les, have_isotropic_les, have_amd_les
+    logical, intent(inout) :: have_les, have_isotropic_les, have_amd_les, have_vreman_les, have_roman_les
     real, intent(in) :: smagorinsky_coefficient
     type(scalar_field), pointer, intent(inout) :: eddy_visc, y_plus_debug, &
         & les_filter_width_debug
@@ -275,7 +274,11 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
     dt_theta = dt * theta
 
-    rho_shape => ele_shape(rho, 1)
+    u_shape => ele_shape(u, ele)
+    p_shape => ele_shape(p, ele)
+    q_shape => ele_shape(q_mesh, ele)
+    
+    rho_shape => ele_shape(rho, ele)
 
 #if defined (SCHEME_CDG)
     !    select case (viscosity_scheme)
@@ -399,7 +402,10 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                 do concurrent(dim1=1:opDim)
                     Viscosity_ele(dim1, dim1, :) = &
                         Viscosity_ele(dim1, dim1, :)+eddy_visc%val(x_ele)
-                end do
+                 end do
+              else
+                 ! Tensor-based LES
+                 Viscosity_ele = Viscosity_ele + tensor_eddy_visc%val(:,:,x_ele)
              end if
         end if
         u_val = u%val(:, u_ele)

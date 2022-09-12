@@ -205,11 +205,16 @@ contains
     ! ========================================================================
     subroutine create_dg_les_field_options(phase_path, dg_path)
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
-            tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path
+            tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path, &
+            element_lengthscales_path
 
-        logical :: have_les_option, have_les_visc_field, have_zero_mesh
-        logical :: have_isotropic_les, have_amd_les, have_partial_stress
-        logical :: have_chauvet_les
+        ! Set to true for now
+        logical, parameter :: output_lengthscales = .true.
+
+        logical :: have_les_option, have_les_visc_field !, have_zero_mesh
+        logical :: have_isotropic_les, have_partial_stress
+        logical :: have_roman_les, have_vreman_les, have_amd_les
+!        logical :: have_chauvet_les
         logical :: use_dg_velocity
 
         integer :: stat
@@ -217,14 +222,18 @@ contains
         character(len=*), parameter :: zeroPath="/geometry/mesh::ZeroMesh"
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
+        element_lengthscales_path = trim(phase_path)//"vector_field::ElementLengthScales/"
+
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
         mag_tensor_eddy_visc_path= trim(phase_path)//"scalar_field::TensorEddyViscosityMagnitude/"
 
         have_isotropic_les = have_option(trim(dg_path)//"les_model/isotropic")
-        have_chauvet_les = have_option(trim(dg_path)//"les_model/vorticity_anisotropic_grid")
+        ! have_chauvet_les = have_option(trim(dg_path)//"les_model/vorticity_anisotropic_grid")
         ! Technically speaking, AMD LES has a scalar (isotropic)
         ! SGS viscosity, but accounts for anisotropic grid resolution.
         have_amd_les = have_option(trim(dg_path)//"les_model/amd")
+        have_vreman_les = have_option(trim(dg_path)//"les_model/vreman")
+        have_roman_les = have_option(trim(dg_path)//"les_model/roman")
 
         have_partial_stress = have_option(trim(dg_path)//"viscosity_scheme/partial_stress_form")
 
@@ -241,10 +250,10 @@ contains
 !        end if
 
         ! For AMD LES mesh we will use a zeroth-order mesh if we can find one
-        have_zero_mesh = have_amd_les .and. have_option(trim(zeroPath))
+!        have_zero_mesh = have_amd_les .and. have_option(trim(zeroPath))
 
         if(have_les_option .and. .not. have_les_visc_field) then
-            if(have_isotropic_les .or. have_amd_les .or. have_chauvet_les) then
+            if(have_isotropic_les .or. have_amd_les .or. have_vreman_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
 
@@ -262,14 +271,14 @@ contains
                 ! Normally use CG velocity field for LES calculations.
                 ! DG velocity field can be used BUT IS SLOW. Only for performance tests.
                 if(.not. use_dg_velocity) then
-                    if(have_zero_mesh) then
-                        ewrite(1,*) "Found /geometry/mesh::ZeroMesh. Using for ScalarEddyViscosity field"
-                        call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
-                            "ZeroMesh", stat)
-                    else
+!                    if(have_zero_mesh) then
+!                        ewrite(1,*) "Found /geometry/mesh::ZeroMesh. Using for ScalarEddyViscosity field"
+!                        call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
+!                            "ZeroMesh", stat)
+!                    else
                         call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
                             "CoordinateMesh", stat)
-                    end if
+!                    end if
                 else
                     call set_option_attribute(trim(scalar_eddy_visc_path)//"diagnostic/mesh/name", &
                         "VelocityMesh", stat)
@@ -332,6 +341,31 @@ contains
                 call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/steady_state/include_in_steady_state", stat)
 !                call add_option(trim(mag_tensor_eddy_visc_path)//"diagnostic/consistent_interpolation", stat)
             end if
+        end if
+
+        if (output_lengthscales) then
+            ewrite(1,*) "Creating ElementLengthScales field"
+            call add_option(trim(element_lengthscales_path), stat)
+            call set_option_attribute(trim(element_lengthscales_path)//"rank", "0", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic", stat)
+
+            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/name", &
+                "Internal", stat)
+            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
+                "single", stat)
+
+            call add_option(trim(element_lengthscales_path)//"diagnostic/mesh/name", stat)
+            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/mesh/name", &
+                    "CoordinateMesh", stat)
+
+            call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/stat", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/convergence", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/detectors", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state", stat)
+            call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
         end if
 
     end subroutine
