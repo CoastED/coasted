@@ -78,9 +78,13 @@ contains
 #ifdef HAVE_MPI
     CALL MPI_INITIALIZED(UsingMPI, IERR)
 #endif
+    ewrite(-1,FMT='(A)') "=============================================================================="
     ewrite(-1,FMT='(A)') "*** CoastED error ***"
     ewrite(-1,FMT='(3A,I5,A)') "Source location: (",FromFile,",",LineNumber,")"
     ewrite(-1,FMT='(2A)') "Error message: ",ErrorStr
+    ewrite(-1,FMT='(A)') "=============================================================================="
+    ewrite(-1,FMT='(A)') ""
+
     ewrite(-1,FMT='(A)') "Backtrace will follow if it is available:"
     call fprint_backtrace()
     ewrite(-1,FMT='(A)') "Use addr2line -e <binary> <address> to decipher."

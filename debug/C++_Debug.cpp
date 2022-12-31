@@ -76,9 +76,11 @@ void print_backtrace(){
 }
 
 void FLAbort(const char *ErrorStr, const char *FromFile, int LineNumber){
-  cerr<<"*** FLUIDITY ERROR ***\n"
+  cerr<<"=============================================================================="
+      <<"*** FLUIDITY ERROR ***\n"
       <<"Source location: ("<<FromFile<<", "<<LineNumber<<")\n"
-      <<"Error message: "<<ErrorStr<<endl;
+      <<"Error message: "<<ErrorStr<<"\n"
+      <<"=============================================================================="<<endl;
   
   print_backtrace();
   
