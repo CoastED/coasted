@@ -36,7 +36,6 @@
 ! Box filter not fully implemented
 
 
-#define FILTER_TYPE 1
 
 
 module dg_les
@@ -2496,22 +2495,24 @@ contains
         type(tensor_field), pointer :: mviscosity
         type(tensor_field) :: u_grad
 
-        integer :: e, num_elements, n, num_nodes, ln
+        integer :: e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
 
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
         real :: mag_strain_horz, mag_strain_vert, mag_strain_r
         real :: sgs_horz, sgs_vert, sgs_r
-        real, dimension(u%dim, u%dim) :: sgs_ele_av, visc_turb, tmp_tensor
+
+        real :: sgs_visc_mag_val
+
+        real, dimension(u%dim, u%dim) :: visc_turb, tmp_tensor
         real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
-
-        real, allocatable,save:: node_vol_weighted_sum(:,:,:),node_neigh_total_vol(:)
-        real, allocatable,save:: node_sum(:, :,:), sgs_unfiltered(:,:,:)
-        integer, allocatable, save :: node_visits(:)
 
         real :: visc_norm2, visc_norm2_max
 
@@ -2531,15 +2532,6 @@ contains
 
         print*, "In calc_dg_sgs_roman_viscosity()"
 
-#if FILTER_TYPE == 1
-        print*, "- using original LES filter"
-#elif FILTER_TYPE == 2
-        print*, "- using box LES filter"
-#elif FILTER_TYPE == 3
-        print*, "- using hat LES filter"
-#else
-#error "Unsupported Large Eddy Simulation FILTER_TYPE"
-#endif
 
         t1=mpi_wtime()
 
@@ -2619,220 +2611,81 @@ contains
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
 
-        ! We only allocate if mesh connectivity unchanged from
-        ! last iteration; reuse saved arrays otherwise
+        ! Calculate nodal filter lengths
 
-        if(new_mesh_connectivity) then
-            if(allocated(node_sum)) then
-                deallocate(node_sum)
-                deallocate(node_visits)
-                deallocate(node_vol_weighted_sum)
-                deallocate(node_neigh_total_vol)
-                deallocate(sgs_unfiltered)
-            end if
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
 
-            allocate(node_sum(u%dim, u%dim, num_nodes))
-            allocate(node_visits(num_nodes))
-            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
-            allocate(node_neigh_total_vol(num_nodes))
-            allocate(sgs_unfiltered(u%dim, u%dim, num_nodes))
-        end if
-
-        node_sum(:,:,:)=0.0
-        node_visits(:)=0
-        node_vol_weighted_sum(:,:,:)=0.0
-        node_neigh_total_vol(:)=0.0
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
 
 
-        do e=1, num_elements
+        do n=1, num_nodes
 
-            u_cg_ele=ele_nodes(u_cg, e)
-
-            ele_vol = element_volume(x, e)
-
-            call les_length_scales_squared_mk2(x, e, length_horz_sq, length_vert_sq)
-
-            Cs_length_horz_sq = (Cs_horz**2.0)* length_horz_sq
-            Cs_length_vert_sq = (Cs_vert**2.0) * length_vert_sq
+            Cs_length_horz_sq = (Cs_horz * node_filter_lengths(n, 1))**2
+            Cs_length_vert_sq = (Cs_vert * node_filter_lengths(n, 3))**2
 
             ! This is the contribution to nu_sgs from each co-occupying node
-            sgs_ele_av=0.0
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-                rate_of_strain = 0.5 * (u_grad%val(:,:, gnode) + transpose(u_grad%val(:,:, gnode)))
+            rate_of_strain = 0.5 * (u_grad%val(:,:, n) + transpose(u_grad%val(:,:, n)))
 
-                mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
-                                     + 2.0* rate_of_strain(2,2)**2.0 &
-                                     + 4.0* rate_of_strain(1,2)**2.0 )
+            mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
+                                 + 2.0* rate_of_strain(2,2)**2.0 &
+                                 + 4.0* rate_of_strain(1,2)**2.0 )
 
-                mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-                                 + 2.0* rate_of_strain(3,3)**2.0 &
-                                 + 4.0* rate_of_strain(3,2)**2.0 )
+            mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
+                             + 2.0* rate_of_strain(3,3)**2.0 &
+                             + 4.0* rate_of_strain(3,2)**2.0 )
 
-                mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
+            mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
 
-                ! Note, this is without density. That comes later.
-                sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
-                sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
-                sgs_r = rho * Cs_length_vert_sq * mag_strain_r
+            ! Note, this is without density. That comes later.
+            sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
+            sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
+            sgs_r = rho * Cs_length_vert_sq * mag_strain_r
 
-                ! As per Roman et al, 2010.
-                visc_turb(1:2, 1:2) = sgs_horz
-                visc_turb(1, 3) = sgs_vert
-                visc_turb(3, 1) = sgs_vert
-                visc_turb(2, 3) = sgs_vert
-                visc_turb(3, 2) = sgs_vert
-                ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
-                ! Otherwise this is potentially negative (!)
-                visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
+            ! As per Roman et al, 2010.
+            visc_turb(1:2, 1:2) = sgs_horz
+            visc_turb(1, 3) = sgs_vert
+            visc_turb(3, 1) = sgs_vert
+            visc_turb(2, 3) = sgs_vert
+            visc_turb(3, 2) = sgs_vert
+            ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
+            ! Otherwise this is potentially negative (!)
+            visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
 
 
-#if FILTER_TYPE == 1 || FILTER_TYPE == 2
-                ! Original and box filter needs the element average
-                sgs_ele_av = sgs_ele_av + visc_turb
-#else
-                ! hat-type filter averages over values co-occupying nodes
-                node_sum(:,:, gnode) = node_sum(:,:, gnode) + visc_turb
-                node_visits(gnode) = node_visits(gnode) + 1
-                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*visc_turb
-                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
-#endif
+            ! Account for wall-damping if enabled
+            if(have_van_driest) then
+                y_plus = sqrt(norm2(u_grad%val(:,:, n)) * rho / mu) * dist_to_wall%val(n)
+                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+            else
+            ! No Van Driest, no damping
+                vd_damping = 1.0
+            end if
 
+            tmp_tensor = vd_damping * rho * visc_turb
+
+
+            ! L2 Norm of tensor (tensor magnitude)
+            sgs_visc_mag_val=0.0
+            do i=1, opDim
+                sgs_visc_mag_val = sgs_visc_mag_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
             end do
+            sgs_visc_mag_val = sqrt(sgs_visc_mag_val)
 
-            sgs_ele_av = sgs_ele_av / opNloc
-#if FILTER_TYPE == 1
-            ! Extra calculations for original filter
-            do ln=1, opNloc
-                gnode = u_cg_ele(ln)
-
-                node_sum(:,:, gnode) = node_sum(:,:, gnode) + sgs_ele_av
-                node_visits(gnode) = node_visits(gnode) + 1
-                node_vol_weighted_sum(:,:, gnode) = node_vol_weighted_sum(:,:, gnode) + ele_vol*sgs_ele_av
-                node_neigh_total_vol(gnode) = node_neigh_total_vol(gnode) + ele_vol
-
-            end do
-#endif
+            call set(sgs_visc, n,  tmp_tensor)
+            call set(sgs_visc_mag, n, sgs_visc_mag_val )
         end do
 
-        ! For box filter, we'll just do all the stuff in here, rather than loop
-        ! round the global nodes
-#if FILTER_TYPE == 2
-        if(have_van_driest) then
-            do e=1, num_elements
-                u_cg_ele=ele_nodes(u_cg, e)
 
-                do ln=1, opNloc
-                    gnode = u_cg_ele(ln)
-                    u_grad_node = u_grad%val(:,:, gnode)
-                    y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(gnode)
-                    vd_damping = (1-exp(-y_plus/A_plus))**pow_m
-
-                    tmp_tensor = vd_damping * rho * alpha * sgs_ele_av
-
-                    ! L2 Norm of tensor (tensor magnitude)
-                    sgs_visc_val=0.0
-                    do i=1, opDim
-                        sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-                    end do
-                    sgs_visc_val = sqrt(sgs_visc_val)
-
-                    call set(sgs_visc, gnode,  tmp_tensor)
-                    call set(sgs_visc_mag, gnode, sgs_visc_val )
-                end do
-            end do
-        else
-            do e=1, num_elements
-                u_cg_ele=ele_nodes(u_cg, e)
-
-                do ln=1, opNloc
-                    gnode = u_cg_ele(ln)
-                    tmp_tensor = rho * alpha * sgs_ele_av
-
-                    ! L2 Norm of tensor (tensor magnitude)
-                    sgs_visc_val=0.0
-                    do i=1, opDim
-                        sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-                    end do
-                    sgs_visc_val = sqrt(sgs_visc_val)
-
-                    call set(sgs_visc, gnode,  tmp_tensor)
-                    call set(sgs_visc_mag, gnode, sgs_visc_val )
-                end do
-            end do
-        end if
-#endif
-
-        ! This part only works for original and hat filters
-#if FILTER_TYPE == 1 || FILTER_TYPE == 3
-        ! Set final values. Two options here: one with Van Driest damping, one without.
-        ! We multiply by rho here.
-        if(have_van_driest) then
-
-            do n=1, num_nodes
-                u_grad_node = u_grad%val(:,:, n)
-                y_plus = sqrt(norm2(u_grad_node) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
-
-#if FILTER_TYPE == 1
-                tmp_tensor = vd_damping * rho * &
-                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
-
-#elif FILTER_TYPE == 3
-                tmp_tensor = vd_damping * rho * node_sum(:,:,n) &
-                     / node_visits(n)
-#endif
-
-!                Not using vol-weighted sums for now
-!                tmp_tensor = vd_damping * rho * node_vol_weighted_sum(:,:,n) &
-!                     / node_neigh_total_vol(n))
-
-                ! L2 Norm of tensor (tensor magnitude)
-                sgs_visc_val=0.0
-                do i=1, opDim
-                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-                end do
-                sgs_visc_val = sqrt(sgs_visc_val)
-
-                call set(sgs_visc, n,  tmp_tensor)
-                call set(sgs_visc_mag, n, sgs_visc_val )
-            end do
-
-        else
-            do n=1, num_nodes
-
-#if FILTER_TYPE == 1
-                tmp_tensor = rho * &
-                ( alpha * sgs_unfiltered(:,:,n) + (1-alpha) * node_sum(:,:,n)/node_visits(n) )
-#elif FILTER_TYPE == 3
-                tmp_tensor = rho * node_sum(:,:,n) / node_visits(n)
-#endif
-!                tmp_tensor = rho * node_vol_weighted_sum(:,:,n) &
-!                     / node_neigh_total_vol(n))
-
-                ! L2 Norm of tensor (tensor magnitude)
-                sgs_visc_val=0.0
-                do i=1, opDim
-                    sgs_visc_val = sgs_visc_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-                end do
-                sgs_visc_val = sqrt(sgs_visc_val)
-
-                call set(sgs_visc, n, tmp_tensor )
-                call set(sgs_visc_mag, n, sgs_visc_val )
-
-            end do
-        end if
-        ! End of code for original and hat filters
-#endif
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
         call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
+        deallocate(node_filter_lengths)
 
         t2=mpi_wtime()
 
