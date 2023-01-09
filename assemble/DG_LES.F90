@@ -46,6 +46,7 @@ module dg_les
   use field_options
   use field_derivatives
   use smoothing_module
+  use fefields
   use vector_tools
   use state_fields_module
   use solvers
@@ -2493,12 +2494,12 @@ contains
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
         type(tensor_field), pointer :: mviscosity
+        type(vector_field), pointer :: elelen, nodelen
         type(tensor_field) :: u_grad
 
         integer :: e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
-        real, allocatable :: node_filter_lengths(:,:)
         real :: minmaxlen(2)
 
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
@@ -2510,6 +2511,7 @@ contains
         real :: sgs_visc_mag_val
 
         real, dimension(u%dim, u%dim) :: visc_turb, tmp_tensor
+        real, dimension(u%dim) :: tmp_vector
         real :: mu, rho, y_plus, vd_damping
 
         integer :: state_flag, gnode
@@ -2520,6 +2522,7 @@ contains
         real (kind=8), external :: mpi_wtime
 
         logical :: have_van_driest, have_reference_density
+        logical :: have_lengths_field
 
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
@@ -2547,6 +2550,17 @@ contains
         sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
         call grad(u_cg, x, u_grad)
 
+        ! Length scales for filter
+        elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
+        nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
+
+        if(state_flag == 0) then
+           print*, "**** Have ElementLengthScales and NodeLengthScales fields"
+           have_lengths_field = .true.
+        else
+           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
+        end if
+        
         sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
 
         if (state_flag /= 0) then
@@ -2613,8 +2627,8 @@ contains
 
         ! Calculate nodal filter lengths
 
-        allocate(node_filter_lengths(opDim, num_nodes))
-        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+        call aniso_filter_lengths_field(state, x)
 
 
         ! Set entire SGS visc field to zero value initially
@@ -2623,8 +2637,8 @@ contains
 
         do n=1, num_nodes
 
-            Cs_length_horz_sq = (Cs_horz * node_filter_lengths(n, 1))**2
-            Cs_length_vert_sq = (Cs_vert * node_filter_lengths(n, 3))**2
+            Cs_length_horz_sq = (Cs_horz**2) * (nodelen%val(1, n)**2 + nodelen%val(2, n)**2)
+            Cs_length_vert_sq = (Cs_vert * nodelen%val(3, n))**2
 
             ! This is the contribution to nu_sgs from each co-occupying node
             rate_of_strain = 0.5 * (u_grad%val(:,:, n) + transpose(u_grad%val(:,:, n)))
@@ -2676,6 +2690,7 @@ contains
 
             call set(sgs_visc, n,  tmp_tensor)
             call set(sgs_visc_mag, n, sgs_visc_mag_val )
+
         end do
 
 
@@ -2685,7 +2700,7 @@ contains
         call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
-        deallocate(node_filter_lengths)
+
 
         t2=mpi_wtime()
 
@@ -2790,7 +2805,7 @@ contains
         real :: dx(pos%dim)
         
         real :: X_val(pos%dim, opNloc)
-        real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz
+        real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz, max_diffx, max_diffy
         real :: X_tri(pos%dim-1, 3)
         real :: area, a, b, c, s, tmplen
         integer :: i, n, m, trix
@@ -2798,6 +2813,7 @@ contains
 
         ! Conditional to switch in/out specialised extruded mesh case logic
         logical :: extruded_mesh
+        type(vector_field) :: elelen, nodelen
 
         X_val=ele_val(pos, ele)
 
@@ -2814,52 +2830,55 @@ contains
 
             outer_loop: do n=1, opNloc
 
+            max_diffx=-1
+            max_diffy=-1
                 do m=1, opNloc
                     if ( n /= m ) then
                         diffx = abs(X_val(1, n)-X_val(1,m))
                         diffy = abs(X_val(2, n)-X_val(2,m))
+                        if(diffx > max_diffx) max_diffx=diffx
+                        if(diffy > max_diffy) max_diffy=diffy
 
                         ! If two points share x and y, one must be atop the other.
                         if(diffx < 10e-10 .and. diffy < 10e-10) then
-                            stpair(1)=n
-                            stpair(2)=m
-                            exit outer_loop
+                            maxdz = abs(X_val(3, m) - X_val(3, n))
                         end if
                     end if
                 end do
 
             end do outer_loop
-            del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
+!            del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
+!
+!            ! Catch all. If somehow dz left zero, use this instead.
+!            if(del(3) < 10e-10) del(3) = maxdz
+!
+!            ! Find 2D points for horizontal triangle (easier/quicker than using
+!            ! Fluidity framework)
+!            trix=1
+!            do n=1, opNloc
+!                if(n /= stpair(1)) then
+!                    X_tri(1, trix)=X_val(1, n)
+!                    X_tri(2, trix)=X_val(2, n)
+!                    trix=trix+1
+!                end if
+!            end do
+!
+!             a = (sum((X_tri(:,2) - X_tri(:,1))**2))**0.5
+!             b = (sum((X_tri(:,3) - X_tri(:,1))**2))**0.5
+!             c = (sum((X_tri(:,2) - X_tri(:,3))**2))**0.5
+!             s = 0.5*(a+b+c)
+!             area = (s*(s-a)*(s-b)*(s-c))**0.5
+!
+!            if(area>10e5) print*, "WARNING: aniso filter length metrics: large area"
+!
+!            ! Calculate radius of circle with same area
+!            r = sqrt(area/ 3.141592653)
 
-            ! Catch all. If somehow dz left zero, use this instead.
-            if(del(3) < 10e-10) del(3) = maxdz
-
-            ! Find 2D points for horizontal triangle (easier/quicker than using
-            ! Fluidity framework)
-            trix=1
-            do n=1, opNloc
-                if(n /= stpair(1)) then
-                    X_tri(:, trix)=X_val(1:2, n)
-                    trix=trix+1
-                end if
-            end do
-
-            ! Heron's formula for area of triangle
-            a = sqrt( (X_tri(1,2)-X_tri(1,1))**2. + (X_tri(2,2)-X_tri(2,1))**2.)
-            b = sqrt( (X_tri(1,3)-X_tri(1,2))**2. + (X_tri(2,3)-X_tri(2,2))**2.)
-            c = sqrt( (X_tri(1,3)-X_tri(1,1))**2. + (X_tri(2,3)-X_tri(2,1))**2.)
-
-            s = 0.5*(a+b+c)
-
-            area = 0.25 * sqrt( s*(s-a)*(s-b)*(s-c) )
-
-            if(area>10e5) print*, "WARNING: AMD LES metrics: large area"
-
-            ! Calculate radius of circle with same area
-            r = sqrt(area/ 3.141592653)
-
-            del(1) = 2.*r
-            del(2) = del(1)
+!            del(1) = 2.*r
+!            del(2) = del(1)
+             del(1) = max_diffx
+             del(2) = max_diffy
+             del(3) = maxdz
 
             ! Not quite done. Sanity check for very, very thin elements
             if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
@@ -2885,6 +2904,8 @@ contains
 
         end if
 
+        ! print*, "ele dim:", del(1), del(2), del(3)
+
     end subroutine aniso_length_ele
 
 
@@ -2900,7 +2921,7 @@ contains
         real, dimension(pos%dim, opNloc) :: X_val
         real, dimension(pos%dim) :: dx, del
 
-        real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:), dx_ele_filt(:,:)
+        real, allocatable :: dx_sum(:,:), dx_ele_raw(:,:) !, dx_ele_filt(:,:)
         real, dimension(pos%dim) :: dx_neigh_sum, dx_neigh_average
         real :: del_max, mean_val, ele_filt_sum(opDim)
         integer, allocatable :: visits(:)
@@ -2920,7 +2941,7 @@ contains
         allocate(dx_sum(pos%dim, num_nodes))
         allocate(visits(num_nodes))
         allocate(dx_ele_raw(pos%dim, num_elements))
-        allocate(dx_ele_filt(pos%dim, num_elements))
+        ! allocate(dx_ele_filt(pos%dim, num_elements))
 
         ! Reset counters and sums
         visits=0
@@ -2935,44 +2956,48 @@ contains
 
         ! Raw sizes per element
         do e=1, num_elements
-           call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
+           if(element_owned(pos, e)) then
+               call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
 
-           dx_ele_raw(:,e) = dx(:)
+               dx_ele_raw(:,e) = dx(:)
+            end if
         end do
 
-        ! Filter sizes per element
-         do e=1, num_elements
-             neighs=>ele_neigh(pos, e)
-             ele_filt_sum=dx_ele_raw(:,e)
-             num_neighs=0
-             do f=1, size(neighs)
-                 if(neighs(f)>0) then
-                     ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
-                     num_neighs=num_neighs+1
-                 end if
-             end do
-             dx_ele_filt(:,e) = ele_filt_sum / num_neighs
-         end do
+!        ! Filter sizes per element
+!         do e=1, num_elements
+!             neighs=>ele_neigh(pos, e)
+!             ele_filt_sum=dx_ele_raw(:,e)
+!             num_neighs=0
+!             do f=1, size(neighs)
+!                 if(neighs(f)>0) then
+!                     ele_filt_sum=ele_filt_sum+dx_ele_raw(:,neighs(f))
+!                     num_neighs=num_neighs+1
+!                 end if
+!             end do
+!             dx_ele_filt(:,e) = ele_filt_sum / num_neighs
+!         end do
 
 
         ! Now create sizes per-node
         do e=1, num_elements
-            local_gnodes = ele_nodes(pos, e)
+            if(element_owned(pos, e)) then
+                local_gnodes = ele_nodes(pos, e)
 
-            X_val=ele_val(pos, e)
+                X_val=ele_val(pos, e)
 
-            do n=1, opNloc
-               gn=local_gnodes(n)
+                do n=1, opNloc
+                   gn=local_gnodes(n)
 
-               if(gn>0 .and. gn<=num_nodes) then
+                   if(gn>0 .and. gn<=num_nodes) then
 
-                   ! Add element sizes to node size sum at each corner
-                   dx_sum(:, gn) = dx_sum(:, gn) + dx_ele_filt(:,e)
-                   visits(gn) = visits(gn)+1
-               else
-                   print*, "gn:", gn
-               end if
-            end do
+                       ! Add element sizes to node size sum at each corner
+                       dx_sum(:, gn) = dx_sum(:, gn) + dx_ele_raw(:,e)
+                       visits(gn) = visits(gn)+1
+                   else
+                       print*, "gn:", gn
+                   end if
+                end do
+            end if
         end do
 
         ! Now set node values, and calculate scalar min/max range
@@ -2987,6 +3012,7 @@ contains
                 if(tmplen<lenrange(1)) lenrange(1)=tmplen
                 if(tmplen>lenrange(2)) lenrange(2)=tmplen
             end if
+            print*, "del_fin: ", del_fin(:,n)
         end do
 
         ! Only output element length stats if we've asked for them
@@ -3003,59 +3029,52 @@ contains
 
         deallocate(dx_sum)
         deallocate(dx_ele_raw)
-        deallocate(dx_ele_filt)
+        ! deallocate(dx_ele_filt)
         deallocate(visits)
 
     end subroutine aniso_filter_lengths
 
 
-
-    ! This one is per-element
-    subroutine amd_filter_lengths_ele_old(pos, del_fin)
+    ! This one is not per-element as above, but loops over all elements
+    subroutine aniso_filter_lengths_field(state, pos)
+        type(state_type), intent(in) :: state
         type(vector_field), intent(in) :: pos
-        real, dimension(:,:), intent(inout) :: del_fin
 
-        real, allocatable :: del_ele_raw(:, :)
-
-        integer, pointer :: neighs(:)
-
-        real, dimension(pos%dim, opNloc) :: X_val
-        real :: mean_val, dx_neigh_sum(pos%dim)
-
-        integer :: e, n, i, gn, f
-        integer :: num_elements, num_neighs
+        real, dimension(pos%dim) :: dx
+        type(vector_field), pointer :: elef, nodef
+        integer :: e, num_elements, state_flag
+        logical :: extruded_mesh
 
         num_elements = ele_count(pos)
 
-        allocate(del_ele_raw(pos%dim, num_elements))
+        ! Is this an extruded mesh?
+        extruded_mesh = option_count("/geometry/mesh/from_mesh/extrude") > 0
 
-        ! Raw sizes per element
+!        if( .not. extruded_mesh ) then
+!            FLExit("Error: AMD LES is currently only works correctly on extruded meshes")
+!        end if
+
+        ! Length scales for filter
+        elef => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
+        nodef => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
+
+
+        ! Set element dimensions in ElementLengthscales field. (0th order)
         do e=1, num_elements
-           X_val=ele_val(pos, e)
-           do i=1, opDim
-              mean_val = sum(X_val(i,:)) / opNloc
-              del_ele_raw(i, e) = 2.*sum( abs(X_val(i, :)-mean_val) ) / opNloc
-           end do
+           call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
+
+           elef%val(1, e) = dx(1)
+           elef%val(2, e) = dx(2)
+           elef%val(3, e) = dx(3)
         end do
+        call halo_update(elef)
 
-        ! Filtered (smoothed) element sizes
-        do e=1, num_elements
-           X_val=ele_val(pos, e)
-           neighs=>ele_neigh(pos, e)
-           num_neighs = size(neighs)
+        ! Now project to NodeLengthscales field. (1st order)
+        call project_field(elef, nodef, pos)
+        call halo_update(nodef)
 
-           dx_neigh_sum=0.
-           do f=1, num_neighs
-              dx_neigh_sum = dx_neigh_sum + del_ele_raw(:,neighs(f))
-           end do
+    end subroutine aniso_filter_lengths_field
 
-           del_fin(:,e) = (del_ele_raw(:,e) + dx_neigh_sum)/(num_neighs+1)
-        end do
-
-        deallocate(del_ele_raw)
-
-
-    end subroutine amd_filter_lengths_ele_old
 
 
 

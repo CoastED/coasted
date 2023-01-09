@@ -206,12 +206,12 @@ contains
     subroutine create_dg_les_field_options(phase_path, dg_path)
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
             tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path, &
-            element_lengthscales_path
+            element_lengthscales_path, node_lengthscales_path
 
         ! Set to true for now
         logical, parameter :: output_lengthscales = .true.
 
-        logical :: have_les_option, have_les_visc_field !, have_zero_mesh
+        logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress
         logical :: have_roman_les, have_vreman_les, have_amd_les
 !        logical :: have_chauvet_les
@@ -219,10 +219,11 @@ contains
 
         integer :: stat
 
-        character(len=*), parameter :: zeroPath="/geometry/mesh::ZeroMesh"
+        character(len=*), parameter :: zero_path="/geometry/mesh::ZeroMesh"
 
         scalar_eddy_visc_path = trim(phase_path)//"scalar_field::ScalarEddyViscosity/"
         element_lengthscales_path = trim(phase_path)//"vector_field::ElementLengthScales/"
+        node_lengthscales_path = trim(phase_path)//"vector_field::NodeLengthScales/"
 
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
         mag_tensor_eddy_visc_path= trim(phase_path)//"scalar_field::TensorEddyViscosityMagnitude/"
@@ -250,9 +251,19 @@ contains
 !        end if
 
         ! For AMD LES mesh we will use a zeroth-order mesh if we can find one
-!        have_zero_mesh = have_amd_les .and. have_option(trim(zeroPath))
+        have_zero_mesh = have_option(trim(zero_path))
 
         if(have_les_option .and. .not. have_les_visc_field) then
+            ! Create Zero-th order mesh. Handy to have
+!            ewrite(1,*) "Creating ZeroMesh (0th order mesh)"
+!            call add_option(trim(zero_path), stat)
+!            call add_option(trim(zero_path)//"from_mesh", stat)
+!            call set_option_attribute(trim(zero_path) // "/from_mesh/mesh/name", "CoordinateMesh", stat)
+!            call add_option(trim(zero_path)//"from_mesh/mesh_shape", stat)
+!            call set_option_attribute(trim(zero_path) // "/from_mesh/mesh_shape/polynormial_degree", "0", stat)
+
+            have_zero_mesh = .true.
+
             if(have_isotropic_les .or. have_amd_les .or. have_vreman_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
@@ -296,6 +307,10 @@ contains
 
             else
                 ! Create tensor Eddy Viscosity field
+                if(.not. have_zero_mesh) then
+                        FLAbort("Must have ZeroMesh (zeroth order discont. mesh) for tensor eddy DG LES.")
+                end if
+
                 ewrite(1,*) "Creating TensorEddyViscosity field"
 
                 call add_option(trim(tensor_eddy_visc_path), stat)
@@ -356,7 +371,7 @@ contains
 
             call add_option(trim(element_lengthscales_path)//"diagnostic/mesh/name", stat)
             call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/mesh/name", &
-                    "CoordinateMesh", stat)
+                    "ZeroMesh", stat)
 
             call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/stat", stat)
@@ -366,6 +381,30 @@ contains
             call add_option(trim(element_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+
+            ewrite(1,*) "Creating NodeLengthScales field"
+            call add_option(trim(node_lengthscales_path), stat)
+            call set_option_attribute(trim(node_lengthscales_path)//"rank", "0", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic", stat)
+
+            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/name", &
+                "Internal", stat)
+            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
+                "single", stat)
+
+            call add_option(trim(node_lengthscales_path)//"diagnostic/mesh/name", stat)
+            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/mesh/name", &
+                    "CoordinateMesh", stat)
+
+            call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/stat", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/convergence", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/detectors", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+
         end if
 
     end subroutine
