@@ -359,52 +359,56 @@ contains
         end if
 
         if (output_lengthscales) then
-            ewrite(1,*) "Creating ElementLengthScales field"
-            call add_option(trim(element_lengthscales_path), stat)
-            call set_option_attribute(trim(element_lengthscales_path)//"rank", "0", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic", stat)
-
-            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/name", &
-                "Internal", stat)
-            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
-                "single", stat)
-
-            call add_option(trim(element_lengthscales_path)//"diagnostic/mesh/name", stat)
-            call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/mesh/name", &
-                    "ZeroMesh", stat)
+           if(.not. have_option(element_lengthscales_path)) then
+              ewrite(1,*) "Creating ElementLengthScales field"
+              
+              call add_option(trim(element_lengthscales_path), stat)
+              call set_option_attribute(trim(element_lengthscales_path)//"rank", "0", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic", stat)
+              
+              call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/name", &
+                   "Internal", stat)
+              call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
+                   "single", stat)
+              
+              call add_option(trim(element_lengthscales_path)//"diagnostic/mesh/name", stat)
+              call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/mesh/name", &
+                   "ZeroMesh", stat)
 
 !            call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/stat", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/convergence", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/detectors", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state", stat)
-            call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-
-            ewrite(1,*) "Creating NodeLengthScales field"
-            call add_option(trim(node_lengthscales_path), stat)
-            call set_option_attribute(trim(node_lengthscales_path)//"rank", "0", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic", stat)
-
-            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/name", &
+              call add_option(trim(element_lengthscales_path)//"diagnostic/stat", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/convergence", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/detectors", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state", stat)
+              call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+           end if
+           
+           if(.not. have_option(node_lengthscales_path)) then
+              ewrite(1,*) "Creating NodeLengthScales field"
+              call add_option(trim(node_lengthscales_path), stat)
+              call set_option_attribute(trim(node_lengthscales_path)//"rank", "0", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic", stat)
+              
+              call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/name", &
                 "Internal", stat)
-            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
+              call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/algorithm/material_phase_support", &
                 "single", stat)
-
-            call add_option(trim(node_lengthscales_path)//"diagnostic/mesh/name", stat)
-            call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/mesh/name", &
-                    "CoordinateMesh", stat)
-
- !           call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/stat", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/convergence", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/detectors", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state", stat)
-            call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-
+              
+              call add_option(trim(node_lengthscales_path)//"diagnostic/mesh/name", stat)
+              call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/mesh/name", &
+                   "CoordinateMesh", stat)
+              
+              !           call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/stat", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/convergence", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/detectors", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state", stat)
+              call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+           end if
         end if
 
     end subroutine
