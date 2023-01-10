@@ -2625,16 +2625,15 @@ contains
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
 
-        ! Calculate nodal filter lengths
-
-
-        call aniso_filter_lengths_field(state, x)
-
+        ! Calculate nodal filter lengths if required.
+        ! if( new_mesh_geometry ) then
+            call aniso_filter_lengths_field(state, x)
+        ! end if
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
 
-
+        ! calculate it at each node
         do n=1, num_nodes
 
             Cs_length_horz_sq = (Cs_horz**2) * (nodelen%val(1, n)**2 + nodelen%val(2, n)**2)
@@ -2797,7 +2796,6 @@ contains
     ! Aniso lengthscales, but really only for pancake elements (small dz).
     ! ========================================================================
 
-
     subroutine aniso_length_ele(pos, ele, del, extruded_mesh)
         type(vector_field), intent(in) :: pos
         integer :: ele
@@ -2805,7 +2803,7 @@ contains
         real :: dx(pos%dim)
         
         real :: X_val(pos%dim, opNloc)
-        real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz, max_diffx, max_diffy
+        real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz
         real :: X_tri(pos%dim-1, 3)
         real :: area, a, b, c, s, tmplen
         integer :: i, n, m, trix
@@ -2813,40 +2811,37 @@ contains
 
         ! Conditional to switch in/out specialised extruded mesh case logic
         logical :: extruded_mesh
-        type(vector_field) :: elelen, nodelen
 
         X_val=ele_val(pos, ele)
 
         ! What we do depends upon whether this is an extruded mesh or not.
 
-        if(extruded_mesh) then
-            ! First look for two points vertically aligned. These two will provide
-            ! dz metric. (There are always two in an extruded mesh)
-
-            stpair=0.0
-            maxdz=0.0
-
-            maxdz=abs(maxval(X_val(3,:))-minval(X_val(3,:)))
-
-            outer_loop: do n=1, opNloc
-
-            max_diffx=-1
-            max_diffy=-1
-                do m=1, opNloc
-                    if ( n /= m ) then
-                        diffx = abs(X_val(1, n)-X_val(1,m))
-                        diffy = abs(X_val(2, n)-X_val(2,m))
-                        if(diffx > max_diffx) max_diffx=diffx
-                        if(diffy > max_diffy) max_diffy=diffy
-
-                        ! If two points share x and y, one must be atop the other.
-                        if(diffx < 10e-10 .and. diffy < 10e-10) then
-                            maxdz = abs(X_val(3, m) - X_val(3, n))
-                        end if
-                    end if
-                end do
-
-            end do outer_loop
+!        if(extruded_mesh) then
+!            ! First look for two points vertically aligned. These two will provide
+!            ! dz metric. (There are always two in an extruded mesh)
+!
+!            stpair=0.0
+!            maxdz=0.0
+!
+!            maxdz=abs(maxval(X_val(3,:))-minval(X_val(3,:)))
+!
+!            outer_loop: do n=1, opNloc
+!
+!                do m=1, opNloc
+!                    if ( n /= m ) then
+!                        diffx = abs(X_val(1, n)-X_val(1,m))
+!                        diffy = abs(X_val(2, n)-X_val(2,m))
+!
+!                        ! If two points share x and y, one must be atop the other.
+!                        if(diffx < 10e-10 .and. diffy < 10e-10) then
+!                            stpair(1)=n
+!                            stpair(2)=m
+!                            exit outer_loop
+!                        end if
+!                    end if
+!                end do
+!
+!            end do outer_loop
 !            del(3) = abs( X_val(3,stpair(1))-X_val(3,stpair(2)) )
 !
 !            ! Catch all. If somehow dz left zero, use this instead.
@@ -2857,56 +2852,64 @@ contains
 !            trix=1
 !            do n=1, opNloc
 !                if(n /= stpair(1)) then
-!                    X_tri(1, trix)=X_val(1, n)
-!                    X_tri(2, trix)=X_val(2, n)
+!                    X_tri(:, trix)=X_val(1:2, n)
 !                    trix=trix+1
 !                end if
 !            end do
 !
-!             a = (sum((X_tri(:,2) - X_tri(:,1))**2))**0.5
-!             b = (sum((X_tri(:,3) - X_tri(:,1))**2))**0.5
-!             c = (sum((X_tri(:,2) - X_tri(:,3))**2))**0.5
-!             s = 0.5*(a+b+c)
-!             area = (s*(s-a)*(s-b)*(s-c))**0.5
+!            ! Heron's formula for area of triangle
+!            a = sqrt( (X_tri(1,2)-X_tri(1,1))**2. + (X_tri(2,2)-X_tri(2,1))**2.)
+!            b = sqrt( (X_tri(1,3)-X_tri(1,2))**2. + (X_tri(2,3)-X_tri(2,2))**2.)
+!            c = sqrt( (X_tri(1,3)-X_tri(1,1))**2. + (X_tri(2,3)-X_tri(2,1))**2.)
 !
-!            if(area>10e5) print*, "WARNING: aniso filter length metrics: large area"
+!            s = 0.5*(a+b+c)
+!
+!            area = (s*(s-a)*(s-b)*(s-c))**0.5
+!
+!            if(area>10e5) print*, "WARNING: AMD LES metrics: large area"
 !
 !            ! Calculate radius of circle with same area
 !            r = sqrt(area/ 3.141592653)
-
+!
 !            del(1) = 2.*r
 !            del(2) = del(1)
-             del(1) = max_diffx
-             del(2) = max_diffy
-             del(3) = maxdz
+!
+!            ! Not quite done. Sanity check for very, very thin elements
+!            if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
+!
+!        else
 
-            ! Not quite done. Sanity check for very, very thin elements
-            if(del(3)/del(1) < 0.05) del(3)=0.05 * del(1)
+!            ! For unstructured meshes, do something slightly different.
+    ! Do this for both structured and unstructured meshes, for now.
+        del(:)=0.0
+        do m=1, opNloc
+            do n=1, opNloc
 
-        else
+                if (n/=m) then
+                    diffx = abs(X_val(1, n)-X_val(1,m))
+                    diffy = abs(X_val(2, n)-X_val(2,m))
+                    diffz = abs(X_val(3, n)-X_val(3,m))
 
-            ! For unstructured meshes, do something slightly different.
-            del(:)=0.0
-            do m=1, opNloc
-                do n=1, opNloc
-
-                    if (n/=m) then
-                        diffx = abs(X_val(1, n)-X_val(1,m))
-                        diffy = abs(X_val(2, n)-X_val(2,m))
-                        diffz = abs(X_val(3, n)-X_val(3,m))
-
-                        if(diffx > del(1)) del(1)=diffx
-                        if(diffy > del(2)) del(2)=diffy
-                        if(diffz > del(3)) del(3)=diffz
-                    end if
-                end do
+                    if(diffx > del(1)) del(1)=diffx
+                    if(diffy > del(2)) del(2)=diffy
+                    if(diffz > del(3)) del(3)=diffz
+                end if
             end do
+        end do
 
-        end if
+        if(extruded_mesh) then
+            ! Always pick the biggest x-y dimension
+            if(del(1) > del(2)) then
+                del(2) = del(1)
+            else
+                del(1) = del(2)
+            end if
+         end if
 
-        ! print*, "ele dim:", del(1), del(2), del(3)
+!        end if
 
     end subroutine aniso_length_ele
+
 
 
 
@@ -3069,12 +3072,73 @@ contains
         end do
         call halo_update(elef)
 
+        call quick_smooth_ele_lengths_field(state, 3)
+
         ! Now project to NodeLengthscales field. (1st order)
         call project_field(elef, nodef, pos)
         call halo_update(nodef)
 
     end subroutine aniso_filter_lengths_field
 
+    ! Very quick / dirty smoothing routine with averaging filter for
+    ! element lenegths field
+
+    subroutine quick_smooth_ele_lengths_field(state, niters)
+        type(state_type), intent(in) :: state
+        integer, intent(in) :: niters
+
+        type(vector_field), pointer :: elef
+
+        integer :: nix
+        integer :: e, i, nh, num_elements, num_neighs
+        real, allocatable :: ele_len_sum(:,:)
+        integer, allocatable :: ele_sum_ct(:)
+
+        integer, pointer, dimension(:) :: neighs
+        integer :: state_flag
+
+        elef=>extract_vector_field(state, "ElementLengthScales", stat=state_flag)
+
+        num_elements = ele_count(elef)
+
+
+        allocate(ele_len_sum(elef%dim, num_elements))
+        allocate(ele_sum_ct(num_elements))
+
+        ! Smooth field using averaging filter
+        do nix=1, niters
+            do e=1, num_elements
+                neighs => ele_neigh(elef, e)
+                num_neighs = size(neighs)
+
+                ele_sum_ct(e) = 1+num_neighs
+
+                do i=1, 3
+                    ele_len_sum(i, e) = elef%val(i, e)
+                end do
+
+                ! Doing an average of an elements lengthscales and its neighbours' - sum the lot
+                do nh=1, num_neighs
+                    do i=1, 3
+                        ele_len_sum(i, e) = ele_len_sum(i, e) + elef%val(i, neighs(nh))
+                    end do
+                end do
+            end do
+
+            ! Now calculate the average of those summed lengths, and put in elef field.
+            do e=1, num_elements
+                do i=1, 3
+                    elef%val(i, e) = ele_len_sum(i, e) / ele_sum_ct(e)
+                end do
+            end do
+
+            call halo_update(elef)
+        end do
+
+        deallocate(ele_len_sum)
+        deallocate(ele_sum_ct)
+
+    end subroutine quick_smooth_ele_lengths_field
 
 
 

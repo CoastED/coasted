@@ -373,7 +373,7 @@ contains
             call set_option_attribute(trim(element_lengthscales_path)//"diagnostic/mesh/name", &
                     "ZeroMesh", stat)
 
-            call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
+!            call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/stat", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/convergence", stat)
             call add_option(trim(element_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
@@ -396,7 +396,7 @@ contains
             call set_option_attribute(trim(node_lengthscales_path)//"diagnostic/mesh/name", &
                     "CoordinateMesh", stat)
 
-            call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
+ !           call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
             call add_option(trim(node_lengthscales_path)//"diagnostic/stat", stat)
             call add_option(trim(node_lengthscales_path)//"diagnostic/convergence", stat)
             call add_option(trim(node_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
