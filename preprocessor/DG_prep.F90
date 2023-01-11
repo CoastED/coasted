@@ -359,7 +359,6 @@ contains
         end if
 
         if (output_lengthscales) then
-           if(.not. have_option(element_lengthscales_path)) then
               ewrite(1,*) "Creating ElementLengthScales field"
               
               call add_option(trim(element_lengthscales_path), stat)
@@ -383,9 +382,7 @@ contains
               call add_option(trim(element_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
               call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state", stat)
               call add_option(trim(element_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-           end if
-           
-           if(.not. have_option(node_lengthscales_path)) then
+
               ewrite(1,*) "Creating NodeLengthScales field"
               call add_option(trim(node_lengthscales_path), stat)
               call set_option_attribute(trim(node_lengthscales_path)//"rank", "0", stat)
@@ -408,7 +405,7 @@ contains
               call add_option(trim(node_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
               call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state", stat)
               call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
-           end if
+
         end if
 
     end subroutine

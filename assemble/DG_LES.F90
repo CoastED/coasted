@@ -2583,7 +2583,7 @@ contains
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
 
-        integer :: e, num_elements, n, num_nodes
+        integer :: e, ix, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
         real :: minmaxlen(2)
@@ -2623,8 +2623,8 @@ contains
 
         t1=mpi_wtime()
 
-        nullify(elelen)
-        nullify(nodelen)
+!        nullify(elelen)
+!        nullify(nodelen)
         nullify(dist_to_wall)
         nullify(mviscosity)
 
@@ -2717,6 +2717,7 @@ contains
         ! Calculate nodal filter lengths.
         call aniso_filter_elelengths(x, dx_ele_raw)
         ! Put into field
+
         do e=1, num_elements
             elelen%val(:, e) = dx_ele_raw(:, e)
         end do

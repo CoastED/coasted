@@ -381,7 +381,7 @@ for example:
         nOutput = (os.path.getsize(filename + ".dat") / (nColumns * real_size)) / subsample
         
         columns = numpy.empty((nColumns, nOutput))
-        statDatFile = file(filename + ".dat", "rb")   
+        statDatFile = file(filename + ".dat", "rb")
         index = 0     
         while True:
           values = array.array(realFormat)
@@ -438,6 +438,8 @@ for example:
             current_dict[name][statistic]=columns[column-1:column-1+components]
         else:
             current_dict[name][statistic]=columns[int(column)-1]
+
+
 
 def test_steady(vals, error, test_count = 1):
   """
