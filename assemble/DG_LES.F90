@@ -2482,7 +2482,92 @@ contains
     ! viscosity. Requres tensor sgs viscosity field.
     ! ========================================================================
 
-    subroutine calc_dg_sgs_roman_viscosity(state, x, u)
+
+
+
+
+    ! ========================================================================
+    ! Horizontal and vertical lengthscales for anisotropic meshes,
+    ! from Roman (2010). Only works for 3D linear tets.
+    ! ========================================================================
+
+    subroutine les_length_scales_squared_mk2(positions, ele, horzSq, vertSq)
+        type(vector_field), intent(in) :: positions
+        integer :: ele
+
+        real :: horzSq, vertSq
+        real, dimension(:,:), allocatable :: X_val
+        real, dimension(:), allocatable :: dx
+
+        integer :: i
+
+        allocate( X_val(positions%dim, opNloc) )
+        allocate( dx(positions%dim) )
+
+        X_val=ele_val(positions, ele)
+
+        ! Calculate largest dx, dy, dz for element nodes
+        do i=1, opDim
+            dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
+        end do
+
+        ! Why squares? Used in LES visc calcs, no need for expensive square roots
+        horzSq = dx(1)**2 + dx(2)**2
+        vertSq = dx(3)**2
+
+        deallocate(X_val, dx)
+
+    end subroutine les_length_scales_squared_mk2
+
+
+
+    ! ========================================================================
+    ! Calculate vorticity-based filter lengths based upon Chauvet et al.
+    ! 3D only.
+    ! ========================================================================
+
+    subroutine vorticity_filter_lengths(pos, ugrad, dx, vort_del)
+      type(vector_field), intent(in) :: pos
+      type(tensor_field), intent(in) :: ugrad
+      real, dimension(:,:), intent(in) :: dx
+      real, dimension(:), intent(out) :: vort_del
+
+      real :: magvort
+      real, dimension(:), allocatable :: vort, N
+      real, dimension(:,:), allocatable :: gr
+
+      integer :: i, num_nodes
+
+      num_nodes = pos%mesh%nodes
+
+      allocate( vort(pos%dim), N(pos%dim) )
+      allocate( gr(pos%dim, pos%dim) )
+
+      ! Go round all nodes, calculating vorticity-based filter length
+      do i=1, num_nodes
+         gr=ugrad%val(:,:,i)
+
+         ! Calculate vorticity: \/ x u
+         vort(1) = gr(2,3)-gr(3,2)
+         vort(2) = gr(3,1)-gr(3,1)
+         vort(3) = gr(2,1)-gr(1,2)
+
+         magvort = sqrt(vort(1)**2 + vort(2)**2 + vort(3)**2)
+
+         ! Chauvet et al.
+         N = vort / magvort
+         vort_del(i) = sqrt( dx(2, i) * dx(3,i) * N(1)**2 &
+              + dx(3, i) * dx(1,i) * N(2)**2 &
+              + dx(1, i) * dx(2,i) * N(3)**2 )
+
+      end do
+
+      deallocate(gr, vort, N)
+
+    end subroutine vorticity_filter_lengths
+
+
+   subroutine calc_dg_sgs_roman_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -2496,6 +2581,7 @@ contains
         type(tensor_field), pointer :: mviscosity
         type(vector_field), pointer :: elelen, nodelen
         type(tensor_field) :: u_grad
+        real, allocatable :: dx_ele_raw(:,:)
 
         integer :: e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
@@ -2535,9 +2621,10 @@ contains
 
         print*, "In calc_dg_sgs_roman_viscosity()"
 
-
         t1=mpi_wtime()
 
+        nullify(elelen)
+        nullify(nodelen)
         nullify(dist_to_wall)
         nullify(mviscosity)
 
@@ -2625,10 +2712,20 @@ contains
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
 
-        ! Calculate nodal filter lengths if required.
-        ! if( new_mesh_geometry ) then
-            call aniso_filter_lengths_field(state, x)
-        ! end if
+        allocate(dx_ele_raw(3, num_elements))
+
+        ! Calculate nodal filter lengths.
+        call aniso_filter_elelengths(x, dx_ele_raw)
+        ! Put into field
+        do e=1, num_elements
+            elelen%val(:, e) = dx_ele_raw(:, e)
+        end do
+        call halo_update(elelen)
+
+        ! project to node-based (1st order) field
+        call project_field(elelen, nodelen, x)
+        call halo_update(nodelen)
+
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:,:,:)=0.0
@@ -2699,6 +2796,7 @@ contains
         call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
+        deallocate(dx_ele_raw)
 
 
         t2=mpi_wtime()
@@ -2706,90 +2804,6 @@ contains
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
     end subroutine calc_dg_sgs_roman_viscosity
-
-
-
-
-    ! ========================================================================
-    ! Horizontal and vertical lengthscales for anisotropic meshes,
-    ! from Roman (2010). Only works for 3D linear tets.
-    ! ========================================================================
-
-    subroutine les_length_scales_squared_mk2(positions, ele, horzSq, vertSq)
-        type(vector_field), intent(in) :: positions
-        integer :: ele
-
-        real :: horzSq, vertSq
-        real, dimension(:,:), allocatable :: X_val
-        real, dimension(:), allocatable :: dx
-
-        integer :: i
-
-        allocate( X_val(positions%dim, opNloc) )
-        allocate( dx(positions%dim) )
-
-        X_val=ele_val(positions, ele)
-
-        ! Calculate largest dx, dy, dz for element nodes
-        do i=1, opDim
-            dx(i) = maxval( X_val(i,:)) - minval (X_val(i,:))
-        end do
-
-        ! Why squares? Used in LES visc calcs, no need for expensive square roots
-        horzSq = dx(1)**2 + dx(2)**2
-        vertSq = dx(3)**2
-
-        deallocate(X_val, dx)
-
-    end subroutine les_length_scales_squared_mk2
-
-
-
-    ! ========================================================================
-    ! Calculate vorticity-based filter lengths based upon Chauvet et al.
-    ! 3D only.
-    ! ========================================================================
-
-    subroutine vorticity_filter_lengths(pos, ugrad, dx, vort_del)
-      type(vector_field), intent(in) :: pos
-      type(tensor_field), intent(in) :: ugrad
-      real, dimension(:,:), intent(in) :: dx
-      real, dimension(:), intent(out) :: vort_del
-
-      real :: magvort
-      real, dimension(:), allocatable :: vort, N
-      real, dimension(:,:), allocatable :: gr
-
-      integer :: i, num_nodes
-
-      num_nodes = pos%mesh%nodes
-
-      allocate( vort(pos%dim), N(pos%dim) )
-      allocate( gr(pos%dim, pos%dim) )
-
-      ! Go round all nodes, calculating vorticity-based filter length
-      do i=1, num_nodes
-         gr=ugrad%val(:,:,i)
-
-         ! Calculate vorticity: \/ x u
-         vort(1) = gr(2,3)-gr(3,2)
-         vort(2) = gr(3,1)-gr(3,1)
-         vort(3) = gr(2,1)-gr(1,2)
-
-         magvort = sqrt(vort(1)**2 + vort(2)**2 + vort(3)**2)
-
-         ! Chauvet et al.
-         N = vort / magvort
-         vort_del(i) = sqrt( dx(2, i) * dx(3,i) * N(1)**2 &
-              + dx(3, i) * dx(1,i) * N(2)**2 &
-              + dx(1, i) * dx(2,i) * N(3)**2 )
-
-      end do
-
-      deallocate(gr, vort, N)
-
-    end subroutine vorticity_filter_lengths
-
 
 
     ! ========================================================================
@@ -2909,7 +2923,6 @@ contains
 !        end if
 
     end subroutine aniso_length_ele
-
 
 
 
@@ -3038,6 +3051,44 @@ contains
     end subroutine aniso_filter_lengths
 
 
+
+
+
+    ! This one is not per-element as above, but loops over all elements
+    subroutine aniso_filter_elelengths(pos, dx_ele_raw)
+        type(vector_field), intent(in) :: pos
+        real, dimension(:,:), intent(inout) :: dx_ele_raw
+        real :: tmplen
+
+        real, dimension(pos%dim) :: dx
+
+        integer :: e
+        integer :: num_elements
+
+        logical :: extruded_mesh
+
+        num_elements = ele_count(pos)
+
+        ! allocate(dx_ele_filt(pos%dim, num_elements))
+
+
+        ! Is this an extruded mesh?
+        extruded_mesh = option_count("/geometry/mesh/from_mesh/extrude") > 0
+
+        ! Raw sizes per element
+        do e=1, num_elements
+           if(element_owned(pos, e)) then
+               call aniso_length_ele(pos, e, dx, extruded_mesh=extruded_mesh)
+
+               dx_ele_raw(:,e) = dx(:)
+            end if
+        end do
+
+    end subroutine aniso_filter_elelengths
+
+
+
+
     ! This one is not per-element as above, but loops over all elements
     subroutine aniso_filter_lengths_field(state, pos)
         type(state_type), intent(in) :: state
@@ -3058,6 +3109,9 @@ contains
 !        end if
 
         ! Length scales for filter
+        nullify(elef)
+        nullify(nodef)
+
         elef => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
         nodef => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
 
@@ -3072,13 +3126,16 @@ contains
         end do
         call halo_update(elef)
 
-        call quick_smooth_ele_lengths_field(state, 3)
+        ! call quick_smooth_ele_lengths_field(state, 3)
 
         ! Now project to NodeLengthscales field. (1st order)
         call project_field(elef, nodef, pos)
         call halo_update(nodef)
 
     end subroutine aniso_filter_lengths_field
+
+
+
 
     ! Very quick / dirty smoothing routine with averaging filter for
     ! element lenegths field
@@ -3097,7 +3154,9 @@ contains
         integer, pointer, dimension(:) :: neighs
         integer :: state_flag
 
+        nullify(elef)
         elef=>extract_vector_field(state, "ElementLengthScales", stat=state_flag)
+
 
         num_elements = ele_count(elef)
 
