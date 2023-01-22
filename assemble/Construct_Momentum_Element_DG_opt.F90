@@ -1004,7 +1004,8 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
             !  end do
 
             ! Faster (?) way of doing things?
-
+            ! A new option will be needed for Roman et al to be correct.
+           
             do idim=1, opDim
                 sh_dt_temp = 0.0
 

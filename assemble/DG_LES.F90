@@ -2753,7 +2753,8 @@ contains
             ! Note, this is without density. That comes later.
             sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
             sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
-            sgs_r = sgs_horz
+            sgs_r = (sgs_horz - 2*sgs_vert) &
+                 + 2*Cs_length_vert_sq *  mag_strain_r
 
             ! As per Roman et al, 2010.
             visc_turb(1:2, 1:2) = sgs_horz
@@ -2761,12 +2762,13 @@ contains
             visc_turb(3, 1) = sgs_vert
             visc_turb(2, 3) = sgs_vert
             visc_turb(3, 2) = sgs_vert
+            visc_turb(3, 3) = sgs_r
             ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
             ! Otherwise this is potentially negative (!)
             ! visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
 
             ! According to Roman et al, 2010, only two sgs viscosities are used.
-            visc_turb(3, 3) = sgs_vert
+            ! visc_turb(3, 3) = sgs_vert
 
 
             ! Account for wall-damping if enabled
