@@ -2762,7 +2762,7 @@ contains
             visc_turb(3, 1) = sgs_vert
             visc_turb(2, 3) = sgs_vert
             visc_turb(3, 2) = sgs_vert
-            visc_turb(3, 3) = sgs_r
+            visc_turb(3, 3) = abs(sgs_r)
             ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
             ! Otherwise this is potentially negative (!)
             ! visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
