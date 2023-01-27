@@ -1141,7 +1141,11 @@ Uses tensor SGS field.</a:documentation>
                 </element>
                 <element name="vreman">
                   <a:documentation>Vreman et al LES for anisotropic grids. Uses scalar SGS field.</a:documentation>
-                  <empty/>
+                  <element name="poincare_constant">
+                    <a:documentation>Poincare constant. For central difference methods,
+recommended value is = 0.3 (Smagorinsky coeff will be ignored)</a:documentation>
+                    <ref name="real"/>
+                  </element>
                 </element>
                 <element name="vorticity_anisotropic_grid">
                   <a:documentation>Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.

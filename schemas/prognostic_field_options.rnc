@@ -940,7 +940,11 @@ prognostic_velocity_field =
 			     } |
 		     
 			     ## Vreman et al LES for anisotropic grids. Uses scalar SGS field.
-	                     element vreman { empty } |
+	                     element vreman {
+			            	## Poincare constant. For central difference methods,
+					## recommended value is = 0.3 (Smagorinsky coeff will be ignored)
+			     	     element poincare_constant {real}
+			     } |
 			     
 			     ## Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.
 			     ## CURRENT NOT WORKING.

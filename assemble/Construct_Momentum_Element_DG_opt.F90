@@ -398,7 +398,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
     if (assemble_element) then
         ! Isotropic / scalar LES
         if(have_les) then
-            if(have_isotropic_les .or. have_amd_les ) then
+            if(have_isotropic_les .or. have_amd_les .or. have_vreman_les) then
                 do concurrent(dim1=1:opDim)
                     Viscosity_ele(dim1, dim1, :) = &
                         Viscosity_ele(dim1, dim1, :)+eddy_visc%val(x_ele)
