@@ -209,7 +209,7 @@ contains
             element_lengthscales_path, node_lengthscales_path
 
         ! Set to true for now
-        logical, parameter :: output_lengthscales = .true.
+        logical, parameter :: output_lengthscales = .false.
 
         logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress
@@ -358,9 +358,12 @@ contains
             end if
         end if
 
-        if (output_lengthscales) then
-           call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
-           call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
+        call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
+        call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
+        ! If false, make sure lengthscales are not written out.
+        if (.not. output_lengthscales) then
+           call add_option(trim(element_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
+           call add_option(trim(node_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
         end if
         ewrite(1,*) "Creating ElementLengthScales field"
 

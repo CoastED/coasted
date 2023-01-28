@@ -787,8 +787,8 @@ contains
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mag_strain_horz, mag_strain_vert, mag_strain_r
-        real :: sgs_horz, sgs_vert, sgs_r
+        real :: mag_strain_horz, mag_strain_vert !, mag_strain_r
+        real :: sgs_horz, sgs_vert !, sgs_r
 
         real :: sgs_visc_mag_val
 
@@ -973,7 +973,7 @@ contains
                 sgs_visc_mag_val = sgs_visc_mag_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
             end do
             sgs_visc_mag_val = sqrt(sgs_visc_mag_val)
-
+            
             call set(sgs_visc, n,  tmp_tensor)
             call set(sgs_visc_mag, n, sgs_visc_mag_val )
 
