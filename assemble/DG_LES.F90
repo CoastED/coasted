@@ -281,8 +281,1611 @@ contains
 
 
 
+    ! ========================================================================
+    ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
+    ! See Rozema et al, Computational Methods in Engineering, 2020.
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_amd_viscosity_node(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(tensor_field), pointer :: mviscosity
+        type(vector_field) :: u_grad, v_grad, w_grad
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, k
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable :: dx(:)
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real :: BS, topbit, btmbit, Cpoin
+        integer :: udim
+
+        print*, "In calc_dg_sgs_amd_viscosity_node()"
+
+        t1=mpi_wtime()
+
+        allocate( B(opDim,opDim), S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.        
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        udim = vel_cg%dim
+
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+        
+        ! Allocate gradient field
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+        end if
+        sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
+
+        call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
 
 
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+           dx(:)=node_filter_lengths(:,n)
+
+!           didj(:,1) = dx(:)/dx(1)
+!           didj(:,2) = dx(:)/dx(2)
+!           didj(:,3) = dx(:)/dx(3)
+
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
+
+!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+!           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           do i=1, opDim
+              do j=1, opDim
+                 del_dudx(i,j) = dx(i) * dudx_n(i,j)
+              end do
+           end do
+
+           B = transpose(del_dudx) * del_dudx
+
+           BS = 0.
+           do i=1, opDim
+              do j=1, opDim
+                BS = BS + B(i,j) * S(i,j)
+              end do
+           end do
+
+!           topbit = rho * Cpoin * filter_harm_sq * max(-BS, 0.)
+           topbit = rho * Cpoin * max(-BS, 0.)
+
+
+           btmbit=0.
+           do i=1, opDim
+              do j=1, opDim
+                 btmbit = btmbit + dudx_n(i,j)**2
+              end do
+           end do
+
+           ! If the dominator is vanishing small, then set the SGS viscosity
+           ! to zero
+           if(btmbit < 10e-10) then
+              sgs_visc_val = sgs_visc%val(n)
+           else
+              sgs_visc_val = topbit/btmbit
+              if(sgs_visc_val > mu*10e4) sgs_visc_val=sgs_visc%val(n)
+           end if
+
+           if(have_artificial_visc) then
+              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+           end if
+
+            ! Limiter
+            if(sgs_visc_val > mu*10e4) then
+               if(sgs_visc%val(n) < mu*10e4) then
+                  sgs_visc_val=sgs_visc%val(n)
+               else
+                  sgs_visc_val=0.
+               end if
+            end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
+        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_node
+
+
+
+    ! ================================================================================
+    !  AMD Model (new)
+    ! ================================================================================
+
+
+
+    subroutine calc_dg_sgs_amd_viscosity_new(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(tensor_field), pointer :: mviscosity
+        type(vector_field) :: u_grad, v_grad, w_grad
+        type(scalar_field), pointer :: dist_to_top, dist_to_bottom
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc, have_top
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_amd_val, sgs_visc_val, sgs_ele_av, sgs_limit, sgs_diff
+        integer :: i, j, k
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! QR stuff
+        real, allocatable :: dx(:)
+        real :: filter_harm_sq
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real :: BS, Cpoin, Csmag, topbit, btmbit
+
+!        ! Stabilisation stuff for really wide, thin elements
+        real :: stab_visc
+
+        ! These values are arbitrary and problem-dependent.
+        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=25
+        real, parameter :: stab_min_depth=3, stab_max_depth=25
+        real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
+        real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
+        real :: stab_dx_alpha, stab_depth_alpha
+
+        real :: scale_depth
+        integer :: udim
+
+        ! Switch Smagorinsky stuff for shallower waters (more stable)
+        ! When to switch it on? (blends gradually)
+        real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
+
+        real :: chan_depth, scale_to_surf
+        real :: sgs_surf_alpha, sgs_smag_alpha, sgs_depth_alpha
+        real :: sgs_smag_def, sgs_smag_depth
+
+        real, parameter :: abs_rel_change_max = 1.5
+        real :: rel_change, rel_change_lim
+
+        print*, "In calc_dg_sgs_and_viscosity_new()"
+
+        t1=mpi_wtime()
+
+        allocate( B(opDim,opDim), S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
+        if (state_flag==0) then
+            have_top=.true.
+            dist_to_bottom=>extract_scalar_field(state, "DistanceToBottom", stat=state_flag)
+        else
+            have_top=.false.
+        end if
+
+        udim = vel_cg%dim
+
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+
+        ! Allocate gradient field
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
+        end if
+
+
+        ! sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
+
+        call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
+
+        ! Otherwise... problems
+        call halo_update(u_grad)
+        call halo_update(v_grad)
+        call halo_update(w_grad)
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+        ! Maximum allowable value for SGS visocosity
+        sgs_limit = mu*1e4
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd_new/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd_new/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        ! If we have a free surface, get Smagorinsky coefficient for surfafce
+        ! damping
+        if(have_top) then
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                    // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                    // "smagorinsky_coefficient", Csmag)
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+
+        ! Set entire SGS visc field to zero value initially
+        ! sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+           dx(:)=node_filter_lengths(:,n)
+
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
+
+           ! Harmonic mean of individual filter lengths (Trias et al)
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           do i=1, opDim
+              do j=1, opDim
+                 del_dudx(i,j) = dx(i) * dudx_n(i,j)
+              end do
+           end do
+
+           B = transpose(del_dudx) * del_dudx
+
+           BS = 0.
+           do i=1, opDim
+              do j=1, opDim
+                BS = BS + B(i,j) * S(i,j)
+              end do
+           end do
+
+           topbit = rho * Cpoin * max(-BS, 0.)
+
+           btmbit=0.
+           do i=1, opDim
+              do j=1, opDim
+                 btmbit = btmbit + dudx_n(i,j)**2
+              end do
+           end do
+
+           ! If the denominator is vanishing small, then set the SGS viscosity
+           ! to zero
+           if(btmbit < 10e-10) then
+              sgs_amd_val = 0.0
+           else
+              sgs_amd_val = topbit/btmbit
+           end if
+
+
+            ! If free-surface, then we graduate to Smagorinsky near surface
+            ! for stability's sake (this suggested less anisotropic
+            ! (ie. 4:1) elements near surface.
+
+            if(have_top) then
+
+               chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+               if(chan_depth > chan_depth_deep) then
+                  sgs_depth_alpha = 0.
+               elseif(chan_depth < chan_depth_shallow) then
+                  sgs_depth_alpha = 1.
+               else
+                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
+                       / (chan_depth_deep - chan_depth_shallow)
+               end if
+
+
+
+               ! Switch to Standard smag near surface (more stable)
+               ! scale over quarter depth
+               scale_to_surf = (1./4.)*chan_depth
+
+               sgs_surf_alpha = 0.
+               if( dist_to_top%val(n) < scale_to_surf ) then
+                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
+               end if
+
+               ! Which to use for blending
+               if(sgs_depth_alpha > sgs_surf_alpha) then
+                  sgs_smag_alpha = sgs_depth_alpha
+               else
+                 sgs_smag_alpha = sgs_surf_alpha
+               end if
+
+               sgs_smag_def = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
+
+               ! sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
+
+
+               ! Blend AMD LES and Smagorinsky LES
+               sgs_visc_val = sgs_smag_alpha * sgs_smag_def &
+                    + (1.-sgs_smag_alpha) * sgs_amd_val
+
+            end if
+
+
+            ! Stabilisation viscosity for really wide, thin elements.
+            ! Peculiar to extruded tidal simulations.
+
+            if(have_top) then
+                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+                stab_dx_alpha = 0.
+                if ( dx(1) > stab_maxdx) then
+                    stab_dx_alpha = 1.
+                elseif( dx(1) > stab_mindx ) then
+                    stab_dx_alpha = (dx(1)-stab_mindx) / stab_dx_range
+                end if
+
+                stab_depth_alpha=0.
+                if (chan_depth < stab_min_depth ) then
+                    stab_depth_alpha=1.
+                elseif( chan_depth < stab_max_depth ) then
+                    stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
+                end if
+
+                stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
+
+            else
+                 stab_visc = 0.
+            end if
+
+
+            if(have_artificial_visc) then
+                sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+            end if
+
+            ! Just using element-size & depth based stabilisation for now.
+            sgs_visc_val = sgs_visc_val + stab_visc
+
+            ! Limiters
+            if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
+
+            ! Checking relative change
+            if(sgs_visc%val(n) < 10e-10) then
+                rel_change=0.0
+            else
+                rel_change = (sgs_visc_val-sgs_visc%val(n)) / sgs_visc%val(n)
+            end if
+
+!            print*, "n:", n, "   sgs_visc_val:", sgs_visc_val, "   sgs_visc_old:", sgs_visc%val(n), "   rel_change:", rel_change
+            if(abs(rel_change) > abs_rel_change_max) then
+                rel_change_lim = sign(abs_rel_change_max, rel_change)
+                sgs_visc_val = sgs_visc%val(n) * (rel_change_lim+1)
+!                print*, "limited: ", sgs_visc_val
+!                print*, ""
+            end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
+        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_new
+
+
+
+
+
+
+    ! ================================================================================
+    !  Revised AMD Model, based on quasi-ansiotropic QR model.
+    ! ================================================================================
+
+    subroutine  calc_dg_sgs_amd_viscosity_new_mk2(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(tensor_field), pointer :: mviscosity
+        type(vector_field) :: u_grad, v_grad, w_grad
+        type(scalar_field), pointer :: dist_to_top, dist_to_bottom
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc, have_top
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_amd_val, sgs_visc_val, sgs_ele_av, sgs_limit, sgs_diff
+        integer :: i, j, k
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! QR stuff
+        real, allocatable :: dx(:)
+        real, dimension(:, :), allocatable :: B, S, dudx_n, del_dudx
+        real :: Cpoin, Csmag, BS, topbit, btmbit, filter_harm_sq ! filter_geom_mean_sq,
+
+!        ! Stabilisation stuff for really wide, thin elements
+        real :: stab_visc
+
+        ! These values are arbitrary and problem-dependent.
+        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=25
+        real, parameter :: stab_min_depth=3, stab_max_depth=25
+        real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
+        real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
+        real :: stab_dx_alpha, stab_depth_alpha
+
+        real :: scale_depth
+        integer :: udim
+
+        ! Switch Smagorinsky stuff for shallower waters (more stable)
+        ! When to switch it on? (blends gradually)
+        real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
+
+        real :: chan_depth, scale_to_surf
+        real :: sgs_surf_alpha, sgs_depth_alpha, sgs_smag_alpha
+        real :: sgs_smag_def !, sgs_smag_depth
+
+        real, parameter :: abs_rel_change_max = 1.5
+        real :: rel_change, rel_change_lim
+
+        print*, "In calc_dg_sgs_amd_viscosity_new_mk2()"
+
+        t1=mpi_wtime()
+
+        allocate(B(opDim,opDim), &
+                 S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
+        if (state_flag==0) then
+            have_top=.true.
+            dist_to_bottom=>extract_scalar_field(state, "DistanceToBottom", stat=state_flag)
+        else
+            have_top=.false.
+        end if
+
+        udim = vel_cg%dim
+
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+
+        ! Allocate gradient field
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
+        end if
+
+
+        ! sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
+
+        call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
+
+        ! Otherwise... problems
+        call halo_update(u_grad)
+        call halo_update(v_grad)
+        call halo_update(w_grad)
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+        ! Maximum allowable value for SGS visocosity
+        sgs_limit = mu*1e4
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        ! If we have a free surface, get Smagorinsky coefficient for surfafce
+        ! damping
+        if(have_top) then
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                    // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                    // "smagorinsky_coefficient", Csmag)
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+
+        ! Set entire SGS visc field to zero value initially
+        ! sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+
+! ============ QR CALCULATIONS COMMENTED OUT =============
+!           dx(:)=node_filter_lengths(:,n)
+!
+!           dudx_n(:,1) = u_grad%val(:,n)
+!           dudx_n(:,2) = v_grad%val(:,n)
+!           dudx_n(:,3) = w_grad%val(:,n)
+!
+!!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+!           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+!           ! According to Rozema et al, best choice for anisotropic grids
+!           ! filter_geom_mean_sq = (dx(1) * dx(2) * dx(3))**(2/3)
+!
+!           S = 0.5 * (dudx_n + transpose(dudx_n))
+!
+!           r = 0
+!           q = 0
+!           do i=1, opDim
+!              do j=1, opDim
+!                 do k=1, opDim
+!                    r  = r + S(i,j)*S(j,k)*S(k,i)
+!                 end do
+!                 q = q + S(i,j)*S(i,j)
+!              end do
+!           end do
+!           q = 0.5 * q
+!           r = - r / 3.
+!
+!           ! topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+!           !topbit = Cpoin * filter_geom_mean_sq * max(r, 0.0)
+!
+!           ! If the denominator is vanishing small, then set the SGS viscosity
+!           ! to zero
+!           if(q < 10e-10) then
+!              sgs_qr_val = 0.0
+!           else
+!              sgs_qr_val = topbit/q
+!           end if
+
+! ================ END OF QR CALCULATIONS ================
+
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           dx(:)=2.0*node_filter_lengths(:,n)
+
+!           didj(:,1) = dx(:)/dx(1)
+!           didj(:,2) = dx(:)/dx(2)
+!           didj(:,3) = dx(:)/dx(3)
+
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
+
+!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+!           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           do i=1, opDim
+              do j=1, opDim
+                 del_dudx(i,j) = dx(i) * dudx_n(i,j)
+              end do
+           end do
+
+           B = transpose(del_dudx) * del_dudx
+
+           BS = 0.
+           do i=1, opDim
+              do j=1, opDim
+                BS = BS + B(i,j) * S(i,j)
+              end do
+           end do
+
+!           topbit = rho * Cpoin * filter_harm_sq * max(-BS, 0.)
+           topbit = rho * Cpoin * max(-BS, 0.)
+
+
+           btmbit=0.
+           do i=1, opDim
+              do j=1, opDim
+                 btmbit = btmbit + dudx_n(i,j)**2
+              end do
+           end do
+
+           ! If the dominator is vanishing small, then set the AMD SGS
+           ! viscosity to zero
+           if(btmbit < 10e-10) then
+              sgs_amd_val = 0.0
+           else
+              sgs_amd_val = topbit/btmbit
+           end if
+
+
+            ! If free-surface, then we graduate to Smagorinsky near surface
+            ! for stability's sake (this suggested less anisotropic
+            ! (ie. 4:1) elements near surface.
+
+            if(have_top) then
+
+               chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+               if(chan_depth > chan_depth_deep) then
+                  sgs_depth_alpha = 0.
+               elseif(chan_depth < chan_depth_shallow) then
+                  sgs_depth_alpha = 1.
+               else
+                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
+                       / (chan_depth_deep - chan_depth_shallow)
+               end if
+
+
+
+               ! Switch to Standard smag near surface (more stable)
+               ! scale over quarter depth
+               scale_to_surf = (1./4.)*chan_depth
+
+               sgs_surf_alpha = 0.
+               if( dist_to_top%val(n) < scale_to_surf ) then
+                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
+               end if
+
+               ! Which to use for blending
+               if(sgs_depth_alpha > sgs_surf_alpha) then
+                  sgs_smag_alpha = sgs_depth_alpha
+               else
+                  sgs_smag_alpha = sgs_surf_alpha
+               end if
+
+               sgs_smag_def = (Csmag*Csmag) * filter_harm_sq * norm2(2.*S) * rho
+
+
+               ! Blend QR LES and Smagorinsky LES
+               sgs_visc_val = sgs_smag_alpha * sgs_smag_def &
+                    + (1.-sgs_smag_alpha) * sgs_amd_val
+            else
+               sgs_visc_val = sgs_amd_val
+            end if
+
+
+            ! Stabilisation viscosity for really wide, thin elements.
+            ! Peculiar to extruded tidal simulations.
+
+            if(have_top) then
+                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+                stab_dx_alpha = 0.
+                if ( dx(1) > stab_maxdx) then
+                    stab_dx_alpha = 1.
+                elseif( dx(1) > stab_mindx ) then
+                    stab_dx_alpha = (dx(1)-stab_mindx) / stab_dx_range
+                end if
+
+                stab_depth_alpha=0.
+                if (chan_depth < stab_min_depth ) then
+                    stab_depth_alpha=1.
+                elseif( chan_depth < stab_max_depth ) then
+                    stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
+                end if
+
+                stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
+
+            else
+                 stab_visc = 0.
+            end if
+
+
+            if(have_artificial_visc) then
+                sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+            end if
+
+            ! Just using element-size & depth based stabilisation for now.
+            sgs_visc_val = sgs_visc_val + stab_visc
+
+            ! Limiters
+            if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
+
+!             ! Checking relative change
+!             if(sgs_visc%val(n) < 10e-10) then
+!                 rel_change=0.0
+!             else
+!                 rel_change = (sgs_visc_val-sgs_visc%val(n)) / sgs_visc%val(n)
+!             end if
+
+! !            print*, "n:", n, "   sgs_visc_val:", sgs_visc_val, "   sgs_visc_old:", sgs_visc%val(n), "   rel_change:", rel_change
+!             if(abs(rel_change) > abs_rel_change_max) then
+!                 rel_change_lim = sign(abs_rel_change_max, rel_change)
+!                 sgs_visc_val = sgs_visc%val(n) * (rel_change_lim+1)
+! !                print*, "limited: ", sgs_visc_val
+! !                print*, ""
+!             end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
+        deallocate( B, S, dudx_n, del_dudx, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_new_mk2
+
+
+
+
+    ! ========================================================================
+    ! Use Anisotropic Minimum Dissipation (AMD) LES filter.
+    ! See Rozema et al, Computational Methods in Engineering, 2020.
+    ! ========================================================================
+
+    subroutine calc_dg_sgs_amd_viscosity_original(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: dist_to_wall
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements, n, num_nodes
+
+        integer :: state_flag
+
+        integer :: not_first_call
+        real :: blend
+
+        real, allocatable,save:: node_vol_weighted_sum(:,:,:), node_neigh_total_vol(:)
+        real, allocatable,save:: node_sum(:), node_peaky_sum(:)
+        integer, allocatable, save :: node_visits(:)
+        real, allocatable, save :: node_weight_sum(:)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_wall_distance, have_reference_density
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, ln, gnode
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable, save :: del(:,:)
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
+        real :: BS, topbit, btmbit, Cpoin
+
+
+        print*, "In calc_dg_sgs_amd_viscosity()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+                 del_gradu(opDim,opDim), B(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+        nullify(dist_to_wall)
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! Do we have a DistanceToWall field?
+        have_wall_distance=.false.
+        dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+        if (state_flag==0) then
+            print*, "DistanceToWall field: applying lengthscale limiting"
+            have_wall_distance=.true.
+        end if
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(node_sum)) then
+                deallocate(node_sum)
+                deallocate(node_peaky_sum)
+                deallocate(node_visits)
+                deallocate(node_vol_weighted_sum)
+                deallocate(node_weight_sum)
+                deallocate(node_neigh_total_vol)
+                deallocate(del)
+            end if
+
+            allocate(node_sum(num_nodes))
+            allocate(node_peaky_sum(num_nodes))
+            allocate(node_weight_sum(num_nodes))
+            allocate(node_visits(num_nodes))
+            allocate(node_vol_weighted_sum(u%dim, u%dim, num_nodes))
+            allocate(node_neigh_total_vol(num_nodes))
+            allocate(del(u%dim, num_nodes))
+
+            ! We can apply filter-length limiting if we have a distance_to_wall field
+            if(have_wall_distance) then
+                call amd_filter_lengths(X, del, dist_to_wall)
+            else
+                call amd_filter_lengths(X, del)
+            end if
+        end if
+
+        node_sum(:)=0.0
+        node_peaky_sum(:)=0.0
+        node_visits(:)=0
+        node_vol_weighted_sum(:,:,:)=0.0
+        node_neigh_total_vol(:)=0.0
+
+        ! Set entire SGS visc field to zero value initially
+        if( not_first_call==0 ) then
+            sgs_visc%val(:)=0.0
+        end if
+        not_first_call=1
+
+
+        do e=1, num_elements
+            u_cg_ele=ele_nodes(u_cg, e)
+
+            sgs_ele_av=0.0
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                dudx_n = u_grad%val(:,:,gnode)
+
+                S = 0.5 * (dudx_n + transpose(dudx_n))
+
+                do i=1, opDim
+                    do j=1, opDim
+                        del_gradu(i,j) = del(j,gnode) * dudx_n(j,i)
+                    end do
+                end do
+
+                B = matmul(transpose(del_gradu), del_gradu)
+
+                BS=0.0
+                do i=1, opDim
+                    do j=1, opDim
+                        BS = BS+B(i,j)*S(i,j)
+                    end do
+                end do
+
+                topbit = rho * Cpoin * max(-BS, 0.)
+
+
+                btmbit=0.
+                do i=1, opDim
+                    do j=1, opDim
+                        btmbit = btmbit + dudx_n(i,j)**2
+                    end do
+                end do
+
+                ! If the dominator is vanishing small, then set the SGS viscosity
+                ! to zero
+
+                if(btmbit < 10e-10) then
+                    sgs_visc_val = 0.
+                else
+                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
+                end if
+
+                ! Contributions of local node to shared node value.
+                node_peaky_sum(gnode) = node_peaky_sum(gnode) + sgs_visc_val
+
+                sgs_ele_av = sgs_ele_av + sgs_visc_val
+            end do
+
+            sgs_ele_av = sgs_ele_av / opNloc
+
+            ! Give each corner node the average
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+                node_sum(gnode) = node_sum(gnode) + sgs_ele_av
+                node_visits(gnode) = node_visits(gnode) + 1
+            end do
+
+        end do
+
+        ! Set final values.
+        do n=1, num_nodes
+            ! Blend of element-averaged value and local node averaged value
+            ! blend=0...1 (0=peaky, 1=smoothed)
+            blend=0.5
+            sgs_visc_val = (blend*node_sum(n) + (1-blend)*node_peaky_sum(n)) &
+                         / node_visits(n)
+
+            ! Hard limit again.
+            sgs_visc_val = min(sgs_visc_val, mu*10e5)
+
+            call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele )
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_original
+
+
+
+
+
+
+    ! ================================================================================
+    !  QR Model.
+    ! ================================================================================
+
+
+    subroutine calc_dg_sgs_qr_viscosity(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: artificial_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: vel_cg
+        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(tensor_field), pointer :: mviscosity
+        type(vector_field) :: u_grad, v_grad, w_grad
+        type(scalar_field), pointer :: dist_to_top, dist_to_bottom
+
+        integer :: n, num_nodes
+
+        integer :: state_flag
+
+        real :: blend
+
+        real, allocatable :: node_filter_lengths(:,:)
+        real :: minmaxlen(2)
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density, have_filter_field
+        logical :: have_artificial_visc, have_top
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_qr_val, sgs_visc_val, sgs_ele_av, sgs_limit, sgs_diff
+        integer :: i, j, k
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! QR stuff
+        real, allocatable :: dx(:)
+        real, dimension(:, :), allocatable :: S, dudx_n, del_dudx
+        real :: r, q, Cpoin, Csmag, topbit, filter_harm_sq ! filter_geom_mean_sq,
+
+!        ! Stabilisation stuff for really wide, thin elements
+        real :: stab_visc
+
+        ! These values are arbitrary and problem-dependent.
+        real, parameter :: stab_visc_max=0.018, stab_mindx=5.0, stab_maxdx=25
+        real, parameter :: stab_min_depth=3, stab_max_depth=25
+        real, parameter :: stab_depth_range = (stab_max_depth-stab_min_depth)
+        real, parameter :: stab_dx_range = (stab_maxdx-stab_mindx)
+        real :: stab_dx_alpha, stab_depth_alpha
+
+        real :: scale_depth
+        integer :: udim
+
+        ! Switch Smagorinsky stuff for shallower waters (more stable)
+        ! When to switch it on? (blends gradually)
+        real, parameter :: chan_depth_shallow = 3.01, chan_depth_deep = 7.5
+
+        real :: chan_depth, scale_to_surf
+        real :: sgs_surf_alpha, sgs_depth_alpha, sgs_smag_alpha
+        real :: sgs_smag_def !, sgs_smag_depth
+
+        real, parameter :: abs_rel_change_max = 1.5
+        real :: rel_change, rel_change_lim
+
+        print*, "In calc_dg_sgs_qr_viscosity()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim), &
+                 dudx_n(opDim,opDim), &
+                 del_dudx(opDim,opDim), &
+                 dx(opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+! I think this is the suspect call -- not needed.
+!        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        dist_to_top=>extract_scalar_field(state, "DistanceToTop", stat=state_flag)
+        if (state_flag==0) then
+            have_top=.true.
+            dist_to_bottom=>extract_scalar_field(state, "DistanceToBottom", stat=state_flag)
+        else
+            have_top=.false.
+        end if
+
+        udim = vel_cg%dim
+
+        ! We are doing it this way, as I cannot be sure which gradient tensor
+        ! component are which.
+        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
+        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
+        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+
+        ! Allocate gradient field
+        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
+        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
+        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
+             stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG QR LES. (This should not happen)")
+        end if
+
+
+        ! sgs_visc%val(:)=0.0
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
+
+        call grad(u_cg, x, u_grad)
+        call grad(v_cg, x, v_grad)
+        call grad(w_cg, x, w_grad)
+
+        ! Otherwise... problems
+        call halo_update(u_grad)
+        call halo_update(v_grad)
+        call halo_update(w_grad)
+        
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+        ! Maximum allowable value for SGS visocosity
+        sgs_limit = mu*1e4
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        ! If we have a free surface, get Smagorinsky coefficient for surfafce
+        ! damping
+        if(have_top) then
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                    // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                    // "smagorinsky_coefficient", Csmag)
+        end if
+
+        num_nodes = u_cg%mesh%nodes
+
+        allocate(node_filter_lengths(opDim, num_nodes))
+        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+                          
+
+        ! Set entire SGS visc field to zero value initially
+        ! sgs_visc%val(:)=0.0
+
+        do n=1, num_nodes
+           dx(:)=node_filter_lengths(:,n)
+
+           dudx_n(:,1) = u_grad%val(:,n)
+           dudx_n(:,2) = v_grad%val(:,n)
+           dudx_n(:,3) = w_grad%val(:,n)
+
+!           ! Harmonic mean of individual filter lengths (Verstappen et al)
+           filter_harm_sq = 3.0 / ( dx(1)**(-2)+ dx(2)**(-2) + dx(3)**(-2) )
+           ! According to Rozema et al, best choice for anisotropic grids
+           ! filter_geom_mean_sq = (dx(1) * dx(2) * dx(3))**(2/3)
+
+           S = 0.5 * (dudx_n + transpose(dudx_n))
+
+           r = 0
+           q = 0
+           do i=1, opDim
+              do j=1, opDim
+                 do k=1, opDim
+                    r  = r + S(i,j)*S(j,k)*S(k,i)
+                 end do
+                 q = q + S(i,j)*S(i,j)
+              end do
+           end do
+           q = 0.5 * q
+           r = - r / 3.
+
+           topbit = Cpoin * filter_harm_sq * max(r, 0.0)
+           !topbit = Cpoin * filter_geom_mean_sq * max(r, 0.0)
+
+           ! If the denominator is vanishing small, then set the SGS viscosity
+           ! to zero
+           if(q < 10e-10) then
+              sgs_qr_val = 0.0
+           else
+              sgs_qr_val = topbit/q
+           end if
+
+
+            ! If free-surface, then we graduate to Smagorinsky near surface
+            ! for stability's sake (this suggested less anisotropic
+            ! (ie. 4:1) elements near surface.
+
+            if(have_top) then
+
+               chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+               
+               if(chan_depth > chan_depth_deep) then
+                  sgs_depth_alpha = 0.
+               elseif(chan_depth < chan_depth_shallow) then
+                  sgs_depth_alpha = 1.
+               else
+                  sgs_depth_alpha = (chan_depth_deep - chan_depth) &
+                       / (chan_depth_deep - chan_depth_shallow)
+               end if
+
+
+
+               ! Switch to Standard smag near surface (more stable)
+               ! scale over quarter depth
+               scale_to_surf = (1./4.)*chan_depth
+
+               sgs_surf_alpha = 0.
+               if( dist_to_top%val(n) < scale_to_surf ) then
+                  sgs_surf_alpha = 1.0-dist_to_top%val(n)/scale_to_surf
+               end if
+
+               ! Which to use for blending
+               if(sgs_depth_alpha > sgs_surf_alpha) then
+                  sgs_smag_alpha = sgs_depth_alpha
+               else
+                  sgs_smag_alpha = sgs_surf_alpha
+               end if
+
+               sgs_smag_def = (Csmag*Csmag) * filter_harm_sq * rho * norm2(2.*S)
+
+               ! sgs_smag_depth = sgs_depth_alpha * sgs_smag_def
+
+
+               ! Blend QR LES and Smagorinsky LES
+               sgs_visc_val = sgs_smag_alpha * sgs_smag_def &
+                    + (1.-sgs_smag_alpha) * sgs_qr_val
+               
+!                    + sgs_smag_depth
+!               sgs_visc_val = sgs_qr_val + sgs_smag_depth
+            end if
+
+
+            ! Stabilisation viscosity for really wide, thin elements.
+            ! Peculiar to extruded tidal simulations.
+
+            if(have_top) then
+                chan_depth = dist_to_top%val(n) + dist_to_bottom%val(n)
+
+                stab_dx_alpha = 0.
+                if ( dx(1) > stab_maxdx) then
+                    stab_dx_alpha = 1.
+                elseif( dx(1) > stab_mindx ) then
+                    stab_dx_alpha = (dx(1)-stab_mindx) / stab_dx_range
+                end if
+
+                stab_depth_alpha=0.
+                if (chan_depth < stab_min_depth ) then
+                    stab_depth_alpha=1.
+                elseif( chan_depth < stab_max_depth ) then
+                    stab_depth_alpha = (stab_max_depth-chan_depth) / stab_depth_range
+                end if
+
+                stab_visc = stab_visc_max * stab_dx_alpha * stab_depth_alpha
+
+            else
+                 stab_visc = 0.
+            end if
+
+           
+            if(have_artificial_visc) then
+                sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
+            end if
+
+            ! Just using element-size & depth based stabilisation for now.
+            sgs_visc_val = sgs_visc_val + stab_visc
+
+            ! Limiters
+            if(sgs_visc_val > sgs_limit) sgs_visc_val=sgs_limit
+
+            ! Checking relative change
+            if(sgs_visc%val(n) < 10e-10) then
+                rel_change=0.0
+            else
+                rel_change = (sgs_visc_val-sgs_visc%val(n)) / sgs_visc%val(n)
+            end if
+
+!            print*, "n:", n, "   sgs_visc_val:", sgs_visc_val, "   sgs_visc_old:", sgs_visc%val(n), "   rel_change:", rel_change
+            if(abs(rel_change) > abs_rel_change_max) then
+                rel_change_lim = sign(abs_rel_change_max, rel_change)
+                sgs_visc_val = sgs_visc%val(n) * (rel_change_lim+1)
+!                print*, "limited: ", sgs_visc_val
+!                print*, ""
+            end if
+
+           call set(sgs_visc, n,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        call deallocate(v_grad)
+        call deallocate(w_grad)
+        deallocate( S, dudx_n, del_dudx, u_cg_ele, dx )
+
+        deallocate(node_filter_lengths)
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_qr_viscosity
 
 
     ! =========================================================================
@@ -290,7 +1893,7 @@ contains
     ! =========================================================================
 
 
-    subroutine calc_dg_sgs_vreman_viscosity_old(state, x, u)
+    subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -405,10 +2008,17 @@ contains
             FLAbort("DG_LES: missing reference density option in equation_of_state")
         end if
 
-        call get_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/vreman" &
-            // "poincaire_constant", &
-            Cpoin)
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
 
         num_nodes = u_cg%mesh%nodes
 
@@ -480,16 +2090,17 @@ contains
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
-    end subroutine calc_dg_sgs_vreman_viscosity_old
+    end subroutine calc_dg_sgs_vreman_viscosity
 
 
 
     ! ========================================================================
     ! Use LES for anisotropic grids, using vorticity-derived filter lengths.
     ! Based upon Chauvet (2007)
-    ! **** DISABLED ****
     ! ========================================================================
 
+
+    ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
     subroutine calc_dg_sgs_amd_viscosity(state, x, u)
         type(state_type), intent(in) :: state
@@ -498,17 +2109,202 @@ contains
         character(len=OPTION_PATH_LEN) :: scalar_eddy_visc_path
         character(len=256) :: mesh_name
 
+        ! Currently goes straight to nodal AMD LES
 
 !        call calc_dg_sgs_amd_viscosity_node(state, x, u)
         ! Calling QR for now, see how it does.
 !        call calc_dg_sgs_qr_viscosity(state, x, u)
 !        call calc_dg_sgs_amd_viscosity_new(state, x, u)
-!        call calc_dg_sgs_amd_viscosity_new_mk2(state, x, u)
-        FLAbort("DG AMD LES support removed.")
+        call calc_dg_sgs_amd_viscosity_new_mk2(state, x, u)
+
     end subroutine calc_dg_sgs_amd_viscosity
 
 
 
+    ! =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+
+    subroutine calc_dg_sgs_amd_viscosity_ele(state, x, u)
+        ! Passed parameters
+        type(state_type), intent(in) :: state
+
+        type(vector_field), intent(in) :: u, x
+        type(scalar_field), pointer :: sgs_visc
+
+        ! Velocity (CG) field, pointer to X field, and gradient
+        type(vector_field), pointer :: u_cg
+        type(tensor_field), pointer :: mviscosity
+        type(tensor_field) :: u_grad
+
+        integer :: e, num_elements
+        integer :: state_flag
+
+        real (kind=8) :: t1, t2
+        real (kind=8), external :: mpi_wtime
+
+        logical :: have_reference_density
+
+        ! Reference density
+        real :: rho, mu
+
+        ! For scalar tensor eddy visc magnitude field
+        real :: sgs_visc_val, sgs_ele_av
+        integer :: i, j, ln, gnode
+
+        integer, allocatable :: u_cg_ele(:)
+
+        ! AMD stuff
+        real, allocatable, save :: del(:,:)
+        real, dimension(:, :), allocatable :: S, dudx_n, del_gradu, B
+        real :: BS, topbit, btmbit, Cpoin
+
+
+        print*, "In calc_dg_sgs_amd_viscosity_ele()"
+
+        t1=mpi_wtime()
+
+        allocate( S(opDim,opDim),       dudx_n(opDim,opDim), &
+                 del_gradu(opDim,opDim), B(opDim,opDim) )
+        allocate( u_cg_ele(opNloc) )
+
+        nullify(mviscosity)
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        call grad(u_cg, x, u_grad)
+        call halo_update(u_grad)
+
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+
+        ! Molecular viscosity
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
+
+        ! We only use the reference density. This assumes the variation in density will be
+        ! low (ie < 10%)
+        have_reference_density=have_option("/material_phase::"&
+            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
+
+        if(have_reference_density) then
+            call get_option("/material_phase::"&
+                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
+                rho)
+        else
+            FLAbort("DG_LES: missing reference density option in equation_of_state")
+        end if
+
+        ! The Poincare constant (default 0.3)
+        if(have_option(trim(u%option_path)//"/prognostic/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "poincare_constant")) then
+
+            call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "poincare_constant", Cpoin)
+        else
+            Cpoin=0.3
+        end if
+
+        num_elements = ele_count(u_cg)
+
+        ! We only allocate if mesh connectivity unchanged from
+        ! last iteration; reuse saved arrays otherwise
+
+        if(new_mesh_connectivity) then
+            if(allocated(del)) then
+                deallocate(del)
+            end if
+
+            allocate(del(u%dim, num_elements))
+
+            call aniso_filter_lengths(X, del)
+        end if
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+        do e=1, num_elements
+            u_cg_ele=ele_nodes(u_cg, e)
+
+            ! Go around
+            sgs_ele_av=0.0
+            do ln=1, opNloc
+                gnode = u_cg_ele(ln)
+
+                dudx_n = u_grad%val(:,:,gnode)
+
+                S = 0.5 * (dudx_n + transpose(dudx_n))
+
+                do i=1, opDim
+                    do j=1, opDim
+                        del_gradu(i,j) = del(j,gnode) * dudx_n(j,i)
+                    end do
+                end do
+
+                B = matmul(transpose(del_gradu), del_gradu)
+
+                BS=0.0
+                do i=1, opDim
+                    do j=1, opDim
+                        BS = BS+B(i,j)*S(i,j)
+                    end do
+                end do
+
+                topbit = rho * Cpoin * max(-BS, 0.)
+
+
+                btmbit=0.
+                do i=1, opDim
+                    do j=1, opDim
+                        btmbit = btmbit + dudx_n(i,j)**2
+                    end do
+                end do
+
+                ! If the dominator is vanishing small, then set the SGS viscosity
+                ! to zero
+
+                if(btmbit < 10e-10) then
+                    sgs_visc_val = 0.
+                else
+                    sgs_visc_val = min(topbit/btmbit, mu*10e5)
+                end if
+
+                sgs_ele_av = sgs_ele_av + sgs_visc_val
+            end do
+
+            sgs_ele_av = sgs_ele_av / opNloc
+
+            ! If we're over this value, reset
+            if(sgs_visc_val > mu*10e4) sgs_visc_val=0.
+
+            call set(sgs_visc, e,  sgs_visc_val)
+        end do
+
+        ! Must be done to avoid discontinuities at halos
+        call halo_update(sgs_visc)
+
+        call deallocate(u_grad)
+        deallocate( S, dudx_n, del_gradu, B, u_cg_ele )
+
+        t2=mpi_wtime()
+
+        print*, "**** DG_LES_execution_time:", (t2-t1)
+
+    end subroutine calc_dg_sgs_amd_viscosity_ele
 
 
     ! ========================================================================
@@ -681,7 +2477,6 @@ contains
 
 
 
-
     subroutine les_length_scales_squared_mk2(positions, ele, horzSq, vertSq)
         type(vector_field), intent(in) :: positions
         integer :: ele
@@ -762,8 +2557,8 @@ contains
     ! Roman et al tensor viscosity. Split horizontal/vertical LES SGS
     ! viscosity. Requres tensor sgs viscosity field.
     ! ========================================================================
-    
-    subroutine calc_dg_sgs_roman_viscosity(state, x, u)
+
+   subroutine calc_dg_sgs_roman_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
 
@@ -787,8 +2582,8 @@ contains
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
         real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mag_strain_horz, mag_strain_vert !, mag_strain_r
-        real :: sgs_horz, sgs_vert !, sgs_r
+        real :: mag_strain_horz, mag_strain_vert
+        real :: sgs_horz, sgs_vert
 
         real :: sgs_visc_mag_val
 
@@ -910,6 +2705,18 @@ contains
 
         allocate(dx_ele_raw(3, num_elements))
 
+        ! Calculate nodal filter lengths.
+        call aniso_filter_elelengths(x, dx_ele_raw)
+        ! Put into field
+
+        do e=1, num_elements
+            elelen%val(:, e) = dx_ele_raw(:, e)
+        end do
+        call halo_update(elelen)
+
+        ! project to node-based (1st order) field
+        call project_field(elelen, nodelen, x)
+        call halo_update(nodelen)
 
 
         ! Set entire SGS visc field to zero value initially
@@ -924,21 +2731,17 @@ contains
             ! This is the contribution to nu_sgs from each co-occupying node
             rate_of_strain = 0.5 * (u_grad%val(:,:, n) + transpose(u_grad%val(:,:, n)))
 
-            ! According to Armenio, not Roman...
             mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
-                                   + 2.0* rate_of_strain(2,2)**2.0 &
-                                   + 4.0* rate_of_strain(1,2)**2.0 )
+                                 + 2.0* rate_of_strain(2,2)**2.0 &
+                                 + 4.0* rate_of_strain(1,2)**2.0 )
 
-            mag_strain_vert = sqrt( 4.0* rate_of_strain(1,3)**2.0 &
-                                   + 2.0* rate_of_strain(3,3)**2.0 &
-                                   + 4.0* rate_of_strain(3,2)**2.0 )
-
-            ! mag_strain_r = sqrt(2.0 * rate_of_strain(3,3)**2.0)
+            mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
+                             + 2.0* rate_of_strain(3,3)**2.0 &
+                             + 4.0* rate_of_strain(3,2)**2.0 )
 
             ! Note, this is without density. That comes later.
             sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
             sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
-            ! sgs_r =  rho * Cs_length_vert_sq * mag_strain_r
 
             ! As per Roman et al, 2010.
             visc_turb(1:2, 1:2) = sgs_horz
@@ -947,6 +2750,7 @@ contains
             visc_turb(2, 3) = sgs_vert
             visc_turb(3, 2) = sgs_vert
             visc_turb(3, 3) = sgs_vert
+            
             ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
             ! Otherwise this is potentially negative (!)
             ! visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
@@ -973,7 +2777,7 @@ contains
                 sgs_visc_mag_val = sgs_visc_mag_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
             end do
             sgs_visc_mag_val = sqrt(sgs_visc_mag_val)
-            
+
             call set(sgs_visc, n,  tmp_tensor)
             call set(sgs_visc_mag, n, sgs_visc_mag_val )
 
@@ -994,225 +2798,6 @@ contains
         print*, "**** DG_LES_execution_time:", (t2-t1)
 
     end subroutine calc_dg_sgs_roman_viscosity
-
-
-
-    ! ========================================================================
-    ! Vreman revised viscosity
-    ! ========================================================================
-
-
-   subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
-        ! Passed parameters
-        type(state_type), intent(in) :: state
-
-        type(vector_field), intent(in) :: u, x
-        type(scalar_field), pointer :: sgs_visc
-        type(scalar_field), pointer :: artificial_visc
-
-        ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: vel_cg
-        type(scalar_field) :: u_cg, v_cg, w_cg
-        type(tensor_field), pointer :: mviscosity
-        type(vector_field) :: u_grad, v_grad, w_grad
-        type(vector_field), pointer :: elelen, nodelen
-        real, allocatable :: dx_ele_raw(:,:)
-
-        integer :: n, num_nodes, e, num_elements
-        integer :: state_flag
-
-        real (kind=8) :: t1, t2
-        real (kind=8), external :: mpi_wtime
-
-        logical :: have_reference_density, have_filter_field
-        logical :: have_artificial_visc
-
-        ! Reference density
-        real :: rho, mu
-
-        ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av
-        integer :: i, j, k
-
-        integer, allocatable :: u_cg_ele(:)
-
-        ! Vreman stuff
-        real, allocatable :: dx(:)
-        real, dimension(:, :), allocatable :: alpha_ij, beta_ij, dudx
-        real :: alpha_sum, B_beta, Cpoin
-        integer :: udim
-
-        print*, "In calc_dg_sgs_vreman_viscosity()"
-
-        t1=mpi_wtime()
-
-        allocate( alpha_ij(opDim,opDim), beta_ij(opDim,opDim), dudx(opDim,opDim), &
-             dx(opDim) )
-        allocate( u_cg_ele(opNloc) )
-
-        ! Length scales for filter
-        elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
-        nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
-
-        ! I think this is the suspect call -- maybe!
-        nullify(mviscosity)
-
-        ! Velocity projected to continuous Galerkin
-        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        num_elements = ele_count(vel_cg)
-        num_nodes = vel_cg%mesh%nodes
-        allocate(dx_ele_raw(3, num_elements))
-
-        ! Calculate nodal filter lengths.
-        call aniso_filter_elelengths(x, dx_ele_raw)
-        ! Put into field
-
-        do e=1, num_elements
-            elelen%val(:, e) = dx_ele_raw(:, e)
-        end do
-        call halo_update(elelen)
-
-        ! project to node-based (1st order) field
-        call project_field(elelen, nodelen, x)
-        call halo_update(nodelen)
-
-        udim = vel_cg%dim
-
-        ! We are doing it this way, as I cannot be sure which gradient tensor
-        ! component are which.
-        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
-        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
-        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
-
-        ! Allocate gradient field
-        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
-        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
-        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
-
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
-             stat=state_flag)
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
-        end if
-        sgs_visc%val(:)=0.0
-
-        ! We can use this in areas of insufficient resolution
-        have_artificial_visc = .false.
-        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
-             stat=state_flag)
-        if(state_flag == 0) then
-           print*, "ArtificialViscosity field detected."
-           have_artificial_visc = .true.
-        end if
-
-        call grad(u_cg, x, u_grad)
-        call grad(v_cg, x, v_grad)
-        call grad(w_cg, x, w_grad)
-
-        ! Molecular viscosity
-        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-            mu=mviscosity%val(1,1,1)
-        else
-            FLAbort("DG_LES: must have constant or normal viscosity field")
-        end if
-
-
-        ! We only use the reference density. This assumes the variation in density will be
-        ! low (ie < 10%)
-        have_reference_density=have_option("/material_phase::"&
-            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
-
-        if(have_reference_density) then
-            call get_option("/material_phase::"&
-                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
-                rho)
-        else
-            FLAbort("DG_LES: missing reference density option in equation_of_state")
-        end if
-
-        ! The Poincare constant (default 0.3)
-        if(have_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
-            // "poincare_constant")) then
-
-            call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
-                // "poincare_constant", Cpoin)
-        else
-            Cpoin=0.3
-        end if
-
-        num_nodes = u_cg%mesh%nodes
-
-
-        ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
-
-        do n=1, num_nodes
-           dx(:)=nodelen%val(:,n)
-
-           dudx(:,1) = u_grad%val(:,n)
-           dudx(:,2) = v_grad%val(:,n)
-           dudx(:,3) = w_grad%val(:,n)
-
-           alpha_ij = dudx
-
-           alpha_sum = 0.0
-           beta_ij = 0.0
-           do i=1, opDim
-              do j=1, opDim
-                 alpha_sum = alpha_sum + alpha_ij(i,j)*alpha_ij(i,j)
-                 do k=1, opDim
-                    beta_ij = beta_ij + (dx(k)**2.)*alpha_ij(k,i)*alpha_ij(k,j)
-                 end do
-              end do
-           end do
-
-           B_beta = &
-                  (beta_ij(1,1)*beta_ij(2,2) - beta_ij(1,2)**2.) &
-                + (beta_ij(1,1)*beta_ij(3,3) - beta_ij(1,3)**2.) &
-                + (beta_ij(2,2)*beta_ij(3,3) - beta_ij(2,3)**2.)
-
-           if( alpha_sum < 10e-10) then
-              sgs_visc_val = 0.0
-           else
-              sgs_visc_val = Cpoin * sqrt( B_beta / alpha_sum )
-           end if
-
-           if(have_artificial_visc) then
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-           end if
-
-            ! Limiter
-            if(sgs_visc_val > mu*10e4) then
-               if(sgs_visc%val(n) < mu*10e4) then
-                  sgs_visc_val=sgs_visc%val(n)
-               else
-                  sgs_visc_val=0.
-               end if
-            end if
-
-           call set(sgs_visc, n,  sgs_visc_val)
-        end do
-
-        ! Must be done to avoid discontinuities at halos
-        call halo_update(sgs_visc)
-
-        call deallocate(u_grad)
-        call deallocate(v_grad)
-        call deallocate(w_grad)
-        deallocate( alpha_ij, beta_ij, dudx, u_cg_ele, dx, dx_ele_raw )
-
-        t2=mpi_wtime()
-
-        print*, "**** DG_LES_execution_time:", (t2-t1)
-
-
-    end subroutine calc_dg_sgs_vreman_viscosity
 
 
     ! ========================================================================

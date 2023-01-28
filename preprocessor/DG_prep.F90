@@ -360,11 +360,6 @@ contains
 
         call add_option(trim(element_lengthscales_path)//"diagnostic/output", stat)
         call add_option(trim(node_lengthscales_path)//"diagnostic/output", stat)
-        ! If false, make sure lengthscales are not written out.
-        if (.not. output_lengthscales) then
-           call add_option(trim(element_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
-           call add_option(trim(node_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
-        end if
         ewrite(1,*) "Creating ElementLengthScales field"
 
         call add_option(trim(element_lengthscales_path), stat)
