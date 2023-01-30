@@ -209,7 +209,7 @@ contains
             element_lengthscales_path, node_lengthscales_path
 
         ! Set to true for now
-        logical, parameter :: output_lengthscales = .false.
+        logical, parameter :: output_lengthscales = .true.
 
         logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress

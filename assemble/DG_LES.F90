@@ -2813,7 +2813,8 @@ contains
         real :: X_val(pos%dim, opNloc)
         real :: X_mean(pos%dim), r, diffx, diffy, diffz, maxdz
         real :: X_tri(pos%dim-1, 3)
-        real :: area, a, b, c, s, tmplen
+        real :: area, a, b, c, s, tmplen, vol
+        real, parameter :: pi=3.14159265359
         integer :: i, n, m, trix
         integer :: stpair(2)
 
@@ -2821,6 +2822,7 @@ contains
         logical :: extruded_mesh
 
         X_val=ele_val(pos, ele)
+        vol = element_volume(pos, ele)
 
         ! What we do depends upon whether this is an extruded mesh or not.
 
@@ -2906,11 +2908,13 @@ contains
         end do
 
         if(extruded_mesh) then
+           ! tmplen = sqrt(del(1)**2 + del(2)**2)
+           ! del(1) = tmplen
+           ! del(2) = tmplen
 
-           tmplen = sqrt(del(1)**2 + del(2)**2)
-           del(1) = tmplen
-           del(2) = tmplen
-
+           ! Fitting to an ellipsoid
+           del(1) = ( (6*vol) / (pi*del(3)) )**0.5
+           del(2) = del(1)
         end if
 
 !        end if
