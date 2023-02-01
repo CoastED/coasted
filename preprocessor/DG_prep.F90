@@ -268,6 +268,13 @@ contains
             if(have_isotropic_les .or. have_amd_les .or. have_vreman_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
+                if(have_isotropic_les) then
+                    ewrite(1,*) "For Smagorinsky LES model"
+                elseif(have_vreman_les) then
+                    ewrite(1,*) "For Vreman LES model"
+                elseif(have_amd_les) then
+                    FLAbort("AMD LES isn't supported any more. Stopping program ***")
+                end if
 
                 call add_option(trim(scalar_eddy_visc_path), stat)
                 call set_option_attribute(trim(scalar_eddy_visc_path)//"rank", "0", stat)

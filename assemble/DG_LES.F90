@@ -355,6 +355,8 @@ contains
         end if
 
         call grad(u_cg, x, u_grad)
+        ! Crucially, update halos for use
+        call halo_update(u_grad)
 
         ! Molecular viscosity
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
