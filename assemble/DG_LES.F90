@@ -127,7 +127,7 @@ contains
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
 
-        print*, "calc_dg_sgs_scalar_viscosity"
+        print*, "calc_dg_sgs_scalar_viscosity (Smag)"
 
         t1=mpi_wtime()
 
@@ -216,9 +216,6 @@ contains
             Cs)
 
 
-        ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
-
         ! Calculate element-wise filter lengths
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
@@ -230,6 +227,11 @@ contains
         ! project to node-based (1st order) field
         call project_field(elelen, nodelen, x)
         call halo_update(nodelen)
+
+        ! Set entire SGS visc field to zero value initially
+        sgs_visc%val(:)=0.0
+
+
 
         ! Go round all the nodes, calculating SGS viscosity
         num_nodes = u_cg%mesh%nodes
@@ -284,19 +286,11 @@ contains
         type(scalar_field), pointer :: artificial_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: vel_cg
-        type(scalar_field) :: u_cg, v_cg, w_cg
+        type(vector_field), pointer :: u_cg
         type(tensor_field), pointer :: mviscosity
-        type(vector_field) :: u_grad, v_grad, w_grad
-
-        integer :: n, num_nodes
-
+        type(tensor_field) :: u_grad
+        integer :: n, num_nodes, e, num_elements
         integer :: state_flag
-
-        real :: blend
-
-        real, allocatable :: node_filter_lengths(:,:)
-        real :: minmaxlen(2)
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -311,47 +305,45 @@ contains
         real :: sgs_visc_val, sgs_ele_av
         integer :: i, j, k
 
-        integer, allocatable :: u_cg_ele(:)
-
         ! Vreman stuff
-        real, allocatable :: dx(:)
         real, dimension(:, :), allocatable :: alpha_ij, beta_ij, dudx
         real :: alpha_sum, B_beta, Cpoin
         integer :: udim
+        type(vector_field), pointer :: elelen, nodelen
 
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
         t1=mpi_wtime()
 
-        allocate( alpha_ij(opDim,opDim), beta_ij(opDim,opDim), dudx(opDim,opDim), &
-             dx(opDim) )
-        allocate( u_cg_ele(opNloc) )
+        allocate( alpha_ij(opDim,opDim), beta_ij(opDim,opDim), dudx(opDim,opDim))
 
 ! I think this is the suspect call -- not needed.
-!        nullify(mviscosity)
+        nullify(mviscosity)
+
+        ! Length scales for filter
+        elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
+        nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
+
+        if(state_flag == 0) then
+           print*, "**** Have ScalarElementLengthScales and ScalarNodeLengthScales fields"
+        else
+           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Scalar Vreman DG LES. This should have been automatically created.")
+        end if
 
         ! Velocity projected to continuous Galerkin
-        vel_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
-        udim = vel_cg%dim
-
-        ! We are doing it this way, as I cannot be sure which gradient tensor
-        ! component are which.
-        u_cg=extract_scalar_field_from_vector_field(vel_cg, 1)
-        v_cg=extract_scalar_field_from_vector_field(vel_cg, 2)
-        w_cg=extract_scalar_field_from_vector_field(vel_cg, 3)
+        udim = u_cg%dim
 
         ! Allocate gradient field
-        call allocate(u_grad, opDim, vel_cg%mesh, "VelocityCGGradient_x")
-        call allocate(v_grad, opDim, vel_cg%mesh, "VelocityCGGradient_y")
-        call allocate(w_grad, opDim, vel_cg%mesh, "VelocityCGGradient_z")
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
 
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
              stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG AMD LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarEddyViscosity absent for DG Vreman LES. (This should not happen)")
         end if
-        sgs_visc%val(:)=0.0
+
 
         ! We can use this in areas of insufficient resolution
         have_artificial_visc = .false.
@@ -363,8 +355,6 @@ contains
         end if
 
         call grad(u_cg, x, u_grad)
-        call grad(v_cg, x, v_grad)
-        call grad(w_cg, x, w_grad)
 
         ! Molecular viscosity
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
@@ -404,29 +394,42 @@ contains
 
         num_nodes = u_cg%mesh%nodes
 
-        allocate(node_filter_lengths(opDim, num_nodes))
-        call aniso_filter_lengths(x, node_filter_lengths, minmaxlen)
+
+        ! Calculate element-wise filter lengths
+        num_elements = ele_count(u_cg)
+        num_nodes = u_cg%mesh%nodes
+        do e=1, num_elements
+            elelen%val(:,e) = (element_volume(x, e))**(1./3.)
+        end do
+        call halo_update(elelen)
+
+        ! project to node-based (1st order) field
+        call project_field(elelen, nodelen, x)
+        call halo_update(nodelen)
 
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
 
         do n=1, num_nodes
-           dx(:)=node_filter_lengths(:,n)
 
-           dudx(:,1) = u_grad%val(:,n)
-           dudx(:,2) = v_grad%val(:,n)
-           dudx(:,3) = w_grad%val(:,n)
+!           dudx(:,1) = u_grad%val(:,n)
+!           dudx(:,2) = v_grad%val(:,n)
+!           dudx(:,3) = w_grad%val(:,n)
+           dudx(:,1) = u_grad%val(1,:,n)
+           dudx(:,2) = u_grad%val(2,:,n)
+           dudx(:,3) = u_grad%val(3,:,n)
 
            alpha_ij = dudx
 
            alpha_sum = 0.0
            beta_ij = 0.0           
+
            do i=1, opDim
               do j=1, opDim
                  alpha_sum = alpha_sum + alpha_ij(i,j)*alpha_ij(i,j)
                  do k=1, opDim
-                    beta_ij = beta_ij + (dx(k)**2.)*alpha_ij(k,i)*alpha_ij(k,j)
+                    beta_ij = beta_ij + (nodelen%val(k,n)**2.)*alpha_ij(k,i)*alpha_ij(k,j)
                  end do
               end do
            end do
@@ -462,11 +465,7 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
-        call deallocate(v_grad)
-        call deallocate(w_grad)
-        deallocate( alpha_ij, beta_ij, dudx, u_cg_ele, dx )
-
-        deallocate(node_filter_lengths)
+        deallocate( alpha_ij, beta_ij, dudx )
 
         t2=mpi_wtime()
 
@@ -739,6 +738,8 @@ contains
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
         type(tensor_field), pointer :: mviscosity
+        type(scalar_field), pointer :: artificial_visc
+
         type(vector_field), pointer :: elelen, nodelen
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
@@ -779,6 +780,8 @@ contains
         real :: sgs_visc_val
         integer :: i
 
+        logical :: have_artificial_visc
+
         print*, "In calc_dg_sgs_roman_viscosity()"
 
         t1=mpi_wtime()
@@ -807,8 +810,16 @@ contains
         else
            FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
         end if
-        
         sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
+
+        ! We can use this in areas of insufficient resolution
+        have_artificial_visc = .false.
+        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
+             stat=state_flag)
+        if(state_flag == 0) then
+           print*, "ArtificialViscosity field detected."
+           have_artificial_visc = .true.
+        end if
 
         if (state_flag /= 0) then
             FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
@@ -939,6 +950,9 @@ contains
 
             tmp_tensor = vd_damping * rho * visc_turb
 
+            if(have_artificial_visc) then
+                tmp_tensor(:,:) = tmp_tensor(:,:) + artificial_visc%val(n)
+            end if
 
             ! L2 Norm of tensor (tensor magnitude)
             sgs_visc_mag_val=0.0
