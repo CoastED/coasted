@@ -405,7 +405,14 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
                  end do
               else
                  ! Tensor-based LES
-                 Viscosity_ele = Viscosity_ele + tensor_eddy_visc%val(:,:,x_ele)
+                 do dim1=1, opDim
+                    do dim2=1, opDim
+                       do iloc=1, opNloc
+                          Viscosity_ele(dim1,dim2,iloc) = &
+                               Viscosity_ele(dim1,dim2,iloc) + tensor_eddy_visc%val(dim1,dim2,x_ele(iloc))
+                       end do
+                    end do
+                 end do
              end if
         end if
         u_val = u%val(:, u_ele)

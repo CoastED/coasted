@@ -886,7 +886,7 @@ contains
                         ! Theoretically it should always work - unless someone
                         ! deletes the field in a checkpoint FLML
                         if (stat/=0) then
-                            FLAbort("Can't do tensor DG LES without a ScalarEddyViscosity field")
+                            FLAbort("Can't do tensor DG LES without a TensorEddyViscosity field")
                         else
                             ewrite(1,*) "Found TensorEddyViscosity field"
                         end if
