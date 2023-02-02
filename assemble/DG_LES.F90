@@ -176,19 +176,19 @@ contains
         ! Crucially, update halos for use
         call halo_update(u_grad)
 
-!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-!        ! (This will be checked for elsewhere)
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
+
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant dynamic viscosity field")
+        end if
 
         if(have_van_driest) then
-            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-                mu=mviscosity%val(1,1,1)
-            else
-                FLAbort("DG_LES: must have constant dynamic viscosity field")
-            end if
-
             dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
             if (state_flag/=0) then
                 FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
@@ -280,70 +280,85 @@ contains
     subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
-
         type(vector_field), intent(in) :: u, x
+
         type(scalar_field), pointer :: sgs_visc
-        type(scalar_field), pointer :: artificial_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
         type(tensor_field), pointer :: mviscosity
+        type(scalar_field), pointer :: artificial_visc
+
+        type(vector_field), pointer :: elelen, nodelen
         type(tensor_field) :: u_grad
-        integer :: n, num_nodes, e, num_elements
+        real, allocatable :: dx_ele_raw(:,:)
+
+        integer :: e, num_elements, n, num_nodes
+
+        ! Vreman-specific stuff
+        real :: Cpoin
+        real :: alpha_sum, B_beta
+        real, dimension(:,:), allocatable :: dudx, alpha_ij, beta_ij
+
+        real :: mu, rho
         integer :: state_flag
 
+        ! MPI timing
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_reference_density, have_filter_field
+        logical :: have_reference_density, have_lengths_field
+
+        ! For scalar eddy visc value
+        real :: sgs_visc_val
         logical :: have_artificial_visc
 
-        ! Reference density
-        real :: rho, mu
-
-        ! For scalar tensor eddy visc magnitude field
-        real :: sgs_visc_val, sgs_ele_av
         integer :: i, j, k
-
-        ! Vreman stuff
-        real, dimension(:, :), allocatable :: alpha_ij, beta_ij, dudx
-        real :: alpha_sum, B_beta, Cpoin
-        integer :: udim
-        type(vector_field), pointer :: elelen, nodelen
 
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
-        t1=mpi_wtime()
-
-        allocate( alpha_ij(opDim,opDim), beta_ij(opDim,opDim), dudx(opDim,opDim))
-
-! I think this is the suspect call -- not needed.
         nullify(mviscosity)
+
+        allocate( dudx(opDim,opDim), alpha_ij(opDim, opDim), beta_ij(opDim,opDim) )
+
+        ! Velocity projected to continuous Galerkin
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+
+        ! Allocate gradient field and calculate gradient
+        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+        call grad(u_cg, x, u_grad)
+        call halo_update(u_grad)
+
+
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
+        ! (This will be checked for elsewhere)
+
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant dynamic viscosity field")
+        end if
+
+
+
+        ! SGS viscosity field
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: ScalarEddyViscosity absent for Vreman DG LES. (This should not happen)")
+        end if
 
         ! Length scales for filter
         elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
         nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
 
         if(state_flag == 0) then
-           print*, "**** Have ScalarElementLengthScales and ScalarNodeLengthScales fields"
+           print*, "**** Have ElementLengthScales and NodeLengthScales fields"
+           have_lengths_field = .true.
         else
-           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Scalar Vreman DG LES. This should have been automatically created.")
+           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
         end if
-
-        ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        udim = u_cg%dim
-
-        ! Allocate gradient field
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", &
-             stat=state_flag)
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for DG Vreman LES. (This should not happen)")
-        end if
-
 
         ! We can use this in areas of insufficient resolution
         have_artificial_visc = .false.
@@ -352,20 +367,6 @@ contains
         if(state_flag == 0) then
            print*, "ArtificialViscosity field detected."
            have_artificial_visc = .true.
-        end if
-
-        call grad(u_cg, x, u_grad)
-        ! Crucially, update halos for use
-        call halo_update(u_grad)
-
-        ! Molecular viscosity
-        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-            mu=mviscosity%val(1,1,1)
-        else
-            FLAbort("DG_LES: must have constant or normal viscosity field")
         end if
 
 
@@ -382,26 +383,32 @@ contains
             FLAbort("DG_LES: missing reference density option in equation_of_state")
         end if
 
+
         ! The Poincare constant (default 0.3)
         if(have_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+            // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
             // "poincare_constant")) then
 
             call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/amd/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
                 // "poincare_constant", Cpoin)
         else
             Cpoin=0.3
         end if
 
-        num_nodes = u_cg%mesh%nodes
-
 
         ! Calculate element-wise filter lengths
         num_elements = ele_count(u_cg)
         num_nodes = u_cg%mesh%nodes
+
+        allocate(dx_ele_raw(3, num_elements))
+
+        ! Calculate nodal filter lengths.
+        call aniso_filter_elelengths(x, dx_ele_raw)
+
+        ! Put into field
         do e=1, num_elements
-            elelen%val(:,e) = (element_volume(x, e))**(1./3.)
+            elelen%val(:, e) = dx_ele_raw(:, e)
         end do
         call halo_update(elelen)
 
@@ -447,17 +454,15 @@ contains
               sgs_visc_val = Cpoin * sqrt( B_beta / alpha_sum )
            end if
            
+           print*, "sgs_visc:", sgs_visc_val
+
            if(have_artificial_visc) then
               sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
            end if
 
             ! Limiter
             if(sgs_visc_val > mu*10e4) then
-               if(sgs_visc%val(n) < mu*10e4) then
-                  sgs_visc_val=sgs_visc%val(n)
-               else
-                  sgs_visc_val=0.
-               end if
+                sgs_visc_val=0.
             end if
 
            call set(sgs_visc, n,  sgs_visc_val)
@@ -467,7 +472,9 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
-        deallocate( alpha_ij, beta_ij, dudx )
+
+        deallocate(dx_ele_raw)
+        deallocate( dudx, alpha_ij, beta_ij )
 
         t2=mpi_wtime()
 
@@ -731,8 +738,8 @@ contains
    subroutine calc_dg_sgs_roman_viscosity(state, x, u)
         ! Passed parameters
         type(state_type), intent(in) :: state
-
         type(vector_field), intent(in) :: u, x
+
         type(scalar_field), pointer :: dist_to_wall
         type(tensor_field), pointer :: sgs_visc
         type(scalar_field), pointer :: sgs_visc_mag
@@ -746,10 +753,9 @@ contains
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
 
-        integer :: e, ix, num_elements, n, num_nodes
+        integer :: i, e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
-        real :: minmaxlen(2)
 
         real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
         real :: length_horz_sq, length_vert_sq, ele_vol
@@ -762,10 +768,8 @@ contains
         real, dimension(u%dim, u%dim) :: visc_turb, tmp_tensor
         real, dimension(u%dim) :: tmp_vector
         real :: mu, rho, y_plus, vd_damping
+        integer :: state_flag
 
-        integer :: state_flag, gnode
-
-        real :: visc_norm2, visc_norm2_max
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -776,11 +780,9 @@ contains
         ! Constants for Van Driest damping equation
         real, parameter :: A_plus=17.8, pow_m=2.0
 
-        real, parameter :: alpha=0.5
-
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
-        integer :: i
+
 
         logical :: have_artificial_visc
 
@@ -796,11 +798,20 @@ contains
         ! Velocity projected to continuous Galerkin
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
-        ! Allocate gradient field
+        ! Allocate gradient field and calculate gradient
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
+        call grad(u_cg, x, u_grad)
+        call halo_update(u_grad)
 
         sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
-        call grad(u_cg, x, u_grad)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: TensorEddyViscosity absent for tensor DG LES. (This should not happen)")
+        end if
+        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
+        if (state_flag /= 0) then
+            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
+        end if
+
 
         ! Length scales for filter
         elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
@@ -812,7 +823,6 @@ contains
         else
            FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
         end if
-        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
 
         ! We can use this in areas of insufficient resolution
         have_artificial_visc = .false.
@@ -823,10 +833,6 @@ contains
            have_artificial_visc = .true.
         end if
 
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
-         end if
-
         ! Van Driest wall damping
         have_van_driest = have_option(trim(u%option_path)//&
                         &"/prognostic/spatial_discretisation"//&
@@ -836,16 +842,16 @@ contains
 !        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
 !        ! (This will be checked for elsewhere)
 
+        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
+
+        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
+            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
+            mu=mviscosity%val(1,1,1)
+        else
+            FLAbort("DG_LES: must have constant or normal viscosity field")
+        end if
+
         if(have_van_driest) then
-            mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-
-            if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-                .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-                mu=mviscosity%val(1,1,1)
-            else
-                FLAbort("DG_LES: must have constant or normal viscosity field")
-            end if
-
             dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
             if (state_flag/=0) then
                 FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
