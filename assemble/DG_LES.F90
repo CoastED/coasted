@@ -315,7 +315,7 @@ contains
 
         integer :: i, j, k
 
-        print*, "In calc_dg_sgs_vreman_viscosity()"
+        print*, "In calc_dg_sgs_vreman_viscosity_old()"
 
         nullify(mviscosity)
 
@@ -496,8 +496,7 @@ contains
         type(vector_field), intent(in) :: u, x
 
         type(scalar_field), pointer :: dist_to_wall
-        type(tensor_field), pointer :: sgs_visc
-        type(scalar_field), pointer :: sgs_visc_mag
+        type(scalar_field), pointer :: sgs_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -507,24 +506,18 @@ contains
         type(vector_field), pointer :: elelen, nodelen
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
-
-        integer :: i, e, num_elements, n, num_nodes
+        
+        integer :: i, j, m, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
+        ! Vreman specific
 
-        real :: Cs_horz, Cs_length_horz_sq, Cs_vert, Cs_length_vert_sq
-        real :: length_horz_sq, length_vert_sq, ele_vol
-        real, dimension(u%dim, u%dim) :: u_grad_node, rate_of_strain
-        real :: mag_strain_horz, mag_strain_vert
-        real :: sgs_horz, sgs_vert, sgs_r
-
-        real :: sgs_visc_mag_val
-
-        real, dimension(u%dim, u%dim) :: visc_turb, tmp_tensor
-        real, dimension(u%dim) :: tmp_vector
+        real, allocatable :: alpha(:,:), beta(:,:), delta(:)
+        real :: Cpoin, B_beta, alpha_sq_sum, beta_sum
+        
+        real :: visc_turb, tmp_visc, tmp_val
         real :: mu, rho, y_plus, vd_damping
         integer :: state_flag
-
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
@@ -537,12 +530,12 @@ contains
 
         ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
-
-
         logical :: have_artificial_visc
 
         print*, "In calc_dg_sgs_roman_viscosity()"
 
+        allocate( alpha(3,3), beta(3,3), delta(3) )
+        
         t1=mpi_wtime()
 
 !        nullify(elelen)
@@ -558,13 +551,9 @@ contains
         call grad(u_cg, x, u_grad)
         call halo_update(u_grad)
 
-        sgs_visc => extract_tensor_field(state, "TensorEddyViscosity", stat=state_flag)
+        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: TensorEddyViscosity absent for tensor DG LES. (This should not happen)")
-        end if
-        sgs_visc_mag => extract_scalar_field(state, "TensorEddyViscosityMagnitude", stat=state_flag)
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: TensorEddyViscosityMagnitude absent for tensor DG LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarrEddyViscosity absent for Vreman DG LES. (This should not happen)")
         end if
 
 
@@ -576,7 +565,7 @@ contains
            print*, "**** Have ElementLengthScales and NodeLengthScales fields"
            have_lengths_field = .true.
         else
-           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
+           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Vreman DG LES. This should have been automatically created.")
         end if
 
         ! We can use this in areas of insufficient resolution
@@ -628,19 +617,15 @@ contains
         end if
 
 
-        call get_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-            // "smagorinsky_coefficient", Cs_horz)
-
         if(have_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/roman/" &
-            // "smagorinsky_coefficient_vertical")) then
+                // "spatial_discretisation/discontinuous_galerkin/les_model/roman/" &
+                // "poincare_constant")) then
 
             call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/roman/" &
-                // "smagorinsky_coefficient_vertical", Cs_vert)
+                // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
+                // "poincare_constant", Cpoin)
         else
-            FLAbort("DG_LES: you've requested anisotropic LES, but have not specified smagorinsky_coefficient_vertical")
+            FLAbort("DG_LES: you've requested Vreman LES, but have not specified poincare_constant")
         end if
 
         num_elements = ele_count(u_cg)
@@ -663,87 +648,79 @@ contains
 
 
         ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:,:,:)=0.0
+        sgs_visc%val(:)=0.0
 
         ! calculate it at each node
         do n=1, num_nodes
 
-            Cs_length_horz_sq = (Cs_horz**2) * (nodelen%val(1, n)**2 + nodelen%val(2, n)**2)
-            Cs_length_vert_sq = (Cs_vert * nodelen%val(3, n))**2
+           alpha(;,1) = u_grad(1, :, n)
+           alpha(;,2) = u_grad(2, :, n)
+           alpha(;,3) = u_grad(3, :, n)
+           
+           delta = nodelen(:, n)
 
-            ! This is the contribution to nu_sgs from each co-occupying node
-            rate_of_strain = 0.5 * (u_grad%val(:,:, n) + transpose(u_grad%val(:,:, n)))
+           ! See Vreman et al (2004) for the gory details.
+           alpha_sq_sum = 0
+           do i=1, NDIM
+              do j=1, NDIM
+                 beta_sum=0.0
+                 do m=1, ndim
+                    beta_sum=beta_sum + (delta_m**2)*alpha(m,i)*alpha(m,j)
+                 end do
+                 alpha_sq_sum = alpha_sum + alpha(i,j)**2
+                 beta(i,j) = beta_sum
+              end do
+           end do
 
-            mag_strain_horz = sqrt(2.0* rate_of_strain(1,1)**2.0 &
-                                 + 2.0* rate_of_strain(2,2)**2.0 &
-                                 + 4.0* rate_of_strain(1,2)**2.0 )
+           B_beta = &
+                  (beta(1,1)*beta(2,2) - beta(1,2)**2) &
+                + (beta(1,1)*beta(3,3) - beta(1,3)**2) &
+                + (beta(2,2)*beta(3,3) - beta(2,3)**2)
 
-            mag_strain_vert = sqrt(4.0* rate_of_strain(1,3)**2.0 &
-                             + 2.0* rate_of_strain(3,3)**2.0 &
-                             + 4.0* rate_of_strain(3,2)**2.0 )
+           ! If square of 2-norm of Hessian is v. small, sgs turb visc must be
+           ! zero also.
+           if(alpha_sq_sum < 10e-10) then
+              visc_turb = 0.0
+           else 
+              ! Otherwise calculate Vreman visc_turb.
 
-            ! Note, this is without density. That comes later.
-            sgs_horz = rho * Cs_length_horz_sq * mag_strain_horz
-            sgs_vert = rho * Cs_length_vert_sq * mag_strain_vert
+              ! Limiter on B_beta
+              if(B_beta<0) B_beta=0.0
+              visc_turb = C_poin * sqrt( B_beta / alpha_sq_sum )
+           end if
+           
+           ! ! Account for wall-damping if enabled
+           ! if(have_van_driest) then
+           !    y_plus = sqrt(norm2(u_grad%val(:,:, n)) * rho / mu) * dist_to_wall%val(n)
+           !    vd_damping = (1-exp(-y_plus/A_plus))**pow_m
+           ! else
+           !    ! No Van Driest, no damping
+           !    vd_damping = 1.0
+           ! end if
+           
+           ! tmp_visc = vd_damping * rho * visc_turb
 
-            ! As per Roman et al, 2010.
-            visc_turb(1:2, 1:2) = sgs_horz
-            visc_turb(1, 3) = sgs_vert
-            visc_turb(3, 1) = sgs_vert
-            visc_turb(2, 3) = sgs_vert
-            visc_turb(3, 2) = sgs_vert
-            visc_turb(3, 3) = sgs_vert
-
-            ! visc_turb(3, 3) = sgs_horz + (-2.*sgs_vert) + 2.*sgs_r)
-            ! Otherwise this is potentially negative (!)
-            ! visc_turb(3, 3) = sgs_horz + 2.*sgs_vert + 2.*sgs_r
-
-            ! According to Roman et al, 2010, only two sgs viscosities are used.
-            ! visc_turb(3, 3) = sgs_vert
-
-
-            ! Account for wall-damping if enabled
-            if(have_van_driest) then
-                y_plus = sqrt(norm2(u_grad%val(:,:, n)) * rho / mu) * dist_to_wall%val(n)
-                vd_damping = (1-exp(-y_plus/A_plus))**pow_m
-            else
-            ! No Van Driest, no damping
-                vd_damping = 1.0
-            end if
-
-            tmp_tensor = vd_damping * rho * visc_turb
-
-            if(have_artificial_visc) then
-                tmp_tensor(:,:) = tmp_tensor(:,:) + artificial_visc%val(n)
-            end if
-
-            ! L2 Norm of tensor (tensor magnitude)
-            sgs_visc_mag_val=0.0
-            do i=1, opDim
-                sgs_visc_mag_val = sgs_visc_mag_val + dot_product(tmp_tensor(i,:),tmp_tensor(i,:))
-            end do
-            sgs_visc_mag_val = sqrt(sgs_visc_mag_val)
-
-            call set(sgs_visc, n,  tmp_tensor)
-            call set(sgs_visc_mag, n, sgs_visc_mag_val )
-
+           tmp_visc=visc_turb
+           
+           if(have_artificial_visc) then
+              tmp_visc = tmp_visc + artificial_visc%val(n)
+           end if
+           
+           call set(sgs_visc, n,  tmp_visc)
+           
         end do
-
 
 
         ! Must be done to avoid discontinuities at halos
         call halo_update(sgs_visc)
-        call halo_update(sgs_visc_mag)
 
         call deallocate(u_grad)
         deallocate(dx_ele_raw)
-
+        deallocate(alpha, beta, delta)
 
         t2=mpi_wtime()
 
         print*, "**** DG_LES_execution_time:", (t2-t1)
-
-
 
 
     end subroutine calc_dg_sgs_vreman_viscosity
