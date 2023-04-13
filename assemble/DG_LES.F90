@@ -507,14 +507,14 @@ contains
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
         
-        integer :: i, j, m, num_elements, n, num_nodes
+        integer :: i, j, m, e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
         ! Vreman specific
-
         real, allocatable :: alpha(:,:), beta(:,:), delta(:)
         real :: Cpoin, B_beta, alpha_sq_sum, beta_sum
-        
+
+        ! Standard LES vars
         real :: visc_turb, tmp_visc, tmp_val
         real :: mu, rho, y_plus, vd_damping
         integer :: state_flag
@@ -534,7 +534,7 @@ contains
 
         print*, "In calc_dg_sgs_roman_viscosity()"
 
-        allocate( alpha(3,3), beta(3,3), delta(3) )
+        allocate( alpha(opDim,opDim), beta(opDim,opDim), delta(opDim) )
         
         t1=mpi_wtime()
 
@@ -542,6 +542,7 @@ contains
 !        nullify(nodelen)
         nullify(dist_to_wall)
         nullify(mviscosity)
+
 
         ! Velocity projected to continuous Galerkin
         u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
@@ -653,21 +654,21 @@ contains
         ! calculate it at each node
         do n=1, num_nodes
 
-           alpha(;,1) = u_grad(1, :, n)
-           alpha(;,2) = u_grad(2, :, n)
-           alpha(;,3) = u_grad(3, :, n)
+           do i=1,opDim
+              alpha(:,i) = u_grad%val(i, :, n)
+           end do
            
-           delta = nodelen(:, n)
+           delta = nodelen%val(:, n)
 
            ! See Vreman et al (2004) for the gory details.
            alpha_sq_sum = 0
-           do i=1, NDIM
-              do j=1, NDIM
+           do i=1, opDim
+              do j=1, opDim
                  beta_sum=0.0
-                 do m=1, ndim
-                    beta_sum=beta_sum + (delta_m**2)*alpha(m,i)*alpha(m,j)
+                 do m=1, opDim
+                    beta_sum=beta_sum + (delta(m)**2)*alpha(m,i)*alpha(m,j)
                  end do
-                 alpha_sq_sum = alpha_sum + alpha(i,j)**2
+                 alpha_sq_sum = alpha_sq_sum + alpha(i,j)**2
                  beta(i,j) = beta_sum
               end do
            end do
@@ -686,7 +687,7 @@ contains
 
               ! Limiter on B_beta
               if(B_beta<0) B_beta=0.0
-              visc_turb = C_poin * sqrt( B_beta / alpha_sq_sum )
+              visc_turb = Cpoin * sqrt( B_beta / alpha_sq_sum )
            end if
            
            ! ! Account for wall-damping if enabled
