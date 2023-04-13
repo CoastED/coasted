@@ -532,7 +532,7 @@ contains
         real :: sgs_visc_val
         logical :: have_artificial_visc
 
-        print*, "In calc_dg_sgs_roman_viscosity()"
+        print*, "In calc_dg_sgs_vreman_viscosity()"
 
         allocate( alpha(opDim,opDim), beta(opDim,opDim), delta(opDim) )
         
