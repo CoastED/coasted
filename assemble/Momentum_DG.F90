@@ -850,13 +850,8 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/vreman")
 
-                    have_roman_les = &
-                        have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/roman")
-
-
+                    ! We never use Roman now. It's bunk.
+                    have_roman_les = .false.
 
                     ! Will eventually use partial_stress as an indicator
                     !                    if(partial_stress) then
@@ -1036,9 +1031,6 @@ contains
                        
                     elseif(have_vreman_les) then
                        call calc_dg_sgs_vreman_viscosity(state, x, u)
-                       
-                    elseif(have_roman_les) then
-                       call calc_dg_sgs_roman_viscosity(state, x, u)
                        
                     else
                         FLExit("Error: unsupported LES model (choose standard Smagorinsky or AMD")

@@ -618,15 +618,16 @@ contains
         end if
 
 
+        ! The Poincare constant (default 0.3)
         if(have_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/roman/" &
-                // "poincare_constant")) then
+            // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
+            // "poincare_constant")) then
 
             call get_option(trim(u%option_path)//"/prognostic/" &
                 // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
                 // "poincare_constant", Cpoin)
         else
-            FLAbort("DG_LES: you've requested Vreman LES, but have not specified poincare_constant")
+           FLAbort("DG_LES: you've requested Vreman LES, but have not specified poincare_constant")
         end if
 
         num_elements = ele_count(u_cg)
