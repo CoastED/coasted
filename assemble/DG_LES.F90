@@ -496,7 +496,7 @@ contains
         type(vector_field), intent(in) :: u, x
 
         type(scalar_field), pointer :: dist_to_wall
-        type(scalar_field), pointer :: sgs_visc, sgs_max
+        type(scalar_field), pointer :: sgs_visc
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -515,7 +515,7 @@ contains
         real :: Cpoin, B_beta, alpha_sq_sum, beta_sum
 
         ! Standard LES vars
-        real :: visc_turb, tmp_visc, tmp_val
+        real :: visc_turb, tmp_visc, tmp_val, sgs_max
         real :: mu, rho, y_plus, vd_damping
         integer :: state_flag
 
