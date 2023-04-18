@@ -496,7 +496,7 @@ contains
         type(vector_field), intent(in) :: u, x
 
         type(scalar_field), pointer :: dist_to_wall
-        type(scalar_field), pointer :: sgs_visc
+        type(scalar_field), pointer :: sgs_visc, sgs_max
 
         ! Velocity (CG) field, pointer to X field, and gradient
         type(vector_field), pointer :: u_cg
@@ -703,6 +703,10 @@ contains
            ! tmp_visc = vd_damping * rho * visc_turb
 
            tmp_visc=visc_turb
+
+           ! Limit on sgs viscosity
+           sgs_max = Cpoin * sqrt(alpha_sq_sum/3) * max(delta(1)**2, delta(2)**2, delta(3)**2)
+           if(tmp_visc > sgs_max) tmp_visc=sgs_max
            
            if(have_artificial_visc) then
               tmp_visc = tmp_visc + artificial_visc%val(n)
