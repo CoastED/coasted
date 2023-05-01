@@ -277,212 +277,6 @@ contains
     ! =========================================================================
 
 
-    subroutine calc_dg_sgs_vreman_viscosity_old(state, x, u)
-        ! Passed parameters
-        type(state_type), intent(in) :: state
-        type(vector_field), intent(in) :: u, x
-
-        type(scalar_field), pointer :: sgs_visc
-
-        ! Velocity (CG) field, pointer to X field, and gradient
-        type(vector_field), pointer :: u_cg
-        type(tensor_field), pointer :: mviscosity
-        type(scalar_field), pointer :: artificial_visc
-
-        type(vector_field), pointer :: elelen, nodelen
-        type(tensor_field) :: u_grad
-        real, allocatable :: dx_ele_raw(:,:)
-
-        integer :: e, num_elements, n, num_nodes
-
-        ! Vreman-specific stuff
-        real :: Cpoin
-        real :: alpha_sum, B_beta
-        real, dimension(:,:), allocatable :: dudx, alpha_ij, beta_ij
-
-        real :: mu, rho
-        integer :: state_flag
-
-        ! MPI timing
-        real (kind=8) :: t1, t2
-        real (kind=8), external :: mpi_wtime
-
-        logical :: have_reference_density, have_lengths_field
-
-        ! For scalar eddy visc value
-        real :: sgs_visc_val
-        logical :: have_artificial_visc
-
-        integer :: i, j, k
-
-        print*, "In calc_dg_sgs_vreman_viscosity_old()"
-
-        nullify(mviscosity)
-
-        allocate( dudx(opDim,opDim), alpha_ij(opDim, opDim), beta_ij(opDim,opDim) )
-
-        ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-
-        ! Allocate gradient field and calculate gradient
-        call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
-        call grad(u_cg, x, u_grad)
-        call halo_update(u_grad)
-
-
-        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-        ! (This will be checked for elsewhere)
-
-        mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
-        if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
-            .or. mviscosity%field_type == FIELD_TYPE_NORMAL) then
-            mu=mviscosity%val(1,1,1)
-        else
-            FLAbort("DG_LES: must have constant dynamic viscosity field")
-        end if
-
-
-
-        ! SGS viscosity field
-        sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
-        if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarEddyViscosity absent for Vreman DG LES. (This should not happen)")
-        end if
-
-        ! Length scales for filter
-        elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
-        nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
-
-        if(state_flag == 0) then
-           print*, "**** Have ElementLengthScales and NodeLengthScales fields"
-           have_lengths_field = .true.
-        else
-           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Roman DG LES. This should have been automatically created.")
-        end if
-
-        ! We can use this in areas of insufficient resolution
-        have_artificial_visc = .false.
-        artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
-             stat=state_flag)
-        if(state_flag == 0) then
-           print*, "ArtificialViscosity field detected."
-           have_artificial_visc = .true.
-        end if
-
-
-        ! We only use the reference density. This assumes the variation in density will be
-        ! low (ie < 10%)
-        have_reference_density=have_option("/material_phase::"&
-            //trim(state%name)//"/equation_of_state/fluids/linear/reference_density")
-
-        if(have_reference_density) then
-            call get_option("/material_phase::"&
-                //trim(state%name)//"/equation_of_state/fluids/linear/reference_density", &
-                rho)
-        else
-            FLAbort("DG_LES: missing reference density option in equation_of_state")
-        end if
-
-
-        ! The Poincare constant (default 0.3)
-        if(have_option(trim(u%option_path)//"/prognostic/" &
-            // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
-            // "poincare_constant")) then
-
-            call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/vreman/" &
-                // "poincare_constant", Cpoin)
-        else
-            Cpoin=0.3
-        end if
-
-
-        ! Calculate element-wise filter lengths
-        num_elements = ele_count(u_cg)
-        num_nodes = u_cg%mesh%nodes
-
-        allocate(dx_ele_raw(3, num_elements))
-
-        ! Calculate nodal filter lengths.
-        call aniso_filter_elelengths(x, dx_ele_raw)
-
-        ! Put into field
-        do e=1, num_elements
-            elelen%val(:, e) = dx_ele_raw(:, e)
-        end do
-        call halo_update(elelen)
-
-        ! project to node-based (1st order) field
-        call project_field(elelen, nodelen, x)
-        call halo_update(nodelen)
-
-
-        ! Set entire SGS visc field to zero value initially
-        sgs_visc%val(:)=0.0
-
-        do n=1, num_nodes
-
-!           dudx(:,1) = u_grad%val(:,n)
-!           dudx(:,2) = v_grad%val(:,n)
-!           dudx(:,3) = w_grad%val(:,n)
-           dudx(:,1) = u_grad%val(1,:,n)
-           dudx(:,2) = u_grad%val(2,:,n)
-           dudx(:,3) = u_grad%val(3,:,n)
-
-           alpha_ij = dudx
-
-           alpha_sum = 0.0
-           beta_ij = 0.0           
-
-           do i=1, opDim
-              do j=1, opDim
-                 alpha_sum = alpha_sum + alpha_ij(i,j)*alpha_ij(i,j)
-                 do k=1, opDim
-                    beta_ij = beta_ij + (nodelen%val(k,n)**2.)*alpha_ij(k,i)*alpha_ij(k,j)
-                 end do
-              end do
-           end do
-           
-           B_beta = &
-                  (beta_ij(1,1)*beta_ij(2,2) - beta_ij(1,2)**2.) &
-                + (beta_ij(1,1)*beta_ij(3,3) - beta_ij(1,3)**2.) &
-                + (beta_ij(2,2)*beta_ij(3,3) - beta_ij(2,3)**2.) 
-
-           if( alpha_sum < 10e-10) then
-              sgs_visc_val = 0.0
-           else
-              sgs_visc_val = Cpoin * sqrt( B_beta / alpha_sum )
-           end if
-           
-           print*, "sgs_visc:", sgs_visc_val
-
-           if(have_artificial_visc) then
-              sgs_visc_val = sgs_visc_val + artificial_visc%val(n)
-           end if
-
-            ! Limiter
-            if(sgs_visc_val > mu*10e4) then
-                sgs_visc_val=0.
-            end if
-
-           call set(sgs_visc, n,  sgs_visc_val)
-        end do
-
-        ! Must be done to avoid discontinuities at halos
-        call halo_update(sgs_visc)
-
-        call deallocate(u_grad)
-
-        deallocate(dx_ele_raw)
-        deallocate( dudx, alpha_ij, beta_ij )
-
-        t2=mpi_wtime()
-
-        print*, "**** DG_LES_execution_time:", (t2-t1)
-
-    end subroutine calc_dg_sgs_vreman_viscosity_old
-
-
 
 
     ! =========================================================================
@@ -511,8 +305,13 @@ contains
         integer :: u_cg_ele(ele_loc(u,1))
 
         ! Vreman specific
-        real, allocatable :: alpha(:,:), beta(:,:), delta(:)
-        real :: Cpoin, B_beta, alpha_sq_sum, beta_sum
+        ! real, allocatable :: alpha(:,:), beta(:,:), delta(:)
+        real :: Cpoin !, B_beta, alpha_sq_sum, beta_sum
+
+        ! From Vreman source
+        real :: d1v1,d2v1,d3v1,d1v2,d2v2,d3v2,d1v3,d2v3,d3v3
+        real :: b11,b12,b13,b22,b23,b33
+        real :: abeta,bbeta
 
         ! Standard LES vars
         real :: visc_turb, tmp_visc, tmp_val, sgs_max
@@ -655,40 +454,63 @@ contains
         ! calculate it at each node
         do n=1, num_nodes
 
-           do i=1,opDim
-              alpha(:,i) = u_grad%val(i, :, n)
-           end do
+!           do i=1,opDim
+!              alpha(:,i) = u_grad%val(i, :, n)
+!           end do
            
-           delta = nodelen%val(:, n)
+           d1 = nodelen%val(1, n)**2
+           d2 = nodelen%val(2, n)**2
+           d3 = nodelen%val(3, n)**2
+!           delta = nodelen%val(:, n)
 
-           ! See Vreman et al (2004) for the gory details.
-           alpha_sq_sum = 0
-           do i=1, opDim
-              do j=1, opDim
-                 beta_sum=0.0
-                 do m=1, opDim
-                    beta_sum=beta_sum + (delta(m)**2)*alpha(m,i)*alpha(m,j)
-                 end do
-                 alpha_sq_sum = alpha_sq_sum + alpha(i,j)**2
-                 beta(i,j) = beta_sum
-              end do
-           end do
+!           ! See Vreman et al (2004) for the gory details.
+!           alpha_sq_sum = 0
+!           do i=1, opDim
+!              do j=1, opDim
+!                 beta_sum=0.0
+!                 do m=1, opDim
+!                    beta_sum=beta_sum + (delta(m)**2)*alpha(m,i)*alpha(m,j)
+!                 end do
+!                 alpha_sq_sum = alpha_sq_sum + alpha(i,j)**2
+!                 beta(i,j) = beta_sum
+!              end do
+!           end do
 
-           B_beta = &
-                  (beta(1,1)*beta(2,2) - beta(1,2)**2) &
-                + (beta(1,1)*beta(3,3) - beta(1,3)**2) &
-                + (beta(2,2)*beta(3,3) - beta(2,3)**2)
+        d1v1=u_grad%val(1,1,n) ! du1dx1(n)
+        d2v1=u_grad%val(1,2,n) ! du1dx2(n)
+        d3v1=u_grad%val(1,3,n) ! du1dx3(n)
+
+        d1v2=u_grad%val(2,1,n) ! du2dx1(n)
+        d2v2=u_grad%val(2,2,n) ! du2dx2(n)
+        d3v2=u_grad%val(2,3,n) ! du2dx3(n)
+
+        d1v3=u_grad%val(3,1,n) ! du3dx1(n)
+        d2v3=u_grad%val(3,2,n) ! du3dx2(n)
+        d3v3=u_grad%val(3,3,n) ! du3dx3(n)
+
+        b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
+        b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
+        b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
+        b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
+        b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
+        b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
+
+        abeta = d1v1**2+d1v2**2+d1v3**2 &
+            + d2v1**2+d2v2**2+d2v3**2 &
+            + d3v1**2+d3v2**2+d3v3**2 &
+
+        bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
 
            ! If square of 2-norm of Hessian is v. small, sgs turb visc must be
            ! zero also.
-           if(alpha_sq_sum < 10e-10) then
+           if(bbeta < 10e-10 .or. abeta < 10e-10) then
               visc_turb = 0.0
            else 
               ! Otherwise calculate Vreman visc_turb.
 
               ! Limiter on B_beta
-              if(B_beta<0) B_beta=0.0
-              visc_turb = Cpoin * sqrt( B_beta / alpha_sq_sum )
+              if(bbeta<0) bbeta=0.0
+              visc_turb = Cpoin * sqrt( bbeta / abeta )
            end if
            
            ! ! Account for wall-damping if enabled
@@ -705,7 +527,7 @@ contains
            tmp_visc=visc_turb
 
            ! Limit on sgs viscosity
-           sgs_max = Cpoin * sqrt(alpha_sq_sum/3) * max(delta(1)**2, delta(2)**2, delta(3)**2)
+           sgs_max = Cpoin * sqrt(abeta/3) * max(d1, d2, d3)
            if(tmp_visc > sgs_max) tmp_visc=sgs_max
            
            if(have_artificial_visc) then
@@ -722,7 +544,7 @@ contains
 
         call deallocate(u_grad)
         deallocate(dx_ele_raw)
-        deallocate(alpha, beta, delta)
+!        deallocate(alpha, beta, delta)
 
         t2=mpi_wtime()
 
