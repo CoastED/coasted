@@ -309,9 +309,10 @@ contains
         real :: Cpoin !, B_beta, alpha_sq_sum, beta_sum
 
         ! From Vreman source
+        real :: d1,d2,d3
         real :: d1v1,d2v1,d3v1,d1v2,d2v2,d3v2,d1v3,d2v3,d3v3
         real :: b11,b12,b13,b22,b23,b33
-        real :: abeta,bbeta
+        real :: abeta, bbeta
 
         ! Standard LES vars
         real :: visc_turb, tmp_visc, tmp_val, sgs_max
@@ -333,7 +334,7 @@ contains
 
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
-        allocate( alpha(opDim,opDim), beta(opDim,opDim), delta(opDim) )
+        ! allocate( alpha(opDim,opDim), beta(opDim,opDim), delta(opDim) )
         
         t1=mpi_wtime()
 
@@ -494,10 +495,10 @@ contains
         b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
         b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
         b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
-
-        abeta = d1v1**2+d1v2**2+d1v3**2 &
-            + d2v1**2+d2v2**2+d2v3**2 &
-            + d3v1**2+d3v2**2+d3v3**2 &
+        
+        abeta = d1v1**2 + d1v2**2 + d1v3**2 &
+             + d2v1**2 + d2v2**2 + d2v3**2 &
+             + d3v1**2 + d3v2**2 + d3v3**2
 
         bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
 
