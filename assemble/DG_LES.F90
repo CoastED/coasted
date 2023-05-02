@@ -378,9 +378,7 @@ contains
                         &"/discontinuous_galerkin/les_model"//&
                         &"/van_driest_damping")
 
-!        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
-!        ! (This will be checked for elsewhere)
-
+        ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
 
         if(mviscosity%field_type == FIELD_TYPE_CONSTANT &
@@ -443,75 +441,46 @@ contains
         ! calculate it at each node
         do n=1, num_nodes
 
-!           do i=1,opDim
-!              alpha(:,i) = u_grad%val(i, :, n)
-!           end do
-           
-           d1 = nodelen%val(1, n)**2
-           d2 = nodelen%val(2, n)**2
-           d3 = nodelen%val(3, n)**2
-!           delta = nodelen%val(:, n)
+            d1 = nodelen%val(1, n)**2
+            d2 = nodelen%val(2, n)**2
+            d3 = nodelen%val(3, n)**2
 
-!           ! See Vreman et al (2004) for the gory details.
-!           alpha_sq_sum = 0
-!           do i=1, opDim
-!              do j=1, opDim
-!                 beta_sum=0.0
-!                 do m=1, opDim
-!                    beta_sum=beta_sum + (delta(m)**2)*alpha(m,i)*alpha(m,j)
-!                 end do
-!                 alpha_sq_sum = alpha_sq_sum + alpha(i,j)**2
-!                 beta(i,j) = beta_sum
-!              end do
-!           end do
+            d1v1=u_grad%val(1,1,n) ! du1dx1(n)
+            d2v1=u_grad%val(1,2,n) ! du1dx2(n)
+            d3v1=u_grad%val(1,3,n) ! du1dx3(n)
 
-        d1v1=u_grad%val(1,1,n) ! du1dx1(n)
-        d2v1=u_grad%val(2,1,n) ! du1dx2(n)
-        d3v1=u_grad%val(3,1,n) ! du1dx3(n)
+            d1v2=u_grad%val(2,1,n) ! du2dx1(n)
+            d2v2=u_grad%val(2,2,n) ! du2dx2(n)
+            d3v2=u_grad%val(2,3,n) ! du2dx3(n)
 
-        d1v2=u_grad%val(1,2,n) ! du2dx1(n)
-        d2v2=u_grad%val(2,2,n) ! du2dx2(n)
-        d3v2=u_grad%val(3,2,n) ! du2dx3(n)
+            d1v3=u_grad%val(3,1,n) ! du3dx1(n)
+            d2v3=u_grad%val(3,2,n) ! du3dx2(n)
+            d3v3=u_grad%val(3,3,n) ! du3dx3(n)
 
-        d1v3=u_grad%val(1,3,n) ! du3dx1(n)
-        d2v3=u_grad%val(2,3,n) ! du3dx2(n)
-        d3v3=u_grad%val(3,3,n) ! du3dx3(n)
+            b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
+            b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
+            b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
+            b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
+            b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
+            b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
 
-        b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
-        b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
-        b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
-        b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
-        b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
-        b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
-        
-        abeta = d1v1**2 + d1v2**2 + d1v3**2 &
-             + d2v1**2 + d2v2**2 + d2v3**2 &
-             + d3v1**2 + d3v2**2 + d3v3**2
+            abeta = d1v1**2 + d1v2**2 + d1v3**2 &
+                 + d2v1**2 + d2v2**2 + d2v3**2 &
+                 + d3v1**2 + d3v2**2 + d3v3**2
 
-        bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
+            bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
 
-           ! If square of 2-norm of Hessian is v. small, sgs turb visc must be
-           ! zero also.
-           if(bbeta < 10e-10 .or. abeta < 10e-10) then
+           ! If abeta is v. small, sgs turb visc must be zero also.
+           if(abeta < 10e-10) then
               visc_turb = 0.0
            else 
               ! Otherwise calculate Vreman visc_turb.
 
               ! Limiter on B_beta
               if(bbeta<0) bbeta=0.0
+
               visc_turb = Cpoin * sqrt( bbeta / abeta )
            end if
-           
-           ! ! Account for wall-damping if enabled
-           ! if(have_van_driest) then
-           !    y_plus = sqrt(norm2(u_grad%val(:,:, n)) * rho / mu) * dist_to_wall%val(n)
-           !    vd_damping = (1-exp(-y_plus/A_plus))**pow_m
-           ! else
-           !    ! No Van Driest, no damping
-           !    vd_damping = 1.0
-           ! end if
-           
-           ! tmp_visc = vd_damping * rho * visc_turb
 
            tmp_visc=visc_turb
 
@@ -533,7 +502,6 @@ contains
 
         call deallocate(u_grad)
         deallocate(dx_ele_raw)
-!        deallocate(alpha, beta, delta)
 
         t2=mpi_wtime()
 
