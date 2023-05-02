@@ -478,15 +478,15 @@ contains
 !           end do
 
         d1v1=u_grad%val(1,1,n) ! du1dx1(n)
-        d2v1=u_grad%val(1,2,n) ! du1dx2(n)
-        d3v1=u_grad%val(1,3,n) ! du1dx3(n)
+        d2v1=u_grad%val(2,1,n) ! du1dx2(n)
+        d3v1=u_grad%val(3,1,n) ! du1dx3(n)
 
-        d1v2=u_grad%val(2,1,n) ! du2dx1(n)
+        d1v2=u_grad%val(1,2,n) ! du2dx1(n)
         d2v2=u_grad%val(2,2,n) ! du2dx2(n)
-        d3v2=u_grad%val(2,3,n) ! du2dx3(n)
+        d3v2=u_grad%val(3,2,n) ! du2dx3(n)
 
-        d1v3=u_grad%val(3,1,n) ! du3dx1(n)
-        d2v3=u_grad%val(3,2,n) ! du3dx2(n)
+        d1v3=u_grad%val(1,3,n) ! du3dx1(n)
+        d2v3=u_grad%val(2,3,n) ! du3dx2(n)
         d3v3=u_grad%val(3,3,n) ! du3dx3(n)
 
         b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
