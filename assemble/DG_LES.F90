@@ -260,23 +260,9 @@ contains
     end subroutine calc_dg_sgs_scalar_viscosity
 
 
-
-
-
-
-
-
     ! =========================================================================
     !  Vreman Model.
     ! =========================================================================
-
-
-
-
-    ! =========================================================================
-    !  Vreman Model.
-    ! =========================================================================
-
 
     subroutine calc_dg_sgs_vreman_viscosity(state, x, u)
         ! Passed parameters
@@ -310,22 +296,21 @@ contains
 
         ! Standard LES vars
         real :: visc_turb, tmp_visc, tmp_val, sgs_max
-        real :: mu, rho, y_plus, vd_damping
+        real :: mu, rho
         integer :: state_flag
 
         real (kind=8) :: t1, t2
         real (kind=8), external :: mpi_wtime
 
-        logical :: have_van_driest, have_reference_density
-        logical :: have_lengths_field
+        logical :: have_reference_density, have_lengths_field
 
-        ! Constants for Van Driest damping equation
-        real, parameter :: A_plus=17.8, pow_m=2.0
-
-        ! For scalar tensor eddy visc magnitude field
         real :: sgs_visc_val
         logical :: have_artificial_visc
 
+        ! Wall stuff
+        logical :: have_wall
+        real :: wdamp=1.0
+        
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
         ! allocate( alpha(opDim,opDim), beta(opDim,opDim), delta(opDim) )
@@ -363,6 +348,15 @@ contains
            FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Vreman DG LES. This should have been automatically created.")
         end if
 
+        dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
+        ! If there is no DistanceToWall field
+        if (state_flag/=0) then
+           have_wall=.false.
+        else
+           have_wall=.true.
+        end if
+
+        
         ! We can use this in areas of insufficient resolution
         have_artificial_visc = .false.
         artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
@@ -441,48 +435,54 @@ contains
         ! calculate it at each node
         do n=1, num_nodes
 
-            d1 = nodelen%val(1, n)**2
-            d2 = nodelen%val(2, n)**2
-            d3 = nodelen%val(3, n)**2
-
-            d1v1=u_grad%val(1,1,n) ! du1dx1(n)
-            d2v1=u_grad%val(1,2,n) ! du1dx2(n)
-            d3v1=u_grad%val(1,3,n) ! du1dx3(n)
-
-            d1v2=u_grad%val(2,1,n) ! du2dx1(n)
-            d2v2=u_grad%val(2,2,n) ! du2dx2(n)
-            d3v2=u_grad%val(2,3,n) ! du2dx3(n)
-
-            d1v3=u_grad%val(3,1,n) ! du3dx1(n)
-            d2v3=u_grad%val(3,2,n) ! du3dx2(n)
-            d3v3=u_grad%val(3,3,n) ! du3dx3(n)
-
-            b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
-            b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
-            b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
-            b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
-            b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
-            b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
-
-            abeta = d1v1**2 + d1v2**2 + d1v3**2 &
-                 + d2v1**2 + d2v2**2 + d2v3**2 &
-                 + d3v1**2 + d3v2**2 + d3v3**2
-
-            bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
-
+           ! Wall stuff, if needed. This shuts off Vreman at wall boundary
+           if(have_wall) then
+              if(abs(dist_to_wall) < 10e-10) wdamp=0.0
+           end if
+           
+           d1 = nodelen%val(1, n)**2
+           d2 = nodelen%val(2, n)**2
+           d3 = nodelen%val(3, n)**2
+           
+           d1v1=u_grad%val(1,1,n) ! du1dx1(n)
+           d2v1=u_grad%val(1,2,n) ! du1dx2(n)
+           d3v1=u_grad%val(1,3,n) ! du1dx3(n)
+           
+           d1v2=u_grad%val(2,1,n) ! du2dx1(n)
+           d2v2=u_grad%val(2,2,n) ! du2dx2(n)
+           d3v2=u_grad%val(2,3,n) ! du2dx3(n)
+           
+           d1v3=u_grad%val(3,1,n) ! du3dx1(n)
+           d2v3=u_grad%val(3,2,n) ! du3dx2(n)
+           d3v3=u_grad%val(3,3,n) ! du3dx3(n)
+           
+           b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
+           b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
+           b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
+           b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
+           b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
+           b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
+           
+           abeta = d1v1**2 + d1v2**2 + d1v3**2 &
+                + d2v1**2 + d2v2**2 + d2v3**2 &
+                + d3v1**2 + d3v2**2 + d3v3**2
+           
+           bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
+           
            ! If abeta is v. small, sgs turb visc must be zero also.
            if(abeta < 10e-10) then
               visc_turb = 0.0
            else 
               ! Otherwise calculate Vreman visc_turb.
-
+              
               ! Limiter on B_beta
               if(bbeta<0) bbeta=0.0
-
+              
               visc_turb = Cpoin * sqrt( bbeta / abeta )
            end if
 
-           tmp_visc=visc_turb
+           ! Including damping
+           tmp_visc = wdamp * visc_turb
 
            ! Limit on sgs viscosity
            sgs_max = Cpoin * sqrt(abeta/3) * max(d1, d2, d3)
