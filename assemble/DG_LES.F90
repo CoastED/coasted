@@ -348,6 +348,7 @@ contains
            FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Vreman DG LES. This should have been automatically created.")
         end if
 
+        ! Distance to wall used to shut off Vreman at wall
         dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
         ! If there is no DistanceToWall field
         if (state_flag/=0) then
@@ -366,11 +367,6 @@ contains
            have_artificial_visc = .true.
         end if
 
-        ! Van Driest wall damping
-        have_van_driest = have_option(trim(u%option_path)//&
-                        &"/prognostic/spatial_discretisation"//&
-                        &"/discontinuous_galerkin/les_model"//&
-                        &"/van_driest_damping")
 
         ! Viscosity. Here we assume isotropic viscosity, ie. Newtonian fluid
         mviscosity => extract_tensor_field(state, "Viscosity", stat=state_flag)
@@ -382,13 +378,6 @@ contains
             FLAbort("DG_LES: must have constant or normal viscosity field")
         end if
 
-        if(have_van_driest) then
-            dist_to_wall=>extract_scalar_field(state, "DistanceToWall", stat=state_flag)
-            if (state_flag/=0) then
-                FLAbort("DG_LES: Van Driest damping requested, but no DistanceToWall scalar field exists")
-            end if
-
-        end if
 
         ! We only use the reference density. This assumes the variation in density will be
         ! low (ie < 10%)
@@ -437,8 +426,14 @@ contains
 
            ! Wall stuff, if needed. This shuts off Vreman at wall boundary
            if(have_wall) then
-              if(abs(dist_to_wall) < 10e-10) wdamp=0.0
+              if(abs(dist_to_wall%val(n)) < 10e-10 ) then
+                 wdamp=0.0
+              else
+                 wdamp=1.0
+              end if
            end if
+
+           
            
            d1 = nodelen%val(1, n)**2
            d2 = nodelen%val(2, n)**2
