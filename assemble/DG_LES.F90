@@ -63,6 +63,7 @@ module dg_les
 
   ! This scales the Van Driest effect
   real, parameter :: van_scale=1.0
+  integer :: smooth_called_count=0
 
 #include "mpif.h"
 
@@ -277,7 +278,7 @@ contains
         type(tensor_field), pointer :: mviscosity
         type(scalar_field), pointer :: artificial_visc
 
-        type(vector_field), pointer :: elelen, nodelen
+        type(vector_field), pointer :: elelen, nodelen, smoothlen
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
         
@@ -340,6 +341,7 @@ contains
         ! Length scales for filter
         elelen => extract_vector_field(state, "ElementLengthScales", stat=state_flag)
         nodelen => extract_vector_field(state, "NodeLengthScales", stat=state_flag)
+        smoothlen => extract_vector_field(state, "SmoothedLengthScales", stat=state_flag)
 
         if(state_flag == 0) then
            print*, "**** Have ElementLengthScales and NodeLengthScales fields"
@@ -404,19 +406,27 @@ contains
 
         allocate(dx_ele_raw(3, num_elements))
 
-        ! Calculate nodal filter lengths.
-        call aniso_filter_elelengths(x, dx_ele_raw)
-        ! Put into field
+        ! Only calculate new lengths if mesh geometry is new (eg. after adapted mesh)
+        if(new_mesh_geometry .or. smooth_called_count<2) then
+            ! Calculate nodal filter lengths.
+            call aniso_filter_elelengths(x, dx_ele_raw)
+            ! Put into field
 
-        do e=1, num_elements
-            elelen%val(:, e) = dx_ele_raw(:, e)
-        end do
-        call halo_update(elelen)
+            do e=1, num_elements
+                elelen%val(:, e) = dx_ele_raw(:, e)
+            end do
+            call halo_update(elelen)
 
-        ! project to node-based (1st order) field
-        call project_field(elelen, nodelen, x)
-        call halo_update(nodelen)
+            ! project to node-based (1st order) field
+            call project_field(elelen, nodelen, x)
+            call halo_update(nodelen)
 
+            ! Final lengthscale calculation - smooth
+            call anisotropic_smooth_vector(nodelen, x, smoothlen, 3.0,  trim(complete_field_path(smoothlen%option_path)) // "/algorithm")
+            call halo_update(smoothlen)
+
+            smooth_called_count = smooth_called_count+1
+        end if
 
         ! Set entire SGS visc field to zero value initially
         sgs_visc%val(:)=0.0
@@ -435,9 +445,9 @@ contains
 
            wdamp=1.0
            
-           d1 = nodelen%val(1, n)**2
-           d2 = nodelen%val(2, n)**2
-           d3 = nodelen%val(3, n)**2
+           d1 = smoothlen%val(1, n)**2
+           d2 = smoothlen%val(2, n)**2
+           d3 = smoothlen%val(3, n)**2
            
            d1v1=u_grad%val(1,1,n) ! du1dx1(n)
            d2v1=u_grad%val(1,2,n) ! du1dx2(n)
@@ -639,7 +649,7 @@ contains
         vol = element_volume(pos, ele)
 
         ! What we do depends upon whether this is an extruded mesh or not.
-
+!
 !        if(extruded_mesh) then
 !            ! First look for two points vertically aligned. These two will provide
 !            ! dz metric. (There are always two in an extruded mesh)
@@ -658,7 +668,7 @@ contains
 !
 !                        ! If two points share x and y, one must be atop the other.
 !                        if(diffx < 10e-10 .and. diffy < 10e-10) then
-!                            stpair(1)=n
+!                           stpair(1)=n
 !                            stpair(2)=m
 !                            exit outer_loop
 !                        end if
@@ -675,7 +685,7 @@ contains
 !            ! Fluidity framework)
 !            trix=1
 !            do n=1, opNloc
-!                if(n /= stpair(1)) then
+!               if(n /= stpair(1)) then
 !                    X_tri(:, trix)=X_val(1:2, n)
 !                    trix=trix+1
 !                end if
@@ -703,8 +713,7 @@ contains
 !
 !        else
 
-!            ! For unstructured meshes, do something slightly different.
-    ! Do this for both structured and unstructured meshes, for now.
+       ! For unstructured meshes, do something slightly different.
         del(:)=0.0
         do m=1, opNloc
             do n=1, opNloc
@@ -727,11 +736,9 @@ contains
            ! del(2) = tmplen
 
            ! Fitting to an ellipsoid
-           del(1) = ( (6*vol) / (pi*del(3)) )**0.5
+           del(1) = 2.0 * ( (6*vol) / (pi*del(3)) )**0.5
            del(2) = del(1)
         end if
-
-!        end if
 
     end subroutine aniso_length_ele
 
@@ -937,7 +944,7 @@ contains
         end do
         call halo_update(elef)
 
-        ! call quick_smooth_ele_lengths_field(state, 3)
+        call quick_smooth_ele_lengths_field(state, 10)
 
         ! Now project to NodeLengthscales field. (1st order)
         call project_field(elef, nodef, pos)

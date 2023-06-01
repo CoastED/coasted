@@ -206,10 +206,10 @@ contains
     subroutine create_dg_les_field_options(phase_path, dg_path)
         character(len=OPTION_PATH_LEN) :: phase_path, dg_path, &
             tensor_eddy_visc_path, scalar_eddy_visc_path, mag_tensor_eddy_visc_path, &
-            element_lengthscales_path, node_lengthscales_path
+            element_lengthscales_path, node_lengthscales_path, smoothed_lengthscales_path
 
         ! Set to true for now
-        logical, parameter :: output_lengthscales = .true.
+        logical, parameter :: output_lengthscales = .false.
 
         logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress
@@ -225,6 +225,7 @@ contains
 
         element_lengthscales_path = trim(phase_path)//"vector_field::ElementLengthScales/"
         node_lengthscales_path = trim(phase_path)//"vector_field::NodeLengthScales/"
+        smoothed_lengthscales_path = trim(phase_path)//"vector_field::SmoothedLengthScales/"
 
         tensor_eddy_visc_path = trim(phase_path)//"tensor_field::TensorEddyViscosity/"
         mag_tensor_eddy_visc_path= trim(phase_path)//"scalar_field::TensorEddyViscosityMagnitude/"
@@ -421,9 +422,48 @@ contains
             call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state", stat)
             call add_option(trim(node_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
 
+            ! --------------- Smoothed length scales field ----------------
+
+            ewrite(1,*) "Creating SmoothedLengthScales field"
+            call add_option(trim(smoothed_lengthscales_path), stat)
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"rank", "0", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic", stat)
+
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/solver", stat)
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/name", &
+                 "helmholtz_anisotropic_smoothed_vector", stat)
+
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/source_field_name", &
+                "NodeLengthScales", stat)
+            call set_option(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/smoothing_scale_factor", &
+                3.0, stat)
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/solver/iterative_method/name", &
+                "cg", stat)
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/solver/preconditioner/name", &
+                "sor", stat)
+            call set_option(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/solver/relative_error", &
+                1e-7, stat)
+            call set_option(trim(smoothed_lengthscales_path)//"diagnostic/algorithm/solver/max_iterations", &
+                100, stat)
+
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/mesh/name", stat)
+            call set_option_attribute(trim(smoothed_lengthscales_path)//"diagnostic/mesh/name", &
+                 "CoordinateMesh", stat)
+
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/stat", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/convergence", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/convergence/exclude_from_convergence", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/detectors", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/detectors/include_in_detectors", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/do_not_recalculate", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/steady_state", stat)
+            call add_option(trim(smoothed_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
+
+
             if(.not. output_lengthscales) then
                 call add_option(trim(element_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
                 call add_option(trim(node_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
+                call add_option(trim(smoothed_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
             end if
 
 
