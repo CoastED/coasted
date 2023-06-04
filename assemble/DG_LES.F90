@@ -282,7 +282,7 @@ contains
         type(tensor_field) :: u_grad
         real, allocatable :: dx_ele_raw(:,:)
         
-        integer :: i, j, m, e, num_elements, n, num_nodes
+        integer :: i, j, k, m, e, num_elements, n, num_nodes
         integer :: u_cg_ele(ele_loc(u,1))
 
         ! Vreman specific
@@ -290,10 +290,11 @@ contains
         real :: Cs, Cpoin !, B_beta, alpha_sq_sum, beta_sum
 
         ! From Vreman source
-        real :: d1,d2,d3
-        real :: d1v1,d2v1,d3v1,d1v2,d2v2,d3v2,d1v3,d2v3,d3v3
-        real :: b11,b12,b13,b22,b23,b33
+!        real :: d1,d2,d3
+!        real :: d1v1,d2v1,d3v1,d1v2,d2v2,d3v2,d1v3,d2v3,d3v3
+!        real :: b11,b12,b13,b22,b23,b33
         real :: abeta, bbeta
+        real, allocatable :: dudx(:,:), beta_ij(:,:), dx(:)
 
         ! Standard LES vars
         real :: visc_turb, tmp_visc, tmp_val, sgs_max
@@ -322,6 +323,8 @@ contains
 !        nullify(nodelen)
         nullify(dist_to_wall)
         nullify(mviscosity)
+
+        allocate( dudx(opDim, opDim), beta_ij(opDim, opDim), dx(opDim) )
 
 
         ! Velocity projected to continuous Galerkin
@@ -422,7 +425,8 @@ contains
             call halo_update(nodelen)
 
             ! Final lengthscale calculation - smooth
-            call anisotropic_smooth_vector(nodelen, x, smoothlen, 3.0,  trim(complete_field_path(smoothlen%option_path)) // "/algorithm")
+            call anisotropic_smooth_vector(nodelen, x, smoothlen, 3.0,  &
+                trim(complete_field_path(smoothlen%option_path)) // "/algorithm")
             call halo_update(smoothlen)
 
             smooth_called_count = smooth_called_count+1
@@ -435,45 +439,72 @@ contains
         do n=1, num_nodes
 
            ! Wall stuff, if needed. This shuts off Vreman at wall boundary
-           ! if(have_wall) then
-           !    if(abs(dist_to_wall%val(n)) < 10e-10 ) then
-           !       wdamp=0.0
-           !    else
-           !       wdamp=1.0
-           !    end if
-           ! end if
+           if(have_wall) then
+              if(abs(dist_to_wall%val(n)) < 10e-10 ) then
+                 wdamp=0.0
+              else
+                 wdamp=1.0
+              end if
+           end if
 
-           wdamp=1.0
+!           wdamp=1.0
            
-           d1 = smoothlen%val(1, n)**2
-           d2 = smoothlen%val(2, n)**2
-           d3 = smoothlen%val(3, n)**2
+!           d1 = smoothlen%val(1, n)**2
+!           d2 = smoothlen%val(2, n)**2
+!           d3 = smoothlen%val(3, n)**2
+
+!           Not entirely sure the *actual* Vreman code is any good. Commented
+!           out for now
+!
+!           d1v1=u_grad%val(1,1,n) ! du1dx1(n)
+!           d2v1=u_grad%val(1,2,n) ! du1dx2(n)
+!           d3v1=u_grad%val(1,3,n) ! du1dx3(n)
+!
+!           d1v2=u_grad%val(2,1,n) ! du2dx1(n)
+!           d2v2=u_grad%val(2,2,n) ! du2dx2(n)
+!           d3v2=u_grad%val(2,3,n) ! du2dx3(n)
+!
+!           d1v3=u_grad%val(3,1,n) ! du3dx1(n)
+!           d2v3=u_grad%val(3,2,n) ! du3dx2(n)
+!           d3v3=u_grad%val(3,3,n) ! du3dx3(n)
+!
+!           b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
+!           b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
+!           b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
+!           b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
+!           b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
+!           b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
+!
+!           abeta = d1v1**2 + d1v2**2 + d1v3**2 &
+!                + d2v1**2 + d2v2**2 + d2v3**2 &
+!                + d3v1**2 + d3v2**2 + d3v3**2
+!
+!           bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
+
+           dudx(:,1) = u_grad%val(1,:,n)
+           dudx(:,2) = u_grad%val(2,:,n)
+           dudx(:,3) = u_grad%val(3,:,n)
+
+           dx = smoothlen%val(:,n)
+
+           abeta = sum(u_grad%val(:,:,n)*u_grad%val(:,:,n))
+           beta_ij = 0.0
+
+           do i=1, opDim
+              do j=1, opDim
+                 do k=1, opDim
+                    beta_ij(i,j) = beta_ij(i,j) + (dx(k)**2.)*dudx(k,i)*dudx(k,j)
+                 end do
+              end do
+           end do
            
-           d1v1=u_grad%val(1,1,n) ! du1dx1(n)
-           d2v1=u_grad%val(1,2,n) ! du1dx2(n)
-           d3v1=u_grad%val(1,3,n) ! du1dx3(n)
-           
-           d1v2=u_grad%val(2,1,n) ! du2dx1(n)
-           d2v2=u_grad%val(2,2,n) ! du2dx2(n)
-           d3v2=u_grad%val(2,3,n) ! du2dx3(n)
-           
-           d1v3=u_grad%val(3,1,n) ! du3dx1(n)
-           d2v3=u_grad%val(3,2,n) ! du3dx2(n)
-           d3v3=u_grad%val(3,3,n) ! du3dx3(n)
-           
-           b11=d1*d1v1*d1v1+d2*d2v1*d2v1+d3*d3v1*d3v1
-           b12=d1*d1v1*d1v2+d2*d2v1*d2v2+d3*d3v1*d3v2
-           b13=d1*d1v1*d1v3+d2*d2v1*d2v3+d3*d3v1*d3v3
-           b22=d1*d1v2*d1v2+d2*d2v2*d2v2+d3*d3v2*d3v2
-           b23=d1*d1v2*d1v3+d2*d2v2*d2v3+d3*d3v2*d3v3
-           b33=d1*d1v3*d1v3+d2*d2v3*d2v3+d3*d3v3*d3v3
-           
-           abeta = d1v1**2 + d1v2**2 + d1v3**2 &
-                + d2v1**2 + d2v2**2 + d2v3**2 &
-                + d3v1**2 + d3v2**2 + d3v3**2
-           
-           bbeta=b11*b22-(b12**2)+b11*b33-(b13**2)+b22*b33-(b23**2)
-           
+           bbeta = &
+                  (beta_ij(1,1)*beta_ij(2,2)) &
+                  + (beta_ij(1,1)*beta_ij(3,3)) &
+                  + (beta_ij(2,2)*beta_ij(3,3)) &
+                  - (beta_ij(1,2)**2.)-(beta_ij(1,3)**2.)-(beta_ij(2,3)**2.)
+
+
            ! If abeta is v. small, sgs turb visc must be zero also.
            if(abeta < 10e-10) then
               visc_turb = 0.0
@@ -490,7 +521,7 @@ contains
            tmp_visc = wdamp * visc_turb
 
            ! Limit on sgs viscosity
-           sgs_max = Cpoin * sqrt(abeta/3) * max(d1, d2, d3)
+           sgs_max = Cpoin * sqrt(abeta/3) * max(dx(1), dx(2), dx(3))
            if(tmp_visc > sgs_max) tmp_visc=sgs_max
            
            if(have_artificial_visc) then
@@ -506,7 +537,7 @@ contains
         call halo_update(sgs_visc)
 
         call deallocate(u_grad)
-        deallocate(dx_ele_raw)
+        deallocate( dudx, beta_ij, dx )
 
         t2=mpi_wtime()
 
