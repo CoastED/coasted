@@ -311,7 +311,7 @@ contains
 
         ! Wall stuff
         logical :: have_wall
-        real :: wdamp=1.0
+!        real :: wdamp=1.0
         
         print*, "In calc_dg_sgs_vreman_viscosity()"
 
@@ -439,13 +439,13 @@ contains
         do n=1, num_nodes
 
            ! Wall stuff, if needed. This shuts off Vreman at wall boundary
-           if(have_wall) then
-              if(abs(dist_to_wall%val(n)) < 10e-10 ) then
-                 wdamp=0.0
-              else
-                 wdamp=1.0
-              end if
-           end if
+!           if(have_wall) then
+!              if(abs(dist_to_wall%val(n)) < 10e-10 ) then
+!                 wdamp=0.0
+!              else
+!                 wdamp=1.0
+!              end if
+!           end if
 
 !           wdamp=1.0
            
@@ -517,8 +517,8 @@ contains
               visc_turb = Cpoin * sqrt( bbeta / abeta )
            end if
 
-           ! Including damping
-           tmp_visc = wdamp * visc_turb
+           ! We may add terms to the viscosity here, so...
+           tmp_visc = visc_turb
 
            ! Limit on sgs viscosity
            sgs_max = Cpoin * sqrt(abeta/3) * max(dx(1), dx(2), dx(3))
