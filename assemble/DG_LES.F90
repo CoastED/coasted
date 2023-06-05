@@ -425,7 +425,7 @@ contains
             call halo_update(nodelen)
 
             ! Final lengthscale calculation - smooth
-            call anisotropic_smooth_vector(nodelen, x, smoothlen, 3.0,  &
+            call anisotropic_smooth_vector(nodelen, x, smoothlen, 3.5,  &
                 trim(complete_field_path(smoothlen%option_path)) // "/algorithm")
             call halo_update(smoothlen)
 
