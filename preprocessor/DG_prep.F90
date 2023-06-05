@@ -209,7 +209,7 @@ contains
             element_lengthscales_path, node_lengthscales_path, smoothed_lengthscales_path
 
         ! Set to true for now
-        logical, parameter :: output_lengthscales = .false.
+        logical, parameter :: output_lengthscales = .true.
 
         logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress
@@ -459,10 +459,11 @@ contains
             call add_option(trim(smoothed_lengthscales_path)//"diagnostic/steady_state", stat)
             call add_option(trim(smoothed_lengthscales_path)//"diagnostic/steady_state/include_in_steady_state", stat)
 
+            ! Hide these anyway, as never used.
+            call add_option(trim(element_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
+            call add_option(trim(node_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
 
             if(.not. output_lengthscales) then
-                call add_option(trim(element_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
-                call add_option(trim(node_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
                 call add_option(trim(smoothed_lengthscales_path)//"diagnostic/output/exclude_from_vtu", stat)
             end if
 
