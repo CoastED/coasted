@@ -1562,6 +1562,7 @@ vector_diagnostic_algorithms |= finite_element_divergence_transpose_algorithm
 vector_diagnostic_algorithms |= eigenvalues_symmetric_algorithm
 vector_diagnostic_algorithms |= curl_algorithm
 vector_diagnostic_algorithms |= vector_python_diagnostic_algorithm
+vector_diagnostic_algorithms |= internal_algorithm
 
 tensor_diagnostic_algorithms = internal_algorithm
 tensor_diagnostic_algorithms |= tensor_copy_algorithm
@@ -1573,3 +1574,4 @@ tensor_diagnostic_algorithms |= helmholtz_anisotropic_smoothed_tensor_algorithm
 tensor_diagnostic_algorithms |= field_tolerance_algorithm
 tensor_diagnostic_algorithms |= tensor_python_diagnostic_algorithm
 tensor_diagnostic_algorithms |= tensor_difference_algorithm
+tensor_diagnostic_algorithms |= internal_algorithm

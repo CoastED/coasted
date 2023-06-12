@@ -1130,43 +1130,14 @@ suggested value 0.1</a:documentation>
                 <element name="isotropic">
                   <empty/>
                 </element>
-                <element name="roman">
+                <element name="vreman">
                   <a:documentation>See Roman et al. Deals with highly anisotropic grids by splitting up
 viscosity into horizontal and vertical components. (C_s becomes C_horz)
 Uses tensor SGS field.</a:documentation>
-                  <element name="smagorinsky_coefficient_vertical">
-                    <a:documentation>Vertical Smagorinsky coefficient.</a:documentation>
-                    <ref name="real"/>
-                  </element>
-                </element>
-                <element name="vreman">
                   <a:documentation>Vreman et al LES for anisotropic grids. Uses scalar SGS field.</a:documentation>
-                  <element name="poincare_constant">
-                    <a:documentation>Poincare constant. For central difference methods,
-recommended value is = 0.3 (Smagorinsky coeff will be ignored)</a:documentation>
-                    <ref name="real"/>
-                  </element>
-                </element>
-                <element name="vorticity_anisotropic_grid">
-                  <a:documentation>Use vorticity-derived filter width for anisotropic grids. See Chauvet et al, 2007.
-CURRENT NOT WORKING.</a:documentation>
                   <empty/>
                 </element>
-                <element name="amd">
-                  <a:documentation>Anisotropic Minimum-Dissipation (AMD) LES filter. See 'Minimum-dissipation models for large-eddy simulation', Rozema et al (2015). Uses scalar SGS field.</a:documentation>
-                  <element name="poincare_constant">
-                    <a:documentation>Poincare constant. By default 0.3, which is used for second-order
-central-difference methods.</a:documentation>
-                    <ref name="real"/>
-                  </element>
-                </element>
               </choice>
-              <optional>
-                <element name="zero_subgrid_stress_boundaries">
-                  <a:documentation>The boundaries that must satisfy the nu_sgs=0 condition (eg. no-slip)</a:documentation>
-                  <ref name="integer_vector"/>
-                </element>
-              </optional>
               <optional>
                 <element name="scalar_field">
                   <attribute name="rank">

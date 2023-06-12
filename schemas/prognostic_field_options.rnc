@@ -936,7 +936,7 @@ prognostic_velocity_field =
 				     ## Uses tensor SGS field.
 		     
 		     ## Vreman et al LES for anisotropic grids. Uses scalar SGS field.
-                     element vreman { empty } |
+                     element vreman { empty }
 		   ),
 			     
                   element scalar_field {
