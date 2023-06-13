@@ -209,7 +209,7 @@ contains
             element_lengthscales_path, node_lengthscales_path, smoothed_lengthscales_path
 
         ! Set to true for now
-        logical, parameter :: output_lengthscales = .true.
+        logical, parameter :: output_lengthscales = .false.
 
         logical :: have_les_option, have_les_visc_field, have_zero_mesh
         logical :: have_isotropic_les, have_partial_stress
@@ -266,7 +266,7 @@ contains
 
             have_zero_mesh = .true.
 
-            if(have_isotropic_les .or. have_amd_les .or. have_vreman_les) then
+            if(have_isotropic_les .or. have_vreman_les) then
                 ! Create SGS Eddy Viscosity scalar field
                 ewrite(1,*) "Creating ScalarEddyViscosity field"
                 if(have_isotropic_les) then
