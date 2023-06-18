@@ -288,6 +288,7 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 #elif defined (SCHEME_IP)
     !        case (IP)
             primal = .true.
+
 #else
     !        case default
     primal = .false.
@@ -1899,6 +1900,84 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
 
 contains
+
+    subroutine local_assembly_arbitrary_upwind
+      integer :: d3
+
+      real, dimension(Viscosity%dim(1), Viscosity%dim(2), ele_loc(u, ele)) :: tensor_visc
+
+      tensor_visc = Viscosity_ele
+
+      if (have_les) then
+        call les_tensor_viscosity_roman(tensor_visc)
+      end if
+
+      do dim1=1, Viscosity%dim(1)
+         do dim2=1,Viscosity%dim(2)
+            do d3 = 1, mesh_dim(U)
+               ! Div U * G^U * Viscosity * G * Grad U
+               ! Where G^U*G = inverse(Q_mass)
+!               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
+!                    +0.5*( &
+!                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
+!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
+!                    &     ,grad_U_mat_q(dim2,:,:))&
+!                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
+!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
+!                    &     ,div_U_mat_q(dim2,:,:))&
+!                    &)
+
+               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
+                    +0.5*( &
+                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
+                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
+                    &     ,grad_U_mat_q(dim2,:,:))&
+                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
+                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
+                    &     ,div_U_mat_q(dim2,:,:))&
+                    &)
+
+            end do
+         end do
+      end do
+
+    end subroutine local_assembly_arbitrary_upwind
+
+
+
+    subroutine arbitrary_upwind_viscosity
+
+       !! Arbitrary upwinding scheme.
+       do dim=1,mesh_dim(U)
+
+          if (normal(dim,1)>0) then
+             ! Internal face.
+             Grad_U_mat(dim, q_face_l, U_face_l)=&
+                  Grad_U_mat(dim, q_face_l, U_face_l) &
+                  +shape_shape(q_shape, U_shape, detwei*normal(dim,:))
+
+             ! External face. Note the sign change which is caused by the
+             ! divergence matrix being constructed in transpose.
+             Div_U_mat(dim, q_face_l, start:finish)=&
+                  -shape_shape(q_shape, U_shape_2, detwei*normal(dim,:))
+
+             ! Internal face.
+             Div_U_mat(dim, q_face_l, U_face_l)=&
+                  Div_U_mat(dim, q_face_l, U_face_l) &
+                  +shape_shape(q_shape, U_shape, detwei*normal(dim,:))
+
+          else
+             ! External face.
+             Grad_U_mat(dim, q_face_l, start:finish)=&
+                  +shape_shape(q_shape, U_shape_2, detwei*normal(dim,:))
+
+          end if
+       end do
+
+    end subroutine arbitrary_upwind_viscosity
+
+
+
 
     subroutine get_normal_mat
         !!< We assemble

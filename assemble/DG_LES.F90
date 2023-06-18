@@ -154,7 +154,10 @@ contains
 
 
         ! Velocity projected to continuous Galerkin
-        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        ! u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
+        ! Nonlinear velocity is better...?
+        u_cg=>extract_vector_field(state, "ProjectedNonlinearVelocity", stat=state_flag)
+
 
         ! Allocate gradient field and calculate gradient
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
