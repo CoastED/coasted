@@ -1901,50 +1901,9 @@ subroutine construct_momentum_elements_dg_opt( ele, big_m, rhs, &
 
 contains
 
-    subroutine local_assembly_arbitrary_upwind
-      integer :: d3
-
-      real, dimension(Viscosity%dim(1), Viscosity%dim(2), ele_loc(u, ele)) :: tensor_visc
-
-      tensor_visc = Viscosity_ele
-
-      if (have_les) then
-        call les_tensor_viscosity_roman(tensor_visc)
-      end if
-
-      do dim1=1, Viscosity%dim(1)
-         do dim2=1,Viscosity%dim(2)
-            do d3 = 1, mesh_dim(U)
-               ! Div U * G^U * Viscosity * G * Grad U
-               ! Where G^U*G = inverse(Q_mass)
-!               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
-!                    +0.5*( &
-!                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
-!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
-!                    &     ,grad_U_mat_q(dim2,:,:))&
-!                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
-!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
-!                    &     ,div_U_mat_q(dim2,:,:))&
-!                    &)
-
-               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
-                    +0.5*( &
-                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
-                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
-                    &     ,grad_U_mat_q(dim2,:,:))&
-                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
-                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
-                    &     ,div_U_mat_q(dim2,:,:))&
-                    &)
-
-            end do
-         end do
-      end do
-
-    end subroutine local_assembly_arbitrary_upwind
 
 
-
+#ifdef ARBITRARY_STUFF
     subroutine arbitrary_upwind_viscosity
 
        !! Arbitrary upwinding scheme.
@@ -1976,7 +1935,8 @@ contains
 
     end subroutine arbitrary_upwind_viscosity
 
-
+! ARBITRARY_STUFF
+#endif 
 
 
     subroutine get_normal_mat
@@ -2274,6 +2234,49 @@ contains
             C_h*shape_shape(face_u_shape,face_u_shape,face_detwei*kappa_n)
 
     end subroutine interior_penalty
+
+
+    subroutine local_assembly_arbitrary_upwind
+      integer :: d3
+
+      real, dimension(Viscosity%dim(1), Viscosity%dim(2), ele_loc(u, ele)) :: tensor_visc
+
+      tensor_visc = Viscosity_ele
+
+      if (have_les) then
+        call les_tensor_viscosity_roman(tensor_visc)
+      end if
+
+      do dim1=1, opDim
+         do dim2=1,opDim
+            do d3 = 1, opDim
+               ! Div U * G^U * Viscosity * G * Grad U
+               ! Where G^U*G = inverse(Q_mass)
+!               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
+!                    +0.5*( &
+!                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
+!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
+!                    &     ,grad_U_mat_q(dim2,:,:))&
+!                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
+!                    &         ,mat_diag_mat(Q_inv, Viscosity_ele(dim1,dim2,:)))&
+!                    &     ,div_U_mat_q(dim2,:,:))&
+!                    &)
+
+               Viscosity_mat(d3,d3,:,:)=Viscosity_mat(d3,d3,:,:)&
+                    +0.5*( &
+                    +matmul(matmul(transpose(grad_U_mat_q(dim1,:,:))&
+                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
+                    &     ,grad_U_mat_q(dim2,:,:))&
+                    +matmul(matmul(transpose(div_U_mat_q(dim1,:,:))&
+                    &         ,mat_diag_mat(Q_inv, tensor_visc(dim1,dim2,:)))&
+                    &     ,div_U_mat_q(dim2,:,:))&
+                    &)
+
+            end do
+         end do
+      end do
+
+    end subroutine local_assembly_arbitrary_upwind
 
     subroutine local_assembly_ip_face
         implicit none
