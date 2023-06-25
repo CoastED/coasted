@@ -118,8 +118,14 @@ contains
 
     ! Check if we run over the limit of unique combinations for surface IDs
     ! (not necessarily global as the check may fail on any process)
-    if(max_boundary_id + 1 > huge(max_coplanar_id) / max(max_coplanar_id, 1)) then
+!    if(max_boundary_id + 1 > huge(max_coplanar_id) / max(max_coplanar_id, 1)) then
+
+    ! I have no idea if this is more sensible, but it ameliorates issues with 
+    ! coastal/ocean simulations > 950 cores with flredecomp / Zoltan
+    if(max_boundary_id + 1 + max(max_coplanar_id, 1) > huge(max_coplanar_id) ) then
+
       ewrite(-1, "(a,i0)") "Max coplanar ID = ", max_coplanar_id
+      ewrite(-1, "(a,i0)") "huge(Max coplanar ID) = ", huge(max_coplanar_id)
       ewrite(-1, "(a,i0)") "Max boundary ID = ", max_boundary_id
       ewrite(-1, "(a,i0)") "Max integer = ", huge(max_coplanar_id)
       FLAbort("Too many different coplanar and/or boundary ids")
