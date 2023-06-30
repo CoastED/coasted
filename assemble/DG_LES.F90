@@ -65,9 +65,6 @@ module dg_les
   real, parameter :: van_scale=1.0
   integer :: smooth_called_count=0
 
-!  character(len=*), parameter :: lesVelocityFieldName="ProjectedNonlinearVelocity"
-  character(len=*), parameter :: lesVelocityFieldName="VelocityCG"
-
 #include "mpif.h"
 
 
@@ -159,7 +156,7 @@ contains
         ! Velocity projected to continuous Galerkin
         ! u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
         ! Nonlinear velocity is better...?
-        u_cg=>extract_vector_field(state, trim(lesVelocityFieldName), stat=state_flag)
+        u_cg=>extract_vector_field(state, "ProjectedNonlinearVelocity", stat=state_flag)
 
 
         ! Allocate gradient field and calculate gradient
@@ -537,8 +534,7 @@ contains
 
 
         ! Velocity projected to continuous Galerkin
-        ! u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
-        u_cg=>extract_vector_field(state, trim(lesVelocityFieldName), stat=state_flag)
+        u_cg=>extract_vector_field(state, "VelocityCG", stat=state_flag)
 
         ! Allocate gradient field and calculate gradient
         call allocate(u_grad, u_cg%mesh, "VelocityCGGradient")
