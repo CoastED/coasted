@@ -74,8 +74,6 @@ contains
     real(zoltan_float), intent(out), dimension(*) :: obj_wgts 
     integer :: ierr
     
-    real(zoltan_float), allocatable :: my_wgts(:)
-
     integer :: count, i
 !    real(zoltan_float) :: this_obj_wgt, max_obj_wgt, min_obj_wgt
     real :: this_obj_wgt, max_obj_wgt, min_obj_wgt
@@ -113,26 +111,24 @@ contains
        print *, "Finding global maximum rows..."
        call mpi_allreduce(max_obj_wgt, global_max_rows, 1, mpi_double_precision, mpi_max, mpi_comm_world, ierr)
 
-       allocate(my_wgts(count))
        print *, "Scaling obj_wgts between 0 and 1..."
        do i = 1, count
-            my_wgts(i) = ((float(row_length(zoltan_global_columns_sparsity, i))) / global_max_rows)**1.17
+            obj_wgts(i) = ((float(row_length(zoltan_global_columns_sparsity, i))) / global_max_rows)**1.17
        end do
 
     else
        do i = 1, count
-          my_wgts(i) = 1.0
+          obj_wgts(i) = 1.0
        end do
     end if
-
 
     if(zoltan_global_field_weighted_partitions) then
        max_obj_wgt = 1.0
        min_obj_wgt = 0.0
        do i = 1, count
-          my_wgts(i) = node_val(zoltan_global_field_weighted_partition_values,i)
-          max_obj_wgt = max(max_obj_wgt, my_wgts(i))
-          min_obj_wgt = min(min_obj_wgt, my_wgts(i))
+          obj_wgts(i) = node_val(zoltan_global_field_weighted_partition_values,i)
+          max_obj_wgt = max(max_obj_wgt, obj_wgts(i))
+          min_obj_wgt = min(min_obj_wgt, obj_wgts(i))
        end do
 
        if((max_obj_wgt > 1.0) .OR. (min_obj_wgt < 0.0)) then
@@ -140,8 +136,6 @@ contains
        end if
 
     end if
-
-    obj_wgts(1:count) = my_wgts(1:count)
     
     ierr = ZOLTAN_OK
   end subroutine zoltan_cb_get_owned_nodes
