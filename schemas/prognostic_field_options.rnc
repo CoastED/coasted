@@ -938,6 +938,15 @@ prognostic_velocity_field =
 		     ## Vreman et al LES for anisotropic grids. Uses scalar SGS field.
                      element vreman { empty }
 		   ),
+
+		   ## Segue between LES viscosity and ArtificialViscosity
+		   ## field. Only works with Vreman DG LES
+		   element scale_with_artificial_viscosity {
+		   	## This is the maximum value of the artifical viscosity
+			## field. At minimum (0), only LES viscosity; at max,
+			## only ArtificialViscosity.
+		        element max_artificial_viscosity { real }
+		   }?,
 			     
                   element scalar_field {
                      attribute rank { "0" },

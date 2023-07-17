@@ -513,7 +513,8 @@ contains
         logical :: have_reference_density, have_lengths_field
 
         real :: sgs_visc_val
-        logical :: have_artificial_visc
+        logical :: have_artificial_visc, have_artificial_scaling
+        real :: max_artificial_visc, av_alpha
 
         ! Wall stuff
         logical :: have_wall
@@ -574,9 +575,21 @@ contains
         have_artificial_visc = .false.
         artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
              stat=state_flag)
+
         if(state_flag == 0) then
            print*, "ArtificialViscosity field detected."
+
            have_artificial_visc = .true.
+            have_artificial_scaling=have_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                // "scale_with_artificial_viscosity")
+
+            if(have_artificial_scaling) then
+                print*, "Scaling between LES viscosity and ArtificialViscosity field"
+                call get_option(trim(u%option_path)//"/prognostic/" &
+                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
+                // "max_artificial_viscosity", max_artificial_visc )
+            end if
         end if
 
 
@@ -724,15 +737,19 @@ contains
               visc_turb = Cpoin * sqrt( bbeta / abeta )
            end if
 
-           ! We may add terms to the viscosity here, so...
-           tmp_visc = visc_turb
-
            ! Limit on sgs viscosity
-           sgs_max = Cpoin * sqrt(abeta/3) * max(dx(1), dx(2), dx(3))
-           if(tmp_visc > sgs_max) tmp_visc=sgs_max
+           sgs_max = min( Cpoin * sqrt(abeta/3) * max(dx(1), dx(2), dx(3)),  mu*10e4 )
+           if(visc_turb > sgs_max) visc_turb=sgs_max
            
+           ! Artificial viscosity nonsense
            if(have_artificial_visc) then
-              tmp_visc = tmp_visc + artificial_visc%val(n)
+              if(.not. have_artificial_scaling) then
+                  tmp_visc = visc_turb + artificial_visc%val(n)
+              else
+                  ! Otherwise we scale between one and the other
+                  av_alpha = artificial_visc%val(n)/max_artificial_visc
+                  tmp_visc = (1-av_alpha)*visc_turb + av_alpha*artificial_visc%val(n)
+               end if
            end if
            
            call set(sgs_visc, n,  tmp_visc)

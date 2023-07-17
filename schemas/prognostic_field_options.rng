@@ -1139,6 +1139,18 @@ Uses tensor SGS field.</a:documentation>
                 </element>
               </choice>
               <optional>
+                <element name="scale_with_artificial_viscosity">
+                  <a:documentation>Segue between LES viscosity and ArtificialViscosity
+field. Only works with Vreman DG LES</a:documentation>
+                  <element name="max_artificial_viscosity">
+                    <a:documentation>This is the maximum value of the artifical viscosity
+field. At minimum (0), only LES viscosity; at max,
+only ArtificialViscosity.</a:documentation>
+                    <ref name="real"/>
+                  </element>
+                </element>
+              </optional>
+              <optional>
                 <element name="scalar_field">
                   <attribute name="rank">
                     <value>0</value>
