@@ -166,7 +166,7 @@ contains
 
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarrEddyViscosity absent for Vreman DG LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarEddyViscosity absent for Smagorinsky DG LES. (This should not happen)")
         end if
 
 
@@ -179,7 +179,7 @@ contains
            print*, "**** Have ElementLengthScales and NodeLengthScales fields"
            have_lengths_field = .true.
         else
-           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Vreman DG LES. This should have been automatically created.")
+           FLAbort("Error: must have ElementLengthsScales and NodeLengthScales fields for Smagorinsky DG LES. This should have been automatically created.")
         end if
 
 
@@ -545,7 +545,7 @@ contains
 
         sgs_visc => extract_scalar_field(state, "ScalarEddyViscosity", stat=state_flag)
         if (state_flag /= 0) then
-            FLAbort("DG_LES: ScalarrEddyViscosity absent for Vreman DG LES. (This should not happen)")
+            FLAbort("DG_LES: ScalarEddyViscosity absent for Vreman DG LES. (This should not happen)")
         end if
 
 
@@ -576,6 +576,8 @@ contains
         artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
              stat=state_flag)
 
+        max_artificial_visc = maxval(artificial_visc%val(:))
+
         if(state_flag == 0) then
            print*, "ArtificialViscosity field detected."
 
@@ -584,12 +586,8 @@ contains
                 // "spatial_discretisation/discontinuous_galerkin/les_model/" &
                 // "scale_with_artificial_viscosity")
 
-            if(have_artificial_scaling) then
-                print*, "Scaling between LES viscosity and ArtificialViscosity field"
-                call get_option(trim(u%option_path)//"/prognostic/" &
-                // "spatial_discretisation/discontinuous_galerkin/les_model/" &
-                // "max_artificial_viscosity", max_artificial_visc )
-            end if
+            if(have_artificial_scaling) &
+                 print*, "Scaling between LES viscosity and ArtificialViscosity field"
         end if
 
 
@@ -745,6 +743,8 @@ contains
            if(have_artificial_visc) then
               if(.not. have_artificial_scaling) then
                   tmp_visc = visc_turb + artificial_visc%val(n)
+
+                  if(tmp_visc>max_artificial_visc) tmp_visc=max_artificial_visc
               else
                   ! Otherwise we scale between one and the other
                   av_alpha = artificial_visc%val(n)/max_artificial_visc
