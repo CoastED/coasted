@@ -1587,6 +1587,9 @@
          type(scalar_field), save :: combined_p
          integer :: stat
 
+         ! Dirty hack for Grand Passage east-west walls
+         logical :: have_grand_walls
+
          ewrite(1,*) 'Entering advance_velocity'
 
 
@@ -1663,6 +1666,14 @@
          ! Apply change to velocity field (Note that this gets stored in state)
          call addto(u, delta_u, dt)
 
+         ! Do we have the dirty hack option for Grand Passage turned on?
+         if(have_option(trim(u%option_path)//"/prognostic/turn_on_grand_hard_eastwest_walls")) then
+            have_grand_walls=.true.
+         else
+            have_grand_walls=.false.
+         end if
+            
+         
          ! Hard-limit calculated velocity field.
          if(have_option(trim(u%option_path)//"/prognostic/hard_limiter")) then
             print*, "Using hard limiter for velocity"
@@ -1681,6 +1692,13 @@
                 u%val(2,i) = min(vmax, u%val(2,i))
                 u%val(3,i) = max(wmin, u%val(3,i))
                 u%val(3,i) = min(wmax, u%val(3,i))
+
+                ! Dirty hack to deal with weak BCs on Grand Passage east-west
+                ! walls. Forcibly set u=0 on x=W/E BCs.
+                if(have_grand_walls .and. &
+                     (x%val(1,i) < 8337.78+5 .or. x%val(1,i) > 13317.8-5)) then
+                   u%val(1,i) = 0.0
+                end if
             end do
 
          end if

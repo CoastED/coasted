@@ -1262,6 +1262,14 @@ calculations.
       </element>
     </element>
     <optional>
+      <element name="turn_on_grand_hard_eastwest_walls">
+        <a:documentation>Because of Fluidity/CoastED's brain-dead everything-is-a-weak-boundary
+Nonsense, this will turn on u=0 at west-east boundaries for the
+Grand Passage model *only*.</a:documentation>
+        <empty/>
+      </element>
+    </optional>
+    <optional>
       <element name="hard_limiter">
         <a:documentation>Hard-limit range of values for velocity. Last-ditch attempt to stop unphysical oscillations.</a:documentation>
         <element name="u_min">

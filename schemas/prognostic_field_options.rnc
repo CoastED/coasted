@@ -1037,6 +1037,11 @@ prognostic_velocity_field =
          }
       },
 
+      ## Because of Fluidity/CoastED's brain-dead everything-is-a-weak-boundary
+      ## Nonsense, this will turn on u=0 at west-east boundaries for the
+      ## Grand Passage model *only*.
+      element turn_on_grand_hard_eastwest_walls { empty }?,
+
       ## Hard-limit range of values for velocity. Last-ditch attempt to stop unphysical oscillations.
       element hard_limiter {
       	      element u_min { real } ,
