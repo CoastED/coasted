@@ -744,7 +744,7 @@ contains
               if(.not. have_artificial_scaling) then
                   tmp_visc = visc_turb + artificial_visc%val(n)
 
-                  if(tmp_visc>max_artificial_visc) tmp_visc=max_artificial_visc
+!                  if(tmp_visc>max_artificial_visc) tmp_visc=max_artificial_visc
               else
                   ! Otherwise we scale between one and the other
                   av_alpha = artificial_visc%val(n)/max_artificial_visc
