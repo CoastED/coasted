@@ -1604,6 +1604,51 @@ contains
 
   end subroutine calculate_velocity_divergence
 
+
+  ! New way that deals with anisotropic meshes. Assumes P1DG velocity
+  subroutine calculate_courant_number_dg_aniso(state, courant, dt)
+    ! REWRITE ALL OF THAT BELOW
+
+    !!< Calculate courant number for DG velocity fields
+    !!< == positive fluxes of unit function into element
+    !!< *dt/volume of element
+
+    type(state_type), intent(inout) :: state
+    type(scalar_field), intent(inout) :: courant
+    real, intent(in), optional :: dt
+    !
+    type(vector_field), pointer :: u, x
+    real :: l_dt
+    integer :: ele, stat
+
+    u=>extract_vector_field(state, "NonlinearVelocity",stat)
+    if(stat.ne.0) then    
+       u=>extract_vector_field(state, "Velocity",stat)
+       if(stat.ne.0) then
+          FLExit('Missing velocity field!')
+       end if
+    end if
+    x=>extract_vector_field(state, "Coordinate")
+
+    if(present(dt)) then
+       l_dt = dt
+    else
+       call get_option("/timestepping/timestep",l_dt)
+    end if    
+    
+    call zero(courant)
+    
+    do ele = 1, element_count(courant)
+       call calculate_courant_number_dg_ele(courant,x,u,ele,l_dt)
+    end do
+        
+    ! the courant values at the edge of the halo are going to be incorrect
+    ! this matters when computing the max courant number
+    call halo_update(courant)
+
+  end subroutine calculate_courant_number_dg_aniso
+
+
   subroutine calculate_courant_number_dg(state, courant, dt)
     !!< Calculate courant number for DG velocity fields
     !!< == positive fluxes of unit function into element
