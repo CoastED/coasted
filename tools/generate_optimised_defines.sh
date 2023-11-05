@@ -64,7 +64,7 @@ extruded_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 ExtrudedMe
 
 vel_ele_degree=`grep -A 40 geometry $opt_flml_file  | grep -A 20 VelocityMesh | grep -A 10 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
 
-pres_ele_degree=`grep -A 60 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 5 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g'`
+pres_ele_degree=`grep -A 60 geometry $opt_flml_file  | grep -A 20 PressureMesh | grep -A 5 polynomial_degree | grep integer_value |  sed 's/.*<integer_value.*0\">\(.*\)<\/integer_value>/\1/g' | head -n 1 -`
 
 
 # Catch where Velocity or pressure polynomial degree isn't specified.
