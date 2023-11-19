@@ -568,6 +568,7 @@ contains
            have_wall=.false.
         else
            have_wall=.true.
+           print*, "**** dist_to_wall found"
         end if
 
         
@@ -576,18 +577,21 @@ contains
         artificial_visc => extract_scalar_field(state, "ArtificialViscosity", &
              stat=state_flag)
 
-        max_artificial_visc = maxval(artificial_visc%val(:))
 
         if(state_flag == 0) then
            print*, "ArtificialViscosity field detected."
 
            have_artificial_visc = .true.
-            have_artificial_scaling=have_option(trim(u%option_path)//"/prognostic/" &
+           have_artificial_scaling=have_option(trim(u%option_path)//"/prognostic/" &
                 // "spatial_discretisation/discontinuous_galerkin/les_model/" &
                 // "scale_with_artificial_viscosity")
 
-            if(have_artificial_scaling) &
-                 print*, "Scaling between LES viscosity and ArtificialViscosity field"
+           if(have_artificial_scaling) &
+                print*, "Scaling between LES viscosity and ArtificialViscosity field"
+
+           max_artificial_visc = maxval(artificial_visc%val(:))
+        else
+           max_artificial_visc = 0
         end if
 
 
