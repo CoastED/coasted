@@ -25,6 +25,7 @@
 !    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
 !    USA
 #include "fdebug.h"
+#include "fprecision.h"
 
 module vtk_interfaces
   ! This module exists purely to provide explicit interfaces to
@@ -240,9 +241,10 @@ contains
     integer, intent(out), optional :: stat
     
     integer :: NNod, sz_enlist, i, dim, j, k, nparts
-    real, dimension(:,:,:), allocatable, target :: t_field_buffer, tensor_values
-    real, dimension(:,:), allocatable, target :: v_field_buffer
-    real, dimension(:), allocatable, target :: field_buffer
+    ! We now force the field buffer arrays to be doubles, ie. 64-bit reals.
+    real*8, dimension(:,:,:), allocatable, target :: t_field_buffer, tensor_values
+    real*8, dimension(:,:), allocatable, target :: v_field_buffer
+    real*8, dimension(:), allocatable, target :: field_buffer
     integer, dimension(:), allocatable, target :: ndglno, ENList, ELsize, ELType
     character(len=FIELD_NAME_LEN) :: dumpnum
     type(mesh_type) :: model_mesh
@@ -251,7 +253,7 @@ contains
     type(tensor_field) :: t_model
     logical :: dgify_fields ! should we DG-ify the fields -- make them discontinous?
     integer, allocatable, dimension(:)::ghost_levels
-    real, allocatable, dimension(:,:) :: tempval
+    real*8, allocatable, dimension(:,:) :: tempval
     integer :: lstat
     
     if (present(stat)) stat = 0
@@ -461,7 +463,8 @@ contains
 
     ! Write the mesh coordinates.
     do i=1, position%dim
-      v_field_buffer(:,i)=v_model(position%dim)%val(i,:)
+    ! AC - changed to translate between native and DP
+      v_field_buffer(:,i)=nat_to_dp(v_model(position%dim)%val(i,:))
     end do
     do i=position%dim+1, 3
       v_field_buffer(:,i)=0.0
@@ -506,20 +509,25 @@ contains
               end if
             end if
             ! we've just allowed remapping from a higher order to a lower order continuous field
-            
-            call vtkwritesn(l_model%val, trim(sfields(i)%name))
+
+            ! AC - changed to translate between native and DP
+            call vtkwritesn(nat_to_dp(l_model%val), trim(sfields(i)%name))
 
           else
 
             if(sfields(i)%field_type==FIELD_TYPE_CONSTANT) then
               allocate(tempval(element_count(l_model),1))
 
-              tempval = sfields(i)%val(1)
+              ! AC - changed to translate between native and DP
+              tempval = nat_to_dp(sfields(i)%val(1))
+              ! AC - changed to translate between native and DP
               call vtkwritesc(tempval(:,1), trim(sfields(i)%name))
 
               deallocate(tempval)
             else
-              call vtkwritesc(sfields(i)%val, trim(sfields(i)%name))
+            ! AC - changed to translate between native and DP
+              field_buffer(:) = nat_to_dp(sfields(i)%val(:))
+              call vtkwritesc(field_buffer, trim(sfields(i)%name))
             end if
 
           end if
@@ -607,7 +615,8 @@ contains
             ! we've just allowed remapping from a higher order to a lower order continuous field
           
             do k=1, vfields(i)%dim
-              v_field_buffer(:,k)=v_model(vfields(i)%dim)%val(k,:)
+            ! AC - changed to translate between native and DP
+              v_field_buffer(:,k)=nat_to_dp(v_model(vfields(i)%dim)%val(k,:))
             end do
             do k=vfields(i)%dim+1, 3
               v_field_buffer(:,k)=0.0
@@ -624,11 +633,13 @@ contains
             tempval = 0.0
             if(vfields(i)%field_type==FIELD_TYPE_CONSTANT) then
               do j = 1, vfields(i)%dim
-                tempval(:,j) = vfields(i)%val(j,1)
+                ! AC - changed to translate between native and DP
+                tempval(:,j) = nat_to_dp(vfields(i)%val(j,1))
               end do
             else
               do j = 1, vfields(i)%dim
-                tempval(:,j) = vfields(i)%val(j,:)
+                ! AC - changed to translate between native and DP
+                tempval(:,j) = nat_to_dp(vfields(i)%val(j,:))
               end do
             end if
 
@@ -699,7 +710,8 @@ contains
             tensor_values=0.0
             do j=1,dim
               do k=1,dim
-                tensor_values(:, j, k) = t_model%val(j, k, :)
+                ! AC - changed to translate between native and DP
+                tensor_values(:, j, k) = nat_to_dp(t_model%val(j, k, :))
               end do
             end do
   
@@ -722,13 +734,15 @@ contains
             if(tfields(i)%field_type==FIELD_TYPE_CONSTANT) then
               do j=1,dim
                 do k=1,dim
-                  tensor_values(:, j, k) = tfields(i)%val(j, k, 1)
+                  ! AC - changed to translate between native and DP
+                  tensor_values(:, j, k) = nat_to_dp(tfields(i)%val(j, k, 1))
                 end do
               end do
             else
               do j=1,dim
                 do k=1,dim
-                  tensor_values(:, j, k) = tfields(i)%val(j, k, :)
+                  ! AC - changed to translate between native and DP
+                  tensor_values(:, j, k) = nat_to_dp(tfields(i)%val(j, k, :))
                 end do
               end do
             end if
@@ -773,6 +787,8 @@ contains
     end if
     
   end subroutine vtk_write_fields
+
+
 
   function fluidity_mesh2vtk_numbering(ndglno, element) result (renumber)
     type(element_type), intent(in) :: element
@@ -964,8 +980,10 @@ contains
     integer :: nodes, elements, dim, sz_enlist
     integer :: nfields, nprops, nfield_components, nprop_components
     integer :: degree, maxnamelen
-    real, allocatable :: X(:), Y(:), Z(:)
-    real, dimension(:,:), allocatable :: fields, properties
+
+    ! These are all double reals now, and we convert to single precision fields if required
+    real*8, allocatable :: X(:), Y(:), Z(:)
+    real*8, dimension(:,:), allocatable :: fields, properties
     integer, dimension(:), allocatable :: field_components, prop_components
     integer, allocatable :: ENLBAS(:), NDGLNO(:)
     character(len=FIELD_NAME_LEN), allocatable :: field_names(:), prop_names(:)
@@ -1153,8 +1171,9 @@ contains
         do j=1, ndim2
           do k=1, ndim2
             if (j<=ndim .and. k<=ndim) then
+              ! AC - changed to translate between DP and native
               call set_all(tfield, dim1=j, dim2=k, &
-                   val=fields(:, component))
+                   val=dp_to_nat(fields(:, component)))
             end if
             component = component+1
           end do
@@ -1168,7 +1187,8 @@ contains
         call zero(vfield)
         do j=1, components(i)
           if (j<=ndim) then
-            call set_all(vfield, dim=j, val=fields(:, component))
+            ! AC - changed to translate between DP and native
+            call set_all(vfield, dim=j, val=dp_to_nat(fields(:, component)))
           end if
           component = component+1
         end do
@@ -1178,7 +1198,8 @@ contains
       else if (components(i)==1) then
         ! a scalar field
         call allocate(sfield, mesh, names(i))
-        call set_all(sfield, fields(:, component))
+        ! AC - changed to translate between DP and native
+        call set_all(sfield, dp_to_nat(fields(:, component)))
         call insert(state, sfield, names(i))
         component = component+1
         call deallocate(sfield)

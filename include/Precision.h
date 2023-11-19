@@ -31,10 +31,14 @@
 
 #include "confdefs.h"
 
-#ifdef DOUBLEP
-  typedef double flfloat_t;
-#else
-  typedef float flfloat_t;
-#endif
+/*
+ * #ifdef DOUBLEP
+ *  typedef double flfloat_t;
+ * #else
+ *  typedef float flfloat_t;
+ * #endif
+ */
 
-#endif
+/* We always use doubles to output VTKs */
+typedef double flfloat_t;
+
