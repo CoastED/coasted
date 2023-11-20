@@ -28,6 +28,7 @@
 
 #ifndef PRECISION_H
 #define PRECISION_H
+#endif
 
 #include "confdefs.h"
 
