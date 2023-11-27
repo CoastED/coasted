@@ -1,14 +1,11 @@
-!    Copyright (C) 2008 Imperial College London and others.
+!    Copyright (C) 2023 Angus Creech
 !
 !    Please see the AUTHORS file in the main source directory for a full list
 !    of copyright holders.
 !
-!    Prof. C Pain
-!    Applied Modelling and Computation Group
-!    Department of Earth Science and Engineering
-!    Imperial College London
-!
-!    amcgsoftware@imperial.ac.uk
+!    angus@penkiln.net
+!    Angus Creech
+!    Penkiln Dynamics
 !
 !    This library is free software; you can redistribute it and/or
 !    modify it under the terms of the GNU Lesser General Public
