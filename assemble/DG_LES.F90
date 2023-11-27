@@ -24,19 +24,11 @@
 #include "fdebug.h"
 #include "compile_opt_defs.h"
 
-! Filter types:
-! 1 = original LES filter (element averages and local peaks (quite diffuse)
-! 2 = box filter
-! 3 = hat type filter
-
-! Currently only implemented for anisotropic LES
-! Box filter not fully implemented
-
-
+!! This module contains several subroutines and functions used to
+!! implement LES models for DG velocity
 
 
 module dg_les
-  !!< This module contains several subroutines and functions used to implement LES models
   use state_module
   use fetools
   use fields
