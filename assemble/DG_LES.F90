@@ -739,9 +739,9 @@ contains
 
 !                  if(tmp_visc>max_artificial_visc) tmp_visc=max_artificial_visc
               else
-                  ! Otherwise we scale between one and the other
+                  ! We gradually add in the artificial viscosity
                   av_alpha = artificial_visc%val(n)/max_artificial_visc
-                  tmp_visc = (1-av_alpha)*visc_turb + av_alpha*artificial_visc%val(n)
+                  tmp_visc = visc_turb + av_alpha*artificial_visc%val(n)
                end if
            end if
            
